@@ -1,0 +1,9 @@
+node_modules
+.next
+.env*
+!.env.example
+data/*.db*
+test-results
+playwright-report
+evals/results/*.partial.jsonl
+.DS_Store
