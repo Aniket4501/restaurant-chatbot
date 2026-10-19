@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "intent": {
+      "type": "string",
+      "enum": [
+        "faq",
+        "booking",
+        "manage_booking",
+        "off_topic",
+        "smalltalk",
+        "unclear"
+      ]
+    },
+    "booking": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeWindow": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "lunch",
+                "dinner"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "partySize": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ambiguity": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "branch",
+                    "date",
+                    "time",
+                    "partySize"
+                  ]
+                },
+                "candidates": {
+                  "minItems": 2,
+                  "maxItems": 4,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "field",
+                "candidates"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "branch",
+        "date",
+        "time",
+        "timeWindow",
+        "partySize",
+        "ambiguity"
+      ],
+      "additionalProperties": false
+    },
+    "answer": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 600
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "citedFactIds": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "answerable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "intent",
+    "booking",
+    "answer",
+    "citedFactIds",
+    "answerable"
+  ],
+  "additionalProperties": false
+}
