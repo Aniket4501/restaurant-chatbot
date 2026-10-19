@@ -126,3 +126,8 @@ export function dayLabelLong(date: LocalDate, zone: string): string {
 export function nowLine(now: number, zone: string): string {
   return `${format(now, "EEE d MMM yyyy, h:mm a", { in: tz(zone) })}, ${zone}`;
 }
+
+/** ISO 8601 with the branch offset, e.g. "2026-10-17T20:00:00+05:30" (§5.9 "times as ISO with offset"). */
+export function isoInZone(instant: number, zone: string): string {
+  return format(instant, "yyyy-MM-dd'T'HH:mm:ssXXX", { in: tz(zone) });
+}
