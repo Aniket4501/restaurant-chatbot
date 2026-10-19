@@ -1,0 +1,58 @@
+{
+  "name": "restaurant-chatbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "scripts": {
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev -H 127.0.0.1",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "start": "NEXT_TELEMETRY_DISABLED=1 next start -H 127.0.0.1",
+    "lint": "eslint .",
+    "typecheck": "NEXT_TELEMETRY_DISABLED=1 next typegen && tsc --noEmit",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:seed": "tsx scripts/db-seed.ts",
+    "db:reset": "tsx scripts/db-reset.ts",
+    "kb:index": "tsx scripts/kb-index.ts",
+    "test": "npm run test:unit && npm run test:integration && npm run eval:scripted",
+    "test:unit": "vitest run --project unit",
+    "test:unit:tz": "TZ=UTC vitest run --project unit && TZ=America/New_York vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "playwright test",
+    "eval:scripted": "tsx evals/run.ts --mode scripted",
+    "eval": "tsx evals/run.ts --mode live",
+    "model:check": "tsx scripts/model-check.ts",
+    "model:warm": "tsx scripts/model-warm.ts",
+    "setup": "npm run db:migrate && npm run db:seed && npm run kb:index && npm run model:check",
+    "verify": "tsx scripts/verify.ts",
+    "verify:release": "tsx scripts/verify.ts --release"
+  },
+  "dependencies": {
+    "@date-fns/tz": "1.5.0",
+    "better-sqlite3": "13.0.3",
+    "date-fns": "4.4.0",
+    "libphonenumber-js": "1.13.15",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "10.13.0",
+    "eslint-config-next": "16.4.2",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}

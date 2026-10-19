@@ -1,9 +1,33 @@
+# dependencies
 node_modules
+/.pnp
+.pnp.*
+
+# next.js / typescript
 .next
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# env files: only the placeholder template is committed
 .env*
 !.env.example
+
+# local data (tests always use temp databases)
 data/*.db*
+
+# testing and evals
+/coverage
+.vitest/
 test-results
 playwright-report
+blob-report
+playwright/.cache
 evals/results/*.partial.jsonl
+
+# misc
 .DS_Store
+*.pem
+npm-debug.log*
+.vercel

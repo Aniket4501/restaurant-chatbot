@@ -81,7 +81,7 @@ Decision:
 - **Request-time reads.** Every Server Component or GET handler that reads SQLite or the clock calls `await connection()` first, and the DB opens lazily, never at module import (NX-27, Verified by the verifier from the Next docs).
 - **Vitest.** Projects `unit` and `integration` run with `vitest run --project …`. Keep the default `forks` pool so `TZ=` takes effect. Integration uses `fileParallelism: false` and a 120 s timeout. Concurrency children use `fork(child, [], { execArgv: ['--import', 'tsx'] })` (NX-52, NX-53, NX-58).
 Alternatives: hand-write the roughly 8 config files from the verified template contents, which avoids running the scaffolder at all.
-Consequences: Updates the §5.1 tooling row and adds `vite` to the install list. `package.json` gains `"engines": { "node": ">=26.0.0" }`.
+Consequences: Updates the §5.1 tooling row and adds `vite` to the install list. `package.json` gains `"engines": { "node": ">=26.0.0" }`. Verified in T-01 (2026-10-19): `npm install` reported 3 `ERESOLVE overriding peer dependency` warnings (the ESLint 10 plugin peers), and `npm run lint` works. npm 11.20's allowScripts policy skipped the `esbuild` and `unrs-resolver` postinstall scripts; both work without them (tsx/esbuild transform and resolver load tested), so no scripts were approved. The Playwright 1.64.1 browsers (chromium/headless-shell 1248, ffmpeg 1013) were already in the shared cache.
 
 ## D-08 SQLite schema and write-path hardening (2026-10-19, status: approved at G2, 2026-10-19)
 Context: The §5.4 DDL was run on SQLite 3.51.0 and 3.54.1, and the 20-process race was reproduced (SQ-20 to SQ-27, SQ-60 to SQ-62). The design holds, with these fixes.
@@ -96,7 +96,7 @@ Decision:
 - **Search table.** FTS5: `kb_fts USING fts5(fact_id UNINDEXED, body, tokenize = 'porter unicode61 remove_diacritics 2')`, queried only through the tested sanitiser (NFKC, `/[\p{L}\p{N}]+/gu` tokens, quoted, OR-joined, at most 16) and ordered by `bm25(kb_fts), fact_id`. The SQ-41 raw strings become must-not-throw unit tests. FTS5 is compiled into better-sqlite3 13.0.3 (SQ-10), which resolves D-02's Unverified item.
 - **Race test assertions.** The race test additionally asserts no `SQLITE_BUSY`/`UNAVAILABLE`, and that every loser saw 1 row. A second race variant skips the app checks and expects 19 `TABLE_OVERLAP` (SQ-61).
 Alternatives: AFTER INSERT overlap triggers, so that UNIQUE fires first (verifier note). Not needed given the re-lookup rule.
-Evidence: tested artifacts in the research file \[Verified on system SQLite\]. better-sqlite3 13.0.3 itself was not loaded (installs are forbidden in Phase 2), so the Phase 4 error-mapping tests and race in Node are the gate. Fallback: 12.11.1, not "12.12.0", which doesn't exist (verifier).
+Evidence: tested artifacts in the research file \[Verified on system SQLite\]. T-01: better-sqlite3 13.0.3 loads its N-API prebuild on Node 26.12.0, with bundled SQLite 3.53.4 and FTS5 working \[Verified\]. better-sqlite3 13.0.3 itself was not loaded (installs are forbidden in Phase 2), so the Phase 4 error-mapping tests and race in Node are the gate. Fallback: 12.11.1, not "12.12.0", which doesn't exist (verifier).
 Consequences: Changes 5.4 DDL details and 5.6 error mapping.
 
 ## D-09 Time-zone and phone library usage (2026-10-19, status: approved at G2, 2026-10-19)

@@ -93,7 +93,6 @@ function to12h(hhmm) {
   return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
 }
 const DAY_MS = 86_400_000; // Asia/Kolkata has no DST
-const today = zoned(NOW_MS);
 const horizon = Array.from({ length: 31 }, (_, i) => zoned(NOW_MS + i * DAY_MS));
 function nowLineAt(ms) {
   const z = zoned(ms);
