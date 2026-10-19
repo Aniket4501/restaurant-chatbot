@@ -1,0 +1,18 @@
+[
+  {
+    "slug": "hauz-khas",
+    "name": "Neem & Ember, Hauz Khas",
+    "address": "24 Hauz Khas Village, New Delhi 110016",
+    "phone": "+911141550101",
+    "timezone": "Asia/Kolkata",
+    "isActive": true
+  },
+  {
+    "slug": "gurugram",
+    "name": "Neem & Ember, Golf Course Road",
+    "address": "Unit 3, Ember Court, Golf Course Road, Sector 54, Gurugram 122011",
+    "phone": "+911244550202",
+    "timezone": "Asia/Kolkata",
+    "isActive": true
+  }
+]

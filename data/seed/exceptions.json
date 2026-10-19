@@ -1,0 +1,47 @@
+[
+  {
+    "branch": "hauz-khas",
+    "date": "+3d",
+    "service": "lunch",
+    "isClosed": false,
+    "opens": "12:00",
+    "closes": "15:30",
+    "note": "Regular lunch"
+  },
+  {
+    "branch": "hauz-khas",
+    "date": "+3d",
+    "service": "dinner",
+    "isClosed": true,
+    "opens": null,
+    "closes": null,
+    "note": "Closed for a private event"
+  },
+  {
+    "branch": "gurugram",
+    "date": "+8d",
+    "service": null,
+    "isClosed": true,
+    "opens": null,
+    "closes": null,
+    "note": "Closed all day for kitchen maintenance"
+  },
+  {
+    "branch": "hauz-khas",
+    "date": "+12d",
+    "service": "lunch",
+    "isClosed": false,
+    "opens": "12:00",
+    "closes": "15:30",
+    "note": "Regular lunch"
+  },
+  {
+    "branch": "hauz-khas",
+    "date": "+12d",
+    "service": "dinner",
+    "isClosed": false,
+    "opens": "19:00",
+    "closes": "23:30",
+    "note": "Extended dinner hours"
+  }
+]

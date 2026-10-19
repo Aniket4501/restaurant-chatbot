@@ -1,0 +1,684 @@
+[
+  {
+    "slug": "dahi-puri-shots",
+    "category": "small-plates",
+    "name": "Dahi Puri Shots",
+    "description": "Crisp puris with spiced potato, sweet yoghurt, tamarind and mint",
+    "priceInr": 325,
+    "dietary": [
+      "vegetarian",
+      "contains-dairy"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "beetroot-peanut-tikki",
+    "category": "small-plates",
+    "name": "Beetroot & Peanut Tikki",
+    "description": "Pan-seared beetroot patties, peanut crumble, coriander chutney",
+    "priceInr": 345,
+    "dietary": [
+      "vegan",
+      "gluten-free",
+      "contains-nuts"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "amritsari-fish-fry",
+    "category": "small-plates",
+    "name": "Amritsari Fish Fry",
+    "description": "Carom-spiced basa in a gram-flour batter with chaat masala",
+    "priceInr": 545,
+    "dietary": [
+      "gluten-free"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "ember-chicken-65",
+    "category": "small-plates",
+    "name": "Ember Chicken 65",
+    "description": "Crisp-fried chicken tossed with curry leaf and red chilli",
+    "priceInr": 495,
+    "dietary": [],
+    "spiceLevel": 3,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "mushroom-galouti",
+    "category": "small-plates",
+    "name": "Mushroom Galouti",
+    "description": "Melt-in-the-mouth mushroom kebabs on mini parathas",
+    "priceInr": 425,
+    "dietary": [
+      "vegetarian",
+      "contains-nuts"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "kale-pakoda",
+    "category": "small-plates",
+    "name": "Kale Pakoda",
+    "description": "Kale and onion fritters with tamarind dip",
+    "priceInr": 295,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "prawn-koliwada",
+    "category": "small-plates",
+    "name": "Prawn Koliwada",
+    "description": "Mumbai-style crisp prawns with green chutney",
+    "priceInr": 645,
+    "dietary": [
+      "gluten-free"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "papdi-chaat",
+    "category": "small-plates",
+    "name": "Papdi Chaat",
+    "description": "Crisp wafers, chickpeas, yoghurt and pomegranate",
+    "priceInr": 315,
+    "dietary": [
+      "vegetarian",
+      "contains-dairy"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "keema-pav-sliders",
+    "category": "small-plates",
+    "name": "Keema Pav Sliders",
+    "description": "Spiced lamb mince in buttered pav buns",
+    "priceInr": 525,
+    "dietary": [
+      "contains-dairy"
+    ],
+    "spiceLevel": 2,
+    "branches": [
+      "gurugram"
+    ],
+    "isAvailable": true
+  },
+  {
+    "slug": "smoked-paneer-tikka",
+    "category": "tandoor",
+    "name": "Smoked Paneer Tikka",
+    "description": "Hung-curd marinated paneer with charred peppers",
+    "priceInr": 495,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "tandoori-broccoli",
+    "category": "tandoor",
+    "name": "Tandoori Broccoli",
+    "description": "Broccoli in a cheddar and cardamom marinade",
+    "priceInr": 445,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "malai-chicken-tikka",
+    "category": "tandoor",
+    "name": "Malai Chicken Tikka",
+    "description": "Chicken in cream cheese, cardamom and mace",
+    "priceInr": 575,
+    "dietary": [
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "tandoori-chicken-half",
+    "category": "tandoor",
+    "name": "Ember Tandoori Chicken (half)",
+    "description": "Half a bird in Kashmiri chilli and yoghurt, finished on embers",
+    "priceInr": 625,
+    "dietary": [
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "lamb-seekh-kebab",
+    "category": "tandoor",
+    "name": "Lamb Seekh Kebab",
+    "description": "Minced lamb skewers with ginger and green chilli",
+    "priceInr": 695,
+    "dietary": [
+      "gluten-free"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "tandoori-pomfret",
+    "category": "tandoor",
+    "name": "Tandoori Pomfret",
+    "description": "Whole pomfret in ajwain and red chilli (seasonal)",
+    "priceInr": 895,
+    "dietary": [
+      "gluten-free"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": false
+  },
+  {
+    "slug": "achari-soya-chaap",
+    "category": "tandoor",
+    "name": "Achari Soya Chaap",
+    "description": "Soya chaap in a pickling-spice marinade",
+    "priceInr": 425,
+    "dietary": [
+      "vegan"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "bharwan-aloo",
+    "category": "tandoor",
+    "name": "Bharwan Aloo",
+    "description": "Potatoes stuffed with cashew, raisin and paneer",
+    "priceInr": 395,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-nuts",
+      "contains-dairy"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "old-delhi-butter-chicken",
+    "category": "mains",
+    "name": "Old Delhi Butter Chicken",
+    "description": "Tandoori chicken in a tomato, butter and cashew gravy",
+    "priceInr": 645,
+    "dietary": [
+      "gluten-free",
+      "contains-dairy",
+      "contains-nuts"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "dal-ember",
+    "category": "mains",
+    "name": "Dal Ember",
+    "description": "Black lentils slow-cooked overnight over embers, finished with butter",
+    "priceInr": 445,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "yellow-dal-tadka",
+    "category": "mains",
+    "name": "Yellow Dal Tadka",
+    "description": "Yellow lentils tempered with cumin and dried chilli",
+    "priceInr": 375,
+    "dietary": [
+      "vegan",
+      "gluten-free",
+      "jain-available"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "paneer-lababdar",
+    "category": "mains",
+    "name": "Paneer Lababdar",
+    "description": "Paneer in a rich tomato, onion and cashew gravy",
+    "priceInr": 525,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy",
+      "contains-nuts"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "lamb-rogan-josh",
+    "category": "mains",
+    "name": "Lamb Rogan Josh",
+    "description": "Kashmiri lamb curry with fennel and dry ginger",
+    "priceInr": 745,
+    "dietary": [
+      "gluten-free"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "kerala-prawn-curry",
+    "category": "mains",
+    "name": "Kerala Prawn Curry",
+    "description": "Prawns in coconut milk with kokum and curry leaf",
+    "priceInr": 795,
+    "dietary": [
+      "gluten-free"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "baingan-bharta",
+    "category": "mains",
+    "name": "Baingan Bharta",
+    "description": "Fire-roasted aubergine mash with onion and tomato",
+    "priceInr": 425,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "chana-pindi",
+    "category": "mains",
+    "name": "Chana Pindi",
+    "description": "Dark, tangy Punjabi chickpea curry",
+    "priceInr": 395,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "chicken-chettinad",
+    "category": "mains",
+    "name": "Chicken Chettinad",
+    "description": "Fiery Tamil chicken curry with black pepper and star anise",
+    "priceInr": 625,
+    "dietary": [
+      "gluten-free"
+    ],
+    "spiceLevel": 3,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "mushroom-matar-makhana",
+    "category": "mains",
+    "name": "Mushroom Matar Makhana",
+    "description": "Mushrooms, green peas and fox nuts in a mild cashew gravy",
+    "priceInr": 475,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy",
+      "contains-nuts"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "butter-naan",
+    "category": "breads-rice",
+    "name": "Butter Naan",
+    "description": "Leavened bread from the tandoor, brushed with butter",
+    "priceInr": 110,
+    "dietary": [
+      "vegetarian",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "garlic-naan",
+    "category": "breads-rice",
+    "name": "Garlic Naan",
+    "description": "Naan with garlic and coriander",
+    "priceInr": 125,
+    "dietary": [
+      "vegetarian",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "tandoori-roti",
+    "category": "breads-rice",
+    "name": "Tandoori Roti",
+    "description": "Whole-wheat flatbread from the tandoor",
+    "priceInr": 75,
+    "dietary": [
+      "vegan"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "laccha-paratha",
+    "category": "breads-rice",
+    "name": "Laccha Paratha",
+    "description": "Flaky layered whole-wheat bread",
+    "priceInr": 110,
+    "dietary": [
+      "vegetarian",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "missi-roti",
+    "category": "breads-rice",
+    "name": "Missi Roti",
+    "description": "Gram-flour and wheat flatbread with carom and onion",
+    "priceInr": 95,
+    "dietary": [
+      "vegan"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "steamed-basmati",
+    "category": "breads-rice",
+    "name": "Steamed Basmati Rice",
+    "description": "Aged basmati rice",
+    "priceInr": 245,
+    "dietary": [
+      "vegan",
+      "gluten-free",
+      "jain-available"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "jeera-rice",
+    "category": "breads-rice",
+    "name": "Jeera Rice",
+    "description": "Basmati rice tempered with cumin",
+    "priceInr": 275,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "lamb-dum-biryani",
+    "category": "breads-rice",
+    "name": "Lamb Dum Biryani",
+    "description": "Lamb and basmati sealed and slow-cooked with saffron",
+    "priceInr": 795,
+    "dietary": [
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 2,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "subz-dum-biryani",
+    "category": "breads-rice",
+    "name": "Subz Dum Biryani",
+    "description": "Seasonal vegetables and basmati, slow-cooked with saffron",
+    "priceInr": 595,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "gulab-jamun-rabri",
+    "category": "desserts",
+    "name": "Gulab Jamun with Rabri",
+    "description": "Warm milk dumplings in rose syrup with thickened milk",
+    "priceInr": 295,
+    "dietary": [
+      "vegetarian",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "pistachio-kulfi",
+    "category": "desserts",
+    "name": "Ember Pistachio Kulfi",
+    "description": "Slow-reduced milk ice cream with pistachio",
+    "priceInr": 275,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy",
+      "contains-nuts"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "coconut-jaggery-payasam",
+    "category": "desserts",
+    "name": "Coconut Jaggery Payasam",
+    "description": "Rice pudding with coconut milk and jaggery",
+    "priceInr": 265,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "mango-sorbet",
+    "category": "desserts",
+    "name": "Mango Sorbet",
+    "description": "Alphonso mango sorbet",
+    "priceInr": 245,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "chocolate-chilli-mousse",
+    "category": "desserts",
+    "name": "Chocolate Chilli Mousse",
+    "description": "Dark chocolate mousse with a hint of chilli",
+    "priceInr": 345,
+    "dietary": [
+      "vegetarian",
+      "egg",
+      "contains-dairy"
+    ],
+    "spiceLevel": 1,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "shahi-tukda",
+    "category": "desserts",
+    "name": "Shahi Tukda",
+    "description": "Saffron bread pudding with rabri and almonds",
+    "priceInr": 295,
+    "dietary": [
+      "vegetarian",
+      "contains-dairy",
+      "contains-nuts"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "masala-chaas",
+    "category": "drinks",
+    "name": "Masala Chaas",
+    "description": "Spiced buttermilk",
+    "priceInr": 145,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "kokum-cooler",
+    "category": "drinks",
+    "name": "Kokum Cooler",
+    "description": "Kokum, black salt and soda",
+    "priceInr": 195,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "fresh-lime-soda",
+    "category": "drinks",
+    "name": "Fresh Lime Soda",
+    "description": "Sweet, salted or mixed",
+    "priceInr": 165,
+    "dietary": [
+      "vegan",
+      "gluten-free"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "mango-lassi",
+    "category": "drinks",
+    "name": "Mango Lassi",
+    "description": "Yoghurt and Alphonso mango",
+    "priceInr": 225,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "filter-coffee",
+    "category": "drinks",
+    "name": "Filter Coffee",
+    "description": "South Indian filter coffee with milk",
+    "priceInr": 175,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  },
+  {
+    "slug": "masala-chai",
+    "category": "drinks",
+    "name": "Masala Chai",
+    "description": "Spiced milk tea",
+    "priceInr": 145,
+    "dietary": [
+      "vegetarian",
+      "gluten-free",
+      "contains-dairy"
+    ],
+    "spiceLevel": 0,
+    "branches": null,
+    "isAvailable": true
+  }
+]

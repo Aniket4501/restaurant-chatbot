@@ -1,0 +1,61 @@
+[
+  {
+    "branch": "hauz-khas",
+    "days": [
+      "sun",
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri",
+      "sat"
+    ],
+    "service": "lunch",
+    "opens": "12:00",
+    "closes": "15:30"
+  },
+  {
+    "branch": "hauz-khas",
+    "days": [
+      "sun",
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri",
+      "sat"
+    ],
+    "service": "dinner",
+    "opens": "19:00",
+    "closes": "23:00"
+  },
+  {
+    "branch": "gurugram",
+    "days": [
+      "sun",
+      "tue",
+      "wed",
+      "thu",
+      "fri",
+      "sat"
+    ],
+    "service": "lunch",
+    "opens": "12:00",
+    "closes": "15:30"
+  },
+  {
+    "branch": "gurugram",
+    "days": [
+      "sun",
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri",
+      "sat"
+    ],
+    "service": "dinner",
+    "opens": "19:00",
+    "closes": "23:00"
+  }
+]

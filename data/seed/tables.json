@@ -1,0 +1,74 @@
+[
+  {
+    "branch": "hauz-khas",
+    "label": "T1",
+    "minSeats": 1,
+    "maxSeats": 2
+  },
+  {
+    "branch": "hauz-khas",
+    "label": "T2",
+    "minSeats": 1,
+    "maxSeats": 2
+  },
+  {
+    "branch": "hauz-khas",
+    "label": "T3",
+    "minSeats": 2,
+    "maxSeats": 4
+  },
+  {
+    "branch": "hauz-khas",
+    "label": "T4",
+    "minSeats": 2,
+    "maxSeats": 4
+  },
+  {
+    "branch": "hauz-khas",
+    "label": "T5",
+    "minSeats": 4,
+    "maxSeats": 6
+  },
+  {
+    "branch": "hauz-khas",
+    "label": "T6",
+    "minSeats": 6,
+    "maxSeats": 8
+  },
+  {
+    "branch": "gurugram",
+    "label": "T1",
+    "minSeats": 1,
+    "maxSeats": 2
+  },
+  {
+    "branch": "gurugram",
+    "label": "T2",
+    "minSeats": 1,
+    "maxSeats": 2
+  },
+  {
+    "branch": "gurugram",
+    "label": "T3",
+    "minSeats": 2,
+    "maxSeats": 4
+  },
+  {
+    "branch": "gurugram",
+    "label": "T4",
+    "minSeats": 2,
+    "maxSeats": 4
+  },
+  {
+    "branch": "gurugram",
+    "label": "T5",
+    "minSeats": 4,
+    "maxSeats": 6
+  },
+  {
+    "branch": "gurugram",
+    "label": "T6",
+    "minSeats": 6,
+    "maxSeats": 8
+  }
+]
