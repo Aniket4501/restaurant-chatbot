@@ -16,16 +16,16 @@ const zone = z.string().refine((tzName) => {
   }
 }, "IANA time zone");
 /** Absolute YYYY-MM-DD, or relative "+Nd" resolved against the stored seed anchor date (D-14). */
-const seedDate = z.string().refine((s) => isLocalDate(s) || /^\+\d{1,3}d$/.test(s), "YYYY-MM-DD or +Nd");
+const seedDate = z.string().refine((s) => isLocalDate(s) || /^\+(0|[1-9]\d{0,2})d$/.test(s), "YYYY-MM-DD or +Nd (no leading zeros)");
 const service = z.enum(["lunch", "dinner"]);
 
 export const SeedSchema = z
-  .object({
+  .strictObject({
     fixtureVersion: z.number().int().optional(),
-    restaurant: z.object({ name: z.string().min(1), cuisine: z.string().min(1), about: z.string().min(1) }),
+    restaurant: z.strictObject({ name: z.string().min(1), cuisine: z.string().min(1), about: z.string().min(1) }),
     branches: z
       .array(
-        z.object({
+        z.strictObject({
           slug,
           name: z.string().min(1),
           address: z.string().min(1),
@@ -37,12 +37,12 @@ export const SeedSchema = z
       .min(1),
     hours: z.array(
       z
-        .object({ branch: slug, days: z.array(z.enum(DAY_KEYS)).min(1), service, opens: hhmm, closes: closeTime })
+        .strictObject({ branch: slug, days: z.array(z.enum(DAY_KEYS)).min(1), service, opens: hhmm, closes: closeTime })
         .refine((h) => h.closes === "24:00" || h.closes > h.opens, "closes must be after opens"),
     ),
     exceptions: z.array(
       z
-        .object({
+        .strictObject({
           branch: slug,
           date: seedDate,
           service: service.nullable(),
@@ -55,10 +55,10 @@ export const SeedSchema = z
         .refine((e) => e.service !== null || e.isClosed, "a whole-day exception can only be a closure"),
     ),
     tables: z
-      .array(z.object({ branch: slug, label: z.string().min(1), minSeats: z.number().int().min(1), maxSeats: z.number().int().min(1), isActive: z.boolean().default(true) }))
+      .array(z.strictObject({ branch: slug, label: z.string().min(1), minSeats: z.number().int().min(1), maxSeats: z.number().int().min(1), isActive: z.boolean().default(true) }))
       .min(1),
     menu: z.array(
-      z.object({
+      z.strictObject({
         slug,
         category: slug,
         name: z.string().min(1),
@@ -70,7 +70,7 @@ export const SeedSchema = z
         isAvailable: z.boolean(),
       }),
     ),
-    faq: z.array(z.object({ slug, branch: slug.nullable(), question: z.string().min(1), answer: z.string().min(1) })),
+    faq: z.array(z.strictObject({ slug, branch: slug.nullable(), question: z.string().min(1), answer: z.string().min(1) })),
   })
   .superRefine((s, ctx) => {
     const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
@@ -101,22 +101,38 @@ export const SeedSchema = z
       m.branches?.forEach((b, j) => ref(b, ["menu", i, "branches", j]));
       if (m.dietary.includes("vegan") && (m.dietary.includes("contains-dairy") || m.dietary.includes("egg"))) issue(["menu", i], "vegan item lists dairy or egg");
     });
-    // Exception rules (D-08): per (branch, date) no whole-day row beside per-service rows, no duplicate service,
-    // and per-service rows must list both services (otherwise the unlisted one is silently closed).
-    const byDate = new Map<string, { service: string | null; i: number }[]>();
-    s.exceptions.forEach((e, i) => {
-      ref(e.branch, ["exceptions", i, "branch"]);
-      const k = `${e.branch}|${e.date}`;
-      byDate.set(k, [...(byDate.get(k) ?? []), { service: e.service, i }]);
-    });
-    for (const [k, rows] of byDate) {
-      const services = rows.map((r) => r.service);
-      const at = ["exceptions", rows[0].i];
-      if (new Set(services).size !== services.length) issue(at, `duplicate exception service for ${k}`);
-      if (services.includes(null) && services.length > 1) issue(at, `whole-day exception beside per-service rows for ${k}`);
-      if (!services.includes(null) && !(services.includes("lunch") && services.includes("dinner")))
-        issue(at, `per-service exceptions for ${k} must list both lunch and dinner`);
-    }
+    s.exceptions.forEach((e, i) => ref(e.branch, ["exceptions", i, "branch"]));
+    // Weekly lunch and dinner windows must not overlap on a day (review AV-1).
+    const byDay = new Map<string, { opens: string; closes: string }[]>();
+    s.hours.forEach((h) => h.days.forEach((d) => byDay.set(`${h.branch}|${d}`, [...(byDay.get(`${h.branch}|${d}`) ?? []), h])));
+    for (const [k, ws] of byDay) if (overlaps(ws)) issue(["hours"], `lunch and dinner overlap for ${k}`);
+    // Exception rules on the dates as written; applySeed re-checks after resolving "+Nd" (review DB-1).
+    for (const p of exceptionProblems(s.exceptions.map((e) => ({ ...e, key: `${e.branch}|${e.date}` })))) issue(["exceptions"], p);
   });
+
+const minutes = (t: string) => (t === "24:00" ? 1440 : Number(t.slice(0, 2)) * 60 + Number(t.slice(3)));
+function overlaps(ws: { opens: string; closes: string }[]): boolean {
+  const sorted = [...ws].sort((a, b) => minutes(a.opens) - minutes(b.opens));
+  return sorted.some((w, i) => i > 0 && minutes(w.opens) < minutes(sorted[i - 1].closes));
+}
+
+/**
+ * D-08 exception rules per (branch, date) key: no whole-day row beside per-service rows, no duplicate service,
+ * per-service rows list both services (otherwise the unlisted one is silently closed), open windows don't overlap.
+ */
+export function exceptionProblems(rows: { key: string; service: string | null; isClosed: boolean; opens: string | null; closes: string | null }[]): string[] {
+  const byKey = new Map<string, typeof rows>();
+  for (const r of rows) byKey.set(r.key, [...(byKey.get(r.key) ?? []), r]);
+  const problems: string[] = [];
+  for (const [k, rs] of byKey) {
+    const services = rs.map((r) => r.service);
+    if (new Set(services).size !== services.length) problems.push(`duplicate exception service for ${k}`);
+    if (services.includes(null) && services.length > 1) problems.push(`whole-day exception beside per-service rows for ${k}`);
+    if (!services.includes(null) && !(services.includes("lunch") && services.includes("dinner"))) problems.push(`per-service exceptions for ${k} must list both lunch and dinner`);
+    const open = rs.filter((r) => !r.isClosed && r.opens && r.closes) as { opens: string; closes: string }[];
+    if (overlaps(open)) problems.push(`open exception windows overlap for ${k}`);
+  }
+  return problems;
+}
 
 export type SeedData = z.infer<typeof SeedSchema>;

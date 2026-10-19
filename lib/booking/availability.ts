@@ -1,6 +1,6 @@
 import { RULES } from "@/lib/config";
 import { windowsFor, type HoursException, type Service, type WeeklyHours } from "@/lib/booking/hours";
-import { addLocalDays, daysBetween, instantAtMinutes, isLocalDate, localDateOf as localDateOfInstant, minutesOf, timeLabel, timeOfMinutes, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
+import { addLocalDays, daysBetween, instantAtMinutes, isLocalDate, localDateOf as localDateOfInstant, localTimeOf as localTimeOfInstant, minutesOf, timeLabel, timeOfMinutes, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 
 // Availability engine (MASTER_PROMPT §5.5). Pure: everything it needs is in the bundle, and `now` is a
 // parameter. The booking service re-validates with the same functions inside its transaction.
@@ -47,10 +47,13 @@ export function openStarts(bundle: AvailabilityBundle, branch: BranchRow, date: 
   const earliest = now + RULES.leadMinutes * 60_000;
   const fitting = bundle.tables.filter((t) => t.branchId === branch.id && t.isActive && t.minSeats <= partySize && partySize <= t.maxSeats);
   const open: Slot[] = [];
+  const seen = new Set<number>();
   let hadCandidates = false;
   for (const w of windows) {
     for (let m = w.opensMin; m + sitting <= w.closesMin; m += RULES.slotMinutes) {
       const startsAt = instantAtMinutes(date, m, branch.timezone);
+      if (seen.has(startsAt)) continue; // overlapping windows offer each start once (review AV-1)
+      seen.add(startsAt);
       if (startsAt < earliest) continue; // step 4: lead time
       hadCandidates = true;
       const endsAt = startsAt + sitting * 60_000;
@@ -151,6 +154,15 @@ function findAlternatives(bundle: AvailabilityBundle, branch: BranchRow, q: Avai
   return out;
 }
 
+/**
+ * Alternatives for a query whose branch can't take it (review AV-2): the other active branch(es) on that date, and
+ * this branch's next 2 days only if it is active.
+ */
+export function alternativesFor(bundle: AvailabilityBundle, q: AvailabilityQuery, now: number): Slot[] {
+  const branch = bundle.branches.find((b) => b.slug === q.branch);
+  return branch ? findAlternatives(bundle, branch, q, now) : [];
+}
+
 /** True if `startsAt` is an open grid start for this query right now (used by the booking re-validation). */
 export function isOpenStart(bundle: AvailabilityBundle, branch: BranchRow, date: LocalDate, partySize: number, startsAt: number, now: number): boolean {
   return openStarts(bundle, branch, date, partySize, now).open.some((s) => s.startsAt === startsAt);
@@ -177,11 +189,13 @@ export function checkStart(bundle: AvailabilityBundle, branchSlug: string, party
   if (offset < 0 || startsAt < now + RULES.leadMinutes * 60_000) return { ok: false, reason: "lead_time" };
   if (offset > RULES.horizonDays) return { ok: false, reason: "past_horizon" };
   const sitting = RULES.sittingMinutes(partySize);
-  const minute = (startsAt - instantAtMinutes(date, 0, branch.timezone)) / 60_000;
+  // Wall-clock minute of the start, verified by a round trip so seconds, DST gaps and repeated hours can't slip in.
+  const minute = minutesOf(localTimeOfInstant(startsAt, branch.timezone));
   const windows = windowsFor(date, weekdayOf(date, branch.timezone), bundle.weekly.get(branch.id) ?? [], bundle.exceptions.get(branch.id) ?? []);
-  const within = windows.find((w) => minute >= w.opensMin && minute < w.closesMin);
-  if (!within) return { ok: false, reason: "closed" };
-  if (!Number.isInteger(minute) || (minute - within.opensMin) % RULES.slotMinutes !== 0 || minute + sitting > within.closesMin) return { ok: false, reason: "off_grid" };
+  const containing = windows.filter((w) => minute >= w.opensMin && minute < w.closesMin);
+  if (!containing.length) return { ok: false, reason: "closed" };
+  if (instantAtMinutes(date, minute, branch.timezone) !== startsAt) return { ok: false, reason: "off_grid" };
+  if (!containing.some((w) => (minute - w.opensMin) % RULES.slotMinutes === 0 && minute + sitting <= w.closesMin)) return { ok: false, reason: "off_grid" };
   const endsAt = startsAt + sitting * 60_000;
   if (!pickTable(bundle, branch.id, partySize, startsAt, endsAt)) return { ok: false, reason: "full" };
   return { ok: true, branch, date, endsAt };

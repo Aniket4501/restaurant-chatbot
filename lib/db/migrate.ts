@@ -11,20 +11,19 @@ export function migrate(db: DB, now: number, dir = MIGRATIONS_DIR): string[] {
     .readdirSync(dir)
     .filter((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))
     .sort();
-  const hasTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get();
-  const applied = new Set(
-    hasTable ? (db.prepare("SELECT version FROM schema_migrations").all() as { version: string }[]).map((r) => r.version) : [],
-  );
   const done: string[] = [];
   for (const file of files) {
     const version = file.replace(/\.sql$/, "");
-    if (applied.has(version)) continue;
     const sql = fs.readFileSync(path.join(dir, file), "utf8");
-    immediate(db, () => {
+    // The applied check runs under the write lock, so concurrent migrate() calls apply each file once (review DB-3).
+    const applied = immediate(db, () => {
+      const hasTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get();
+      if (hasTable && db.prepare("SELECT 1 FROM schema_migrations WHERE version = ?").get(version)) return false;
       db.exec(sql);
       db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(version, now);
+      return true;
     });
-    done.push(version);
+    if (applied) done.push(version);
   }
   return done;
 }

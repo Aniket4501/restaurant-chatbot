@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applySeed, findConflicts, parseSeed, readSeedDir, SeedConflictError } from "@/lib/db/seed";
+import { applySeed, findConflicts, parseSeed, readSeedDir, SeedConflictError, SeedValidationError } from "@/lib/db/seed";
 import type { SeedData } from "@/lib/db/seed-schema";
-import { assertResettable } from "@/lib/db/reset-guard";
+import { assertNotInUse, assertResettable } from "@/lib/db/reset-guard";
 import { toInstant } from "@/lib/time/tz";
 import { tempDb } from "./helpers/db";
 
@@ -132,5 +132,37 @@ describe("db:reset guard", () => {
     expect(() => assertResettable(path.join(ROOT, "data/app.db"), false, ROOT)).not.toThrow();
     expect(() => assertResettable(path.join(ROOT, "data/app.db"), true, ROOT)).toThrow(/E2E_TEST_MODE/);
     expect(() => assertResettable("/tmp/other.db", false, ROOT)).toThrow(/only resets the dev database/);
+  });
+});
+
+describe("review regressions (T-03..T-07)", () => {
+  it("DB-1: rejects a whole-day closure that resolves to the same date as per-service rows", () => {
+    const s = fixture();
+    s.exceptions = [
+      { branch: "gurugram", date: "+4d", service: null, isClosed: true, opens: null, closes: null, note: null },
+      { branch: "gurugram", date: "2026-10-20", service: "lunch", isClosed: false, opens: "12:00", closes: "15:30", note: null },
+      { branch: "gurugram", date: "2026-10-20", service: "dinner", isClosed: false, opens: "19:00", closes: "23:00", note: null },
+    ];
+    expect(() => applySeed(t.db, s, { now: NOW })).toThrow(SeedValidationError);
+    expect(count("hours_exceptions")).toBe(0);
+  });
+  it("DB-1: allows one spelling per relative date only", () => {
+    const raw = { ...fixture(), exceptions: [{ branch: "gurugram", date: "+05d", service: null, isClosed: true, opens: null, closes: null, note: null }] };
+    expect(() => parseSeed(raw)).toThrow(/no leading zeros/);
+  });
+  it("AV-1: rejects overlapping lunch and dinner hours", () => {
+    const raw = { ...fixture(), hours: [...fixture().hours, { branch: "hauz-khas", days: ["sat"], service: "lunch", opens: "12:00", closes: "19:30" }].filter((h, i, all) => !(h.branch === "hauz-khas" && h.service === "lunch" && i < all.length - 1)) };
+    expect(() => parseSeed(raw)).toThrow(/overlap/);
+  });
+  it("DB-5: rejects misspelled keys instead of silently using defaults", () => {
+    const f = fixture();
+    const raw = { ...f, branches: [{ ...f.branches[0] }, { slug: f.branches[1].slug, name: f.branches[1].name, address: f.branches[1].address, phone: f.branches[1].phone, timezone: f.branches[1].timezone, is_active: false }] };
+    expect(() => parseSeed(raw)).toThrow(/is_active/);
+  });
+  it("DB-2: refuses to reset a database another connection has open", () => {
+    expect(() => assertNotInUse(t.file)).toThrow(/in use/);
+    t.db.close();
+    expect(() => assertNotInUse(t.file)).not.toThrow();
+    expect(() => assertNotInUse(path.join(t.dir, "missing.db"))).not.toThrow();
   });
 });

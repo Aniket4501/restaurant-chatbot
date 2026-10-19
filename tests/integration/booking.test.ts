@@ -232,3 +232,57 @@ describe("cancel (BR-13)", () => {
     expect(cancelReservation(t.db, "NE-00000000", NOW)).toMatchObject({ code: "NOT_FOUND", status: 404 });
   });
 });
+
+describe("review regressions (T-03..T-07)", () => {
+  it("BI-1: a blank optional email books with email NULL and hashes like no email", () => {
+    for (const email of ["", "   "]) {
+      const r = createReservation(t.db, body({ email, phone: email ? "9800000031" : "9800000032" }), randomUUID(), NOW);
+      expect(r).toMatchObject({ status: 201 });
+    }
+    expect((t.db.prepare("SELECT count(*) AS n FROM reservations WHERE email IS NULL").get() as { n: number }).n).toBe(2);
+    expect(requestHash(CreateBodySchema.parse(body({ email: "  " })))).toBe(requestHash(CreateBodySchema.parse(body({ email: null }))));
+  });
+  it.each([["a\u0000"], ["ab\u0000cd"], ["​​"], ["Asha‮Rao"], ["12"], ["--"]])("BI-2: rejects name %j", (name) => {
+    expect(createReservation(t.db, body({ name }), randomUUID(), NOW)).toMatchObject({ code: "VALIDATION", fields: { name: expect.any(String) } });
+  });
+  it.each([["O'Brien"], ["Lí Wei"], ["आशा राव"], ["Jo"]])("BI-2: accepts name %j", (name) => {
+    expect(createReservation(t.db, body({ name }), randomUUID(), NOW)).toMatchObject({ status: 201 });
+  });
+  it.each([[9e15], [3e14], [-1e14], [0]])("BI-3: rejects startsAt %s with VALIDATION", (startsAt) => {
+    expect(createReservation(t.db, body({ startsAt }), randomUUID(), NOW)).toMatchObject({ code: "VALIDATION", fields: { startsAt: expect.any(String) } });
+  });
+  it("BI-4: finds the guest's own booking among several on a shared mobile", () => {
+    const ravi = created(createReservation(t.db, body({ name: "Ravi Rao", startsAt: at("2026-10-17", "19:00") }), randomUUID(), NOW));
+    const asha = created(createReservation(t.db, body({ name: "Asha Rao", startsAt: at("2026-10-17", "20:30") }), randomUUID(), NOW));
+    expect(createReservation(t.db, body({ name: "Asha Rao", startsAt: at("2026-10-17", "20:00") }), randomUUID(), NOW)).toMatchObject({ code: "DUPLICATE_BOOKING", existing: { ref: asha.ref } });
+    expect(createReservation(t.db, body({ name: "Ravi Rao", startsAt: at("2026-10-17", "20:00") }), randomUUID(), NOW)).toMatchObject({ code: "DUPLICATE_BOOKING", existing: { ref: ravi.ref } });
+  });
+  it("BI-5: an upper-case spelling of the same key replays the booking", () => {
+    const key = randomUUID();
+    const first = created(createReservation(t.db, body(), key, NOW));
+    const again = createReservation(t.db, body(), key.toUpperCase(), NOW);
+    expect(again).toMatchObject({ status: 200 });
+    expect(created(again).ref).toBe(first.ref);
+    expect(rows()).toBe(1);
+  });
+  it("AV-2: an inactive branch still offers the other branch's times", () => {
+    t.db.prepare("UPDATE branches SET is_active = 0 WHERE slug = 'gurugram'").run();
+    const r = createReservation(t.db, body({ branch: "gurugram" }), randomUUID(), NOW);
+    expect(r).toMatchObject({ code: "SLOT_UNAVAILABLE", reason: "branch_inactive" });
+    if ("alternatives" in r) {
+      expect(r.alternatives.length).toBeGreaterThan(0);
+      expect(r.alternatives.every((s) => s.branch === "hauz-khas")).toBe(true);
+    }
+  });
+  it("AV-3: re-validates on the branch's own calendar date when its zone differs from IST", () => {
+    const ny = { ...seed, branches: seed.branches.map((b) => (b.slug === "gurugram" ? { ...b, timezone: "America/New_York" } : b)), exceptions: [...seed.exceptions, { branch: "gurugram", date: "2026-10-20", service: null, isClosed: true, opens: null, closes: null, note: "Closed" }] };
+    const u = tempDb("booking-ny");
+    try {
+      applySeed(u.db, ny, { now: NOW });
+      const r = createReservation(u.db, body({ branch: "gurugram", startsAt: toInstant("2026-10-20", "19:00", "America/New_York") }), randomUUID(), NOW);
+      expect(r).toMatchObject({ code: "SLOT_UNAVAILABLE", reason: "closed" });
+    } finally {
+      u.cleanup();
+    }
+  });
+});

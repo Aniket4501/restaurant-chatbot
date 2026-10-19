@@ -21,7 +21,8 @@ export function loadAvailabilityData(db: DB, dates: LocalDate[]): AvailabilityBu
     weekly.set(r.branch_id, [...(weekly.get(r.branch_id) ?? []), { weekday: r.weekday, service: r.service, opens: r.opens, closes: r.closes }]);
   }
   const exceptions = new Map<number, HoursException[]>();
-  for (const r of db.prepare("SELECT branch_id, date, service, is_closed, opens, closes, note FROM hours_exceptions WHERE date BETWEEN ? AND ?").all(first, last) as {
+  // One day of margin each side: a branch in another zone may be on a neighbouring calendar date (review AV-3).
+  for (const r of db.prepare("SELECT branch_id, date, service, is_closed, opens, closes, note FROM hours_exceptions WHERE date BETWEEN ? AND ?").all(addLocalDays(first, -1, zone), addLocalDays(last, 1, zone)) as {
     branch_id: number; date: string; service: Service | null; is_closed: number; opens: string | null; closes: string | null; note: string | null;
   }[]) {
     exceptions.set(r.branch_id, [...(exceptions.get(r.branch_id) ?? []), { date: r.date, service: r.service, isClosed: r.is_closed === 1, opens: r.opens, closes: r.closes, note: r.note }]);

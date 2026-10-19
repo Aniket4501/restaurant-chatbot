@@ -1,0 +1,248 @@
+[
+ {
+  "lens": "availability",
+  "findings": [
+   {
+    "id": "AV-1",
+    "severity": "low",
+    "title": "checkStart() rejects starts the engine offers when lunch and dinner windows overlap",
+    "location": "lib/booking/availability.ts:182-184 (also lib/db/seed-schema.ts:104-119, which has no overlap check)",
+    "scenario": "Hours or exceptions give overlapping windows for one date, e.g. lunch 12:00-18:00 and dinner 16:15-23:00; parseSeed accepts this. openStarts()/getAvailability(window:'dinner') offer 16:15 and 16:45. The guest picks 16:15, and createReservation's re-validation calls checkStart(). `windows.find(...)` returns the lunch window (the first one containing minute 975), and (975-720)%30 != 0, so it returns 'off_grid'. The guest gets 409 SLOT_UNAVAILABLE for a time the engine just offered. This breaks \u00a75.6 step 2 ('re-validate with the same rules as the engine') and the intent of AC-03. With a larger overlap, openStarts also emits the same start twice (once per window).",
+    "evidence": "Code: `const within = windows.find((w) => minute >= w.opensMin && minute < w.closesMin); ... if (!Number.isInteger(minute) || (minute - within.opensMin) % RULES.slotMinutes !== 0 || minute + sitting > within.closesMin) return { ok: false, reason: \"off_grid\" };`. Probe /private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/availability/p6.ts output: `parseSeed accepts overlapping lunch 12:00-18:00 / dinner 16:15-23:00` / `dinner slots offered: 16:15,16:45,17:15,...` / `checkStart 16:15 off_grid` / `checkStart 16:45 off_grid`. Control: with non-overlapping randomized windows (p2.ts, 138,240 cases), checkStart and isOpenStart agree with 0 mismatches.",
+    "fix": "In checkStart, consider every containing window: `const containing = windows.filter(w => minute >= w.opensMin && minute < w.closesMin); if (!containing.length) return closed; if (!containing.some(w => Number.isInteger(minute) && (minute - w.opensMin) % RULES.slotMinutes === 0 && minute + sitting <= w.closesMin)) return off_grid;`. Also reject overlapping lunch/dinner windows in SeedSchema.superRefine, both per weekday for weekly hours and per date for exceptions, and dedupe starts by startsAt in openStarts."
+   },
+   {
+    "id": "AV-2",
+    "severity": "low",
+    "title": "Re-validation failure 'branch_inactive' returns no alternatives, though the other branch is open",
+    "location": "lib/booking/availability.ts:96-97 (getAvailability returns before findAlternatives); lib/booking/create.ts:184, 189-192",
+    "scenario": "Gurugram is deactivated (is_active=0, e.g. by a reseed) after the guest saw slots. The guest submits Gurugram 2026-10-17 20:00. checkStart returns 'branch_inactive', and createReservation returns 409 SLOT_UNAVAILABLE with alternatives []. freshAlternatives calls getAvailability, which fails validateQuery with branch_inactive and never computes the other-branch alternatives. Hauz Khas has 20:00 open that date. D-14 requires that every step-2 re-validation failure return fresh alternatives, and the message says 'Here are times that are open.' over an empty list.",
+    "evidence": "Code: `const v = validateQuery(bundle, q, now); if (!v.ok) return v;` and in create.ts `if (!r.ok) return [];`. Probe p5.ts output: `inactive gurugram 10-17 20:00: 409 SLOT_UNAVAILABLE branch_inactive []`. By contrast `closed (HK 10-22 20:00)` returns 11 alternatives, including gurugram 2026-10-22 19:30/20:00/20:30.",
+    "fix": "Export an alternatives entry point that takes an inactive source branch, e.g. `alternativesFor(bundle, branch, q, now)`. It computes the nearest 3 at the other active branch(es) on that date and skips the source branch's own next days. Call it from getAvailability when validateQuery fails with branch_inactive (return `{ ok:false, error, alternatives }`) or from freshAlternatives for that reason."
+   },
+   {
+    "id": "AV-3",
+    "severity": "low",
+    "title": "Booking path loads hours and exceptions by the RULES.timezone date, not the branch-zone date checkStart uses",
+    "location": "lib/booking/create.ts:96 and 190-191; lib/booking/load.ts:15-18",
+    "scenario": "A branch's timezone column holds a zone other than Asia/Kolkata (the seed schema accepts any IANA zone). Example: gurugram = America/New_York, with a whole-day closure exception on 2026-10-20. getAvailability for that date correctly reports reason 'closed'. createReservation for 2026-10-20 19:00 New York time calls loadAvailabilityData(db, [localDateOf(startsAt, RULES.timezone)]) = ['2026-10-21'], so the exception query `date BETWEEN '2026-10-21' AND '2026-10-23'` drops the 10-20 closure. checkStart then computes the branch-local date 2026-10-20 and falls back to weekly hours, and the booking is created (201) on a closed date. freshAlternatives also uses the IST date/time for the query. This is latent with the current all-IST seed (BR-01).",
+    "evidence": "Code: `const bundle = loadAvailabilityData(db, [localDateOf(body.startsAt, RULES.timezone)]);` vs checkStart `const date = localDateOfInstant(startsAt, branch.timezone);`. Probe p4.ts output: `gurugram(NY) 2026-10-20 availability: closed 0` then `create on closed NY date: 201 created 2026-10-20 19:00`.",
+    "fix": "In createReservation, read the branch's timezone first (SELECT timezone FROM branches WHERE slug = ?). Pass `localDateOf(startsAt, branchZone)` to loadAvailabilityData and use the same zone in freshAlternatives for the date and time. Alternatively, have the loader take (branch, date) pairs or widen the exception window by one day on each side, as it already does for bookings."
+   },
+   {
+    "id": "AV-4",
+    "severity": "low",
+    "title": "instantAtMinutes() adds minutes to local midnight, so slots shift by an hour on DST-transition days",
+    "location": "lib/time/tz.ts:60-63 (used by lib/booking/availability.ts:53, 100, 137, 180)",
+    "scenario": "A branch zone that observes DST, e.g. Europe/London on 2026-10-25 (clocks go back). openStarts computes the 19:00 grid start as midnight + 1140 min, which is 18:00 local. The slot carries time '19:00' but startsAt and label are 6:00 PM, and every start that day is an hour off the posted hours (America/New_York on 2026-03-08 is off the other way, at 20:00). checkStart uses the same arithmetic, so it accepts these wrong instants. This breaks D-09's rule to build branch-local times from numeric parts. It is latent while all branches are Asia/Kolkata (BR-01), and the tz test runs only change the process zone, not the branch zone.",
+    "evidence": "Code: `return new TZDate(y, m - 1, d, 0, 0, zone).getTime() + minutes * 60_000;`. Probe p3.ts output: `E Europe/London 2026-10-25 instantAtMinutes(19:00) -> 18:00 6:00 PM  toInstant -> 19:00` and `E America/New_York 2026-03-08 instantAtMinutes(19:00) -> 20:00 8:00 PM  toInstant -> 19:00`.",
+    "fix": "Build from numeric parts: `const dd = minutes === 1440 ? addLocalDays(date, 1, zone) : date; new TZDate(y', m'-1, d', Math.floor((minutes%1440)/60), minutes%60, zone).getTime()`. In checkStart, derive the minute-of-day from localTimeOf(startsAt, zone) and compare it with instantAtMinutes(date, minute) to reject non-existent wall times."
+   },
+   {
+    "id": "AV-5",
+    "severity": "low",
+    "title": "Loader throws on a malformed or empty date list and getAvailability throws on a malformed time, so the typed errors can't be returned",
+    "location": "lib/booking/load.ts:16-18; lib/booking/availability.ts:100 and 132",
+    "scenario": "The documented order (\u00a75.5) is to load the bundle, then call getAvailability, which returns `{ok:false, error:'invalid_date'}` for '2026-02-30' (asserted in tests/unit/availability.test.ts:100). With a real DB, loadAvailabilityData(db, ['2026-02-30']) first throws RangeError 'invalid local date' from addLocalDays, and loadAvailabilityData(db, []) throws 'invalid local date: undefined'. So invalid_date can never be returned on that path, and any caller passing guest input gets an unhandled exception (500). Likewise getAvailability({..., time: '8pm'}) throws RangeError from minutesOf, and AvailabilityError has no code for a bad time.",
+    "evidence": "Code: `const sorted = [...dates].sort(); const first = sorted[0]; const last = addLocalDays(sorted[sorted.length - 1], 2, zone);` and `const preferred = q.time ? instantAtMinutes(q.date, minutesOf(q.time), branch.timezone) : null;`. Probe p4.ts output: `loader invalid date THREW RangeError invalid local date: 2026-02-30`, `loader empty dates THREW RangeError invalid local date: undefined`. Probe p3.ts output: `B time 8pm THREW RangeError invalid local time: 8pm`.",
+    "fix": "In loadAvailabilityData, keep only `dates.filter(isLocalDate)` and return a bundle with no exceptions or bookings when none remain, so the engine still returns invalid_date. In validateQuery, add `if (q.time != null && !isLocalTime(q.time)) return { ok:false, error:'invalid_time' }` and add 'invalid_time' to AvailabilityError."
+   }
+  ],
+  "verdicts": [
+   {
+    "id": "AV-1",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced end to end with a temp DB (/private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-availability/v1.ts). Nothing rejects overlapping lunch/dinner windows: parseSeed accepted lunch 12:00-18:00 with dinner 16:15-23:00, and neither SeedSchema.superRefine nor the DDL checks for overlap. getAvailability(window:'dinner') offered 16:15,16:45,17:15,... yet checkStart returned off_grid for 16:15/16:45/17:15/17:45. The cause is `windows.find(...)` at availability.ts:182, which picks the lunch window. createReservation(16:15) returned 409 SLOT_UNAVAILABLE off_grid for a slot the engine had just offered. An aligned overlap also fails (lunch 12:00-18:00, dinner 16:00-23:00): dinner 17:00/17:30 are offered but rejected, and openStarts emits 2 duplicate startsAt. Control with BR-02 hours: 0 mismatches. It stays low because the shipped hours (BR-02) do not overlap; it needs misconfigured seed data. The proposed fix (check every containing window, reject overlaps in superRefine, dedupe starts) is correct."
+   },
+   {
+    "id": "AV-2",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced (/private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-availability/v2.ts). With gurugram set is_active=0, createReservation(gurugram, 2026-10-17 20:00) returned 409 SLOT_UNAVAILABLE branch_inactive with alts=0 and the message 'That time can't be booked. Here are times that are open.' At the same moment, getAvailability for hauz-khas on 2026-10-17 had 19:00-21:30 open. The cause: freshAlternatives (create.ts:189-192) calls getAvailability on the inactive branch, validateQuery returns branch_inactive at availability.ts:96-97, and `if (!r.ok) return [];` drops everything. D-14 lists branch_inactive among the reasons and says every step-2 re-validation failure returns fresh alternatives. The existing test (booking.test.ts:128-131) checks only the reason, not alternatives. Control: the 'closed' reason returned 11 alternatives, including gurugram ones. Low: the guest gets an empty list and a misleading message, but no wrong booking."
+   },
+   {
+    "id": "AV-3",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced (/private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-availability/v3.ts). parseSeed accepted gurugram timezone America/New_York (RULES.timezone is Asia/Kolkata), plus a whole-day closure on 2026-10-20. getAvailability(gurugram, 2026-10-20) returned reason=closed. But 19:00 NY that day is 2026-10-21 in IST, so create.ts:96 loaded exceptions only from 2026-10-21 (load.ts:16-18,24), checkStart fell back to weekly hours, and createReservation returned 201 created on a closed date. checkStart with a bundle loaded for the branch-local date correctly returned closed. Nothing else enforces branch zone == RULES.timezone (the seed schema accepts any IANA zone). Latent today because BR-01 fixes Asia/Kolkata for both branches, so low."
+   },
+   {
+    "id": "AV-4",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced (/private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-availability/v4.ts). instantAtMinutes (tz.ts:60-63) adds minutes to local midnight. On DST days it differs from toInstant (built from numeric parts): Europe/London 2026-10-25 by -60 min (19:00 becomes 18:00 / 6:00 PM), America/New_York 2026-03-08 by +60, 2026-11-01 by -60. Asia/Kolkata control: 0. Through the engine, a London branch with dinner 19:00-23:00 on 2026-10-25 offered time '19:00' whose actual instant and label were 18:00 / 6:00 PM, and every slot was an hour early. checkStart rejected the real 21:30 last seating as off_grid. This goes against D-09's rule to build branch-local times from numeric parts. Latent because Asia/Kolkata has no DST and BR-01 fixes the zone, so low."
+   },
+   {
+    "id": "AV-5",
+    "verdict": "invalid",
+    "severity": "low",
+    "reason": "The throws are real (v5.ts: loader ['2026-02-30'] and [] throw RangeError; getAvailability time '8pm' throws). But no caller passes unvalidated input. In the reviewed range, the only callers are create.ts:96 and :191, and they pass localDateOf/localTimeOf output, which is always a valid YYYY-MM-DD / HH:MM. The one guest-input caller, the later availability API (lib/api/availability.ts:9-15,38, added in dc936fd), validates first with Zod: `date: z.string().refine(isLocalDate)` and `time: z.string().refine(isLocalTime).optional()`. Bad input therefore gets a 400 VALIDATION before loadAvailabilityData or getAvailability runs. A grep of lib/app/scripts finds no other caller. The engine still returns invalid_date for a bundle built from a valid date (unit test availability.test.ts:100). Throwing on a malformed loader argument is a precondition violation with no reachable 500 path, so this is not a defect."
+   }
+  ]
+ },
+ {
+  "lens": "booking-integrity",
+  "findings": [
+   {
+    "id": "BI-1",
+    "severity": "medium",
+    "title": "A blank optional email (\"\" or whitespace) is rejected with 400, so a booking without an email fails if the client sends an empty string",
+    "location": "lib/booking/create.ts:34-41",
+    "scenario": "POST body {branch:'hauz-khas', startsAt:<valid slot>, partySize:4, name:'Asha Rao', phone:'98765 43210', email:'', note:null}. This is how a plain form usually sends an untouched optional field. Expected per BR-09 (email optional): 201 with email stored as NULL. Actual: 400 VALIDATION with fields.email = 'Please enter a valid email', and nothing is booked. The same happens for email '   '. The trailing `.transform((v) => v || null)` shows that '' was meant to become null, but `.pipe(z.email())` rejects it before the transform runs. The note field, which has no pipe, does map '' to null. The T-08 route passes the raw JSON straight through to createReservation, so nothing upstream converts it.",
+    "evidence": "Code: `email: z.string().trim().toLowerCase().pipe(z.email(\"Please enter a valid email\")).nullable().optional().transform((v) => v || null)`. Probe p1-validation.ts output: `email '' (blank optional field) => {\"code\":\"VALIDATION\",\"status\":400,\"fields\":{\"email\":\"Please enter a valid email\"}}`, `email '   ' => ... same`, `schema email '' parse => false`, `schema note '' parse => true`. Existing tests only ever send email: null.",
+    "fix": "Map blank to null before the email check, e.g. `email: z.preprocess((v) => (typeof v === \"string\" && v.trim() === \"\" ? null : v), z.string().trim().toLowerCase().pipe(z.email(\"Please enter a valid email\")).nullable().optional()).transform((v) => v ?? null)`. Add tests: email '' and '   ' give 201 with email NULL, and give the same request hash as email null."
+   },
+   {
+    "id": "BI-2",
+    "severity": "low",
+    "title": "Names with NUL or other control/invisible characters pass Zod: a NUL gives an unmapped CHECK error (500); a zero-width-only name is booked",
+    "location": "lib/booking/create.ts:22-25 (name schema), 116-119 (insert), 163 (unmapped throw)",
+    "scenario": "(a) name 'a\\u0000': Zod counts 2 characters, so it passes. SQLite length() stops at the first NUL and counts 1, so CHECK (length(guest_name) BETWEEN 2 AND 80) fails with SQLITE_CONSTRAINT_CHECK. mapConstraintError has no mapping for it and throws `unmapped constraint error`, so the request becomes a 500 instead of 400 VALIDATION (BR-09). No row is written. (b) name '\u200b\u200b' (two zero-width spaces) returns 201 and a confirmed row whose guest name is invisible. This name also shows up on staff's admin list.",
+    "evidence": "Probe p1-validation.ts: `name 'a\\u0000' => THROWS Error \"unmapped constraint error: SQLITE_CONSTRAINT_CHECK\"`; `name zero-width x2 => {\"status\":201,\"ref\":\"NE-MZYPF4NF\",\"guestName\":\"\u200b\u200b\"}`, with the stored row showing length(guest_name)=2. Single astral characters such as '\ud83d\ude00' are correctly rejected (Zod 4 counts code points), so only control/format characters get through.",
+    "fix": "In the name schema, before the length pipe, strip or reject `/[\\p{Cc}\\p{Cf}]/u` (control and format characters, including NUL and zero-width), then require at least two letters, e.g. `.refine((s) => (s.match(/\\p{L}/gu) ?? []).length >= 2, \"Please enter your name\")`. Optionally, have mapConstraintError turn SQLITE_CONSTRAINT_CHECK into a VALIDATION outcome instead of throwing."
+   },
+   {
+    "id": "BI-3",
+    "severity": "low",
+    "title": "startsAt has no range check: very large or very small integers throw RangeError (500) instead of 400/409",
+    "location": "lib/booking/create.ts:20 (schema), 56 (requestHash), 96 (localDateOf/loadAvailabilityData inside the transaction)",
+    "scenario": "startsAt = 9e15 is a safe integer, so Zod's int() accepts it. requestHash then calls `new Date(9e15).toISOString()`, which throws RangeError 'Invalid time value' before the transaction; the result is a 500. startsAt = 3e14 (year 11476) gets inside the transaction. There localDateOf gives '11476-08-15', which fails the 4-digit DATE_RE in tz.parts(), so RangeError 'invalid local date' is thrown, rolled back and rethrown as a 500. \u00a75.9 says bodies are Zod-validated, and this out-of-range value should get a 4xx. No row is written.",
+    "evidence": "Probe p1-validation.ts: `startsAt 9e15 (safe int, > Date max) => THROWS RangeError \"Invalid time value\"`; `startsAt 3e14 (year 11476) => THROWS RangeError \"invalid local date: 11476-08-15\"`. In contrast, startsAt 0 and -1e14 correctly return 409 SLOT_UNAVAILABLE.",
+    "fix": "Bound the schema to instants that format as 4-digit years, e.g. `startsAt: z.number().int().min(Date.UTC(2000,0,1)).max(Date.UTC(9999,11,31))`, or tighter (now \u2212 1 day \u2026 now + 32 days) with the rest left to checkStart. Add a test that 9e15 and 3e14 return 400 VALIDATION on startsAt."
+   },
+   {
+    "id": "BI-4",
+    "severity": "low",
+    "title": "J7 name match checks only the earliest overlapping booking, so a guest sharing a mobile gets the generic message for their own booking",
+    "location": "lib/booking/create.ts:105-108 (and 156-161 in mapConstraintError)",
+    "scenario": "A family shares one mobile. Ravi Rao books Hauz Khas 19:00\u201320:30 and Asha Rao books 20:30\u201322:00; these are back-to-back, which G-4 allows. Asha then submits 20:00 under the name 'Asha Rao', which overlaps both. The query `... ORDER BY starts_at LIMIT 1` returns only Ravi's row, the name does not match, and she gets `existing: null` (generic 'please call'). Per the J7 amendment, her own booking's time and ref should be shown because her name matches an existing overlapping booking. Nothing is leaked; the defect only fails to tell the legitimate guest about her own booking. mapConstraintError's copy of the query has no ORDER BY at all.",
+    "evidence": "Probe p5-j7-multi.ts: `ravi NE-ERVRCVVC asha NE-2QNW67P3` then `Asha retries 20:00 => {\"code\":\"DUPLICATE_BOOKING\",\"status\":409,...,\"existing\":null}`.",
+    "fix": "Fetch every overlapping confirmed row (`.all(...)`, ordered by starts_at) and choose `rows.find((d) => casefold(d.guest_name) === casefold(body.name))`. Return its existingView, or null when no row matches. Share one helper between the in-transaction check and mapConstraintError. Add the two-booking case to booking.test.ts."
+   },
+   {
+    "id": "BI-5",
+    "severity": "low",
+    "title": "Idempotency-Key is compared case-sensitively, so the same UUID in a different letter case is treated as a new key",
+    "location": "lib/booking/create.ts:83 (validation), 93 (viewByKey lookup), 119 (stored idempotency_key)",
+    "scenario": "Guest books with key K, and staff later cancel the booking. A retry of the identical body with K.toUpperCase() is the same UUID: RFC 9562 says UUIDs compare case-insensitively, and z.uuid() accepts both forms. The lookup misses, and a new confirmed booking is created (201) instead of the 200 replay showing 'cancelled'. If the original is still confirmed, the case-changed retry returns DUPLICATE_BOOKING instead of the 200 replay that J6/BR-11 require. This needs a client or proxy that changes the key's case, so it is unlikely in practice, but it is a G-2 gap that costs one line to fix.",
+    "evidence": "Probe p3-idem-j7.ts: `replay K after cancel => {\"status\":200,...,\"st\":\"cancelled\"}` but `K with uppercase key => {\"status\":201,\"ref\":\"NE-NSHKAR1R\",\"st\":\"confirmed\"}`; total rows 3.",
+    "fix": "Canonicalise the key once after validation (`const k = key.toLowerCase()`), and use k for viewByKey, the INSERT and mapConstraintError. Add a test that an upper-case replay of a lower-case key returns 200 with the same ref."
+   }
+  ],
+  "verdicts": [
+   {
+    "id": "BI-1",
+    "verdict": "valid",
+    "severity": "medium",
+    "reason": "Reproduced against 480c77a (create.ts is unchanged in the working tree). Probe verify-booking-integrity/v1.ts: email '' and '   ' both return {code:VALIDATION,status:400,fields:{email:'Please enter a valid email'}}. Omitting email returns 201, and note '' parses. Cause: at create.ts:34-41, `.pipe(z.email(...))` runs before `.transform((v) => v || null)`, so '' never reaches the transform. Nothing upstream fixes it: the working-tree route lib/api/reservations.ts passes body.value straight to createReservation. The only BR-09 email test (booking.test.ts:139) covers 'asha@', and every other test sends email: null. No row is written, so the failure is fail-closed. The trigger depends on the ConfirmCard, which does not exist yet; if it sends '' for an untouched field (the usual form behaviour, and note already accepts ''), the optional email becomes required for every booking. Medium is fair for a latent defect that blocks bookings. The proposed preprocess fix is correct."
+   },
+   {
+    "id": "BI-2",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced (v1.ts). Name 'a\\u0000' throws Error 'unmapped constraint error: SQLITE_CONSTRAINT_CHECK': Zod counts 2 characters, but SQLite length() stops at the NUL and gives 1, so CHECK (length(guest_name) BETWEEN 2 AND 80) at 001_init.sql:46 fails, and mapConstraintError (create.ts:163) has no mapping for it. Name '\u200b\u200b' is booked with 201 and stored as hex E2808BE2808B. Extra case: 'ab\\u0000cd' is booked and stored with an embedded NUL (SQLite length 2). The DB CHECK prevents a bad row only in the 'a\\0' case. \u00a75.6 does allow a generic 500 for unknown errors, but this input should have been a 400 VALIDATION under BR-09/\u00a75.9 Zod validation. Nothing is double-booked or leaked, so low."
+   },
+   {
+    "id": "BI-3",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced (v1.ts). The schema accepts startsAt 9e15. createReservation throws RangeError 'Invalid time value' from requestHash (create.ts:56) before the transaction. 3e14 throws 'invalid local date: 11476-08-15' and 2.6e14 throws 'invalid local date: 10209-01-27', both from localDateOf \u2192 tz parts() DATE_RE inside the transaction. 8.64e15 throws 'invalid local date: 0NaN-NaN-NaN'. On the negative side, -1e14 gives 409, but -1e15 throws 'invalid local date: 29720-04-06', so the input is unbounded on both sides. The route does no range check either. Nothing is booked, the result is a 500 rather than a 400, so low. The fix (bounding startsAt in the Zod schema) is correct."
+   },
+   {
+    "id": "BI-4",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced (v2.ts). With Ravi Rao at 19:00 and Asha Rao at 20:30 on one mobile, Asha's 20:00 attempt returns DUPLICATE_BOOKING with existing:null. Ravi's identical attempt returns his own ref (control). mapConstraintError called directly with GUEST_OVERLAP also returns existing:null, and so does the reversed-insertion-order case. Cause: `.get(...)` with `ORDER BY starts_at LIMIT 1` at create.ts:105-108, and LIMIT 1 with no ORDER BY at 157, so only one overlapping row is name-checked. The J7/D-14 text says to show the guest's own booking when the name matches. The failure is fail-safe (nothing leaks, the guest gets the generic call-the-branch text) and needs a shared phone with two back-to-back bookings, so low."
+   },
+   {
+    "id": "BI-5",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced (v2.ts). z.uuid() accepts the upper-cased key. While the original is still confirmed, an upper-case retry gets DUPLICATE_BOOKING showing the guest's own ref (G-4 prevents a double booking) instead of the 200 replay. After staff cancel, the same lower-case key correctly replays 200 'cancelled', but the upper-case key creates a new confirmed booking (201). The rows show two idempotency_key values that differ only in case. The cause is the case-sensitive TEXT lookup in viewByKey (view.ts:53), with the raw key stored at create.ts:119. The working-tree route also passes the header through unchanged. Reachability is very low: the planned client stores the key in sessionStorage and replays the exact string, and proxies do not change header-value case. Only a third-party client that changes the case could trigger it. Valid as a G-2 gap under RFC 9562's case-insensitive UUID semantics, but low."
+   }
+  ]
+ },
+ {
+  "lens": "db-seed",
+  "findings": [
+   {
+    "id": "DB-1",
+    "severity": "medium",
+    "title": "D-08 exception rules run on the raw date string before \"+Nd\" is resolved, so a whole-day closure next to per-service rows gets through and is ignored",
+    "location": "lib/db/seed-schema.ts:19 and :106-119 (byDate keyed on raw `e.date`, line 109); lib/db/seed.ts:46 and :62-64 (dates resolved and inserted with no second check); lib/booking/hours.ts:18",
+    "scenario": "The anchor is 2026-10-16 (it is stored on the first seed and reused afterwards). An operator adds a whole-day closure for Gurugram on 20 Oct as {date:\"+4d\", service:null, isClosed:true}. Gurugram already has an absolute per-service pair for {date:\"2026-10-20\", lunch open, dinner open}. The same thing happens with two spellings of one relative date (\"+5d\" next to \"+05d\"). Zod groups rows by `${branch}|${rawDate}`, so each group passes on its own. applySeed resolves both groups to the same calendar date and inserts them all. The partial unique indexes hours_exc_day and hours_exc_service allow a whole-day row beside per-service rows. windowsFor keeps only rows with `!isClosed && service`, so the closure is dropped and the day stays bookable. findConflicts uses the same windowsFor, so it does not report bookings on the day the operator meant to close. The result breaks BR-02, the D-08 loader rule and the D-14 conflict check.",
+    "evidence": "Probe p1-datekey.ts (temp DB, real data/seed with the exceptions replaced) printed `parseSeed: ACCEPTED`. The stored rows were: gurugram 2026-10-20 {service:null,is_closed:1}, {dinner,0}, {lunch,0}; hauz-khas 2026-10-21 {null,1}, {dinner,0}, {lunch,0}. Then `gurugram 2026-10-20 -> reason null slots ['12:00','12:30','13:00','19:00','19:30','20:00']`, the same for hauz-khas 2026-10-21, and `findConflicts: []` for a confirmed 20:00 booking on the closed Gurugram date. Code: `const k = `${e.branch}|${e.date}`;` (seed-schema.ts:109) and `insEx.run(branchId.get(e.branch), resolve(e.date), ...)` (seed.ts:64). Same-service duplicates across spellings only fail later, as a raw SQLITE_CONSTRAINT_UNIQUE at insert.",
+    "fix": "In applySeed, resolve every exception date first. Then rerun the three byDate checks on (branch, resolvedDate): duplicate service, whole-day beside per-service, and both services listed. Throw a validation error before any insert. Tighten the relative pattern to `^\\+(0|[1-9]\\d{0,2})d$` so a date has only one spelling. For defense in depth, add BEFORE INSERT triggers on hours_exceptions that reject a whole-day row beside per-service rows for the same (branch_id, date), in either order. Also have windowsFor return no windows when any whole-day closure row exists for the date. Add a seed test that mixes relative and absolute dates for one day."
+   },
+   {
+    "id": "DB-2",
+    "severity": "low",
+    "title": "db:reset deletes the database before validating the seed and without checking whether the DB is open",
+    "location": "scripts/db-reset.ts:12-16",
+    "scenario": "(a) A seed file has a typo that Zod rejects, e.g. a table with maxSeats 0. `npm run db:reset` first deletes data/app.db, -wal and -shm, then migrates, and only then calls parseSeed, which throws. The dev DB is left migrated but empty (0 branches), and the previous data is gone. (b) `npm run dev` is running and holds the getDb() singleton, and the operator runs db:reset. The server keeps its handle on the unlinked inode, so every booking it confirms afterwards is written to a deleted file. The server's own admin view shows the booking, but the rebuilt data/app.db does not have it. After a restart, a guest's confirmed booking is gone (G-3 / AC-02 in the demo setting), and until then the app keeps serving the old exceptions and anchor.",
+    "evidence": "Probe p5-reset.ts ran the real scripts/db-reset.ts in a child process whose cwd was a throwaway copy of the project layout, with DATABASE_PATH set to that temp data/app.db. The repo's data/app.db was never opened, and its mtime was unchanged after the probes. Output: `(a) before reset: { reservations: [ 'NE-AAAAAAA1' ], branches: 2 }`, `(a) db:reset -> EXIT 1: ZodError`, `(a) after failed reset: { reservations: [], branches: 0 }`; `(b) running app sees: [ 'NE-AAAAAAA2', 'NE-AAAAAAA3' ]`, `(b) the file on disk has: { reservations: [], branches: 2 }`. Code order: rmSync (line 13), getDb (line 14), migrate (line 15), then parseSeed(readSeedDir()) (line 16).",
+    "fix": "Call `parseSeed(readSeedDir())` before deleting anything. Before deleting, open the existing file and run `PRAGMA journal_mode = DELETE` with timeout 0. Probe p9-inuse.ts showed this throws SQLITE_BUSY while another connection is open and returns 'delete' when none is. Refuse with \"stop the app first\" on SQLITE_BUSY. Better still, build the new DB at `${path}.new` (migrate and seed), then rename it over the old one only after both checks pass."
+   },
+   {
+    "id": "DB-3",
+    "severity": "low",
+    "title": "migrate() reads the applied set outside the IMMEDIATE transaction, so concurrent runs re-apply 001 and fail",
+    "location": "lib/db/migrate.ts:14-17 (applied set read once, before any lock) and :21-26",
+    "scenario": "Two processes run migrate() on a fresh database at the same moment, e.g. `npm run db:seed` while `db:migrate` or another process that migrates on startup is running. Both read an empty applied set. One applies 001_init. The others wait on the write lock, then run 001 again and throw `table restaurant already exists`. Nothing is corrupted, because each migration is atomic, but the script exits with an error.",
+    "evidence": "Probe p2-migrate-race.ts forked 4 processes per run on a fresh temp DB, 5 runs. 14 of 20 migrate() calls failed, e.g. `run 0: ok | FAIL table restaurant already exists | FAIL table restaurant already exists | FAIL table restaurant already exists`.",
+    "fix": "Re-check inside the transaction. For each file, inside `immediate(db, () => { ... })`, first test whether schema_migrations exists and already contains `version`, and skip if so. Alternatively, wrap the whole read-and-apply loop in one IMMEDIATE transaction so the applied set is read under the write lock."
+   },
+   {
+    "id": "DB-4",
+    "severity": "low",
+    "title": "migrate() silently skips .sql files whose names don't match the pattern and still reports \"up to date\"",
+    "location": "lib/db/migrate.ts:10-13",
+    "scenario": "A later task adds `002_add-guest-index.sql` (hyphen) or `0003_more.sql` (four digits). `.filter((f) => /^\\d{3}_[a-z0-9_]+\\.sql$/.test(f))` drops these files without any message. db:migrate prints \"up to date\", and the schema change never reaches any database. For example, an index or a CHECK/trigger hardening the write path would be silently missing.",
+    "evidence": "Probe p7-migfiles.ts used a temp migrations dir containing 001_init.sql, 002_add-guest-index.sql and 0003_more.sql. Output: `applied: [ '001_init' ]`, `second run: []`, `index exists: false  table 'more' exists: false`.",
+    "fix": "Throw if any `*.sql` file in the directory does not match the pattern. Also throw on two files with the same numeric prefix, so a misnamed migration fails loudly."
+   },
+   {
+    "id": "DB-5",
+    "severity": "low",
+    "title": "Seed objects are not strict, so a misspelled flag is dropped and the default isActive=true applies",
+    "location": "lib/db/seed-schema.ts:28-35 (branches) and :58 (tables); the other seed objects are also non-strict z.object",
+    "scenario": "An operator closes the Gurugram branch with `\"is_active\": false`, or retires table T6 with `\"active\": false`. Zod 4's default z.object strips unknown keys, and `isActive: z.boolean().default(true)` fills in true. The reseed succeeds and reports no deactivations or conflicts. The branch or table stays bookable, which is the opposite of what the operator intended, and nothing flags it. That breaks the promise in the seed-schema header that the files are \"validated before anything touches the database\".",
+    "evidence": "Probe p3-unknown-keys.ts used data/seed with those typos plus an extra key on an exception. It printed `gurugram isActive after parse: true` and `hauz-khas/T6 isActive after parse: true`, and parseSeed raised no issue.",
+    "fix": "Use `z.strictObject(...)` or `.strict()` for the top-level seed object and every nested object (restaurant, branches, hours, exceptions, tables, menu, faq), so unknown keys are rejected with a path. Add a seed-validation test for a misspelled `isActive`."
+   }
+  ],
+  "verdicts": [
+   {
+    "id": "DB-1",
+    "verdict": "valid",
+    "severity": "medium",
+    "reason": "Reproduced against code extracted from 480c77a into a scratch copy, on a temp DB. Probe: /private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-db-seed/v1-datekey.ts. Case A: gurugram {date:'+4d', service:null, isClosed:true} alongside absolute {'2026-10-20', lunch open} and {'2026-10-20', dinner open}. Case B: hauz-khas '+5d' whole-day closure alongside '+05d' lunch and dinner. Output: `parseSeed: ACCEPTED`, anchor 2026-10-16, and both groups were stored on one calendar date. Gurugram 2026-10-20 had {null,1}, {dinner,0}, {lunch,0}; hauz-khas 2026-10-21 had the same three rows. getAvailability for each date returned `reason null slots ['12:00','12:30','13:00','19:00','19:30','20:00']`, and checkStart at 20:00 returned ok:true. That second result matters: create.ts re-validates with these same functions, so booking writes are accepted too, not just availability. findConflicts returned [] for a confirmed 20:00 booking on the closed Gurugram day. Nothing upstream stops this. superRefine keys on the raw string (`${e.branch}|${e.date}`, seed-schema.ts:109). The seedDate regex `/^\\+\\d{1,3}d$/` accepts leading zeros. applySeed resolves dates (seed.ts:46) and inserts them (seed.ts:64) without re-checking. The partial unique indexes hours_exc_day and hours_exc_service only cover the same-service case. windowsFor (hours.ts:18) drops the closed whole-day row. Existing tests only use one spelling per date. Case C, the same service under two spellings, is rejected but late: SQLITE_CONSTRAINT_UNIQUE at insert, rolled back, so it is not a silent failure. Medium is kept. This is the D-08 loader rule, and the only way to configure hours is to edit the seed and reseed. The operator cannot tell from the file which absolute date '+Nd' maps to, because the anchor lives only in the DB. Likelihood is low-to-moderate. The proposed fix is sound."
+   },
+   {
+    "id": "DB-2",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced with the real scripts/db-reset.ts from 480c77a. It ran in a scratch copy of the tree (cwd = scratch, DATABASE_PATH = scratch data/app.db). The repo's data/app.db mtime stayed 1792426884 before and after. Probe: /private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-db-seed/v2-reset.ts. (a) With tables[0].maxSeats=0, the run printed `before: { reservations: ['NE-AAAAAAA1'], branches: 2 }`, then `db:reset -> EXIT 1: ZodError`, then `after failed reset: { reservations: [], branches: 0 }`. The order is rmSync (line 13), then migrate (line 15), then parseSeed (line 16). (b) A connection held open across a successful reset (standing in for `npm run dev`) printed `server connection sees: ['NE-AAAAAAA2','NE-AAAAAAA3']`, while a fresh connection to the file on disk saw `{ reservations: [], branches: 2 }`. So bookings confirmed after the reset go into the unlinked inode and disappear on restart. assertResettable only checks the path and test mode, and nothing checks for open connections. Low is kept. db:reset is a dev-only tool whose purpose is to wipe data, so part (a) only leaves the DB empty instead of rebuilt. Part (b) needs the operator to reset while the server is running. No requirement says reset must refuse in that case. Fix: parse the seed before deleting, and refuse on SQLITE_BUSY or build-then-rename. The fix is reasonable."
+   },
+   {
+    "id": "DB-3",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced against the 480c77a migrate.ts. Probe: /private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-db-seed/v3-migrace.ts. It ran 4 tsx children on a fresh temp DB with a synchronized start, 3 times. Every run printed `ok [\"001_init\"] | FAIL table restaurant already exists | FAIL ... | FAIL ...`, and schema_migrations held a single 001_init row. The applied set is read at lines 14-17, outside the IMMEDIATE transaction that starts at line 23, and nothing re-checks under the lock. The impact is limited. Each migration is atomic and the DB stays consistent. Within the range, migrate is only called by the db:migrate, db:seed and db:reset CLI scripts and by per-test temp DBs (race children do not migrate). `setup` runs those scripts one after another, and the app does not migrate on startup. So the failure needs two CLI runs at once on a fresh DB, and the loser exits with a clean error. This is a real TOCTOU bug with a cheap fix (re-check inside the transaction), but it stays low."
+   },
+   {
+    "id": "DB-4",
+    "verdict": "invalid",
+    "severity": "low",
+    "reason": "The behavior is real. With 001_init.sql, 002_add-guest-index.sql and 0003_more.sql in a temp dir, the probe printed `applied: ['001_init'] second run: []` and `index exists: false table more exists: false`. Probe: /private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-db-seed/v45-mig-strict.ts. It is still not a defect in the code under review. The only migration in gate-g2m..480c77a, 001_init.sql, matches the pattern. No requirement in SPEC, MASTER_PROMPT, D-08 or ARCHITECTURE requires rejecting other filenames. The failure needs a future developer to misname a file. Any integration test for that future schema change goes through tests/integration/helpers/db.ts tempDb(), which calls migrate(), so a missing table, trigger or CHECK would fail loudly there. That leaves only a silent miss for something like an untested index. This is a hardening suggestion, not a correctness, safety, privacy or requirement defect."
+   },
+   {
+    "id": "DB-5",
+    "verdict": "valid",
+    "severity": "low",
+    "reason": "Reproduced against the 480c77a seed-schema.ts with zod 4.6.7. Probe: /private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/review-t07/verify-db-seed/v45-mig-strict.ts. Gurugram used `is_active: false` (isActive removed), hauz-khas T6 used `active: false`, and exceptions[0] had an extra key. The probe printed `DB-5 parse ACCEPTED; gurugram isActive = true T6 isActive = true`. applySeed then printed `deactivated: {\"branches\":[],\"tables\":[]}` and the DB had gurugram is_active = 1, so the branch and table stay bookable with no warning. Every object is a plain z.object, which strips unknown keys, and the isActive defaults on lines 34 and 58 fill in true. The risk is narrower than the finding suggests. A misspelled required field is rejected: renaming isClosed gave `exceptions.0.isClosed: Invalid input: expected boolean, received undefined`. So the silent cases are only the defaulted fields, branches.isActive and tables.isActive. Removing a branch or table from the seed does deactivate it correctly. The bypass still contradicts the header promise that the seed is \"Validated before anything touches the database\" and can leave a branch bookable against the operator's intent, so it stays low. The fix (strictObject everywhere, plus a test for a misspelled isActive) is correct."
+   }
+  ]
+ }
+]

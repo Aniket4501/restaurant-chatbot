@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DB } from "@/lib/db/client";
 import { immediate } from "@/lib/db/tx";
-import { SeedSchema, type SeedData } from "@/lib/db/seed-schema";
+import { exceptionProblems, SeedSchema, type SeedData } from "@/lib/db/seed-schema";
 import { windowsFor, type HoursException, type Service, type WeeklyHours } from "@/lib/booking/hours";
 import { addLocalDays, DAY_KEYS, instantAtMinutes, localDateOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 
@@ -28,6 +28,13 @@ export class SeedConflictError extends Error {
   }
 }
 
+export class SeedValidationError extends Error {
+  constructor(readonly problems: string[]) {
+    super(`seed rejected after resolving relative dates: ${problems.join("; ")}`);
+    this.name = "SeedValidationError";
+  }
+}
+
 export type SeedReport = { anchorDate: LocalDate; counts: Record<string, number>; deactivated: { branches: string[]; tables: string[] }; conflicts: SeedConflict[] };
 
 /**
@@ -44,6 +51,9 @@ export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptCon
     const anchorDate = anchorRow?.value ?? todayLocal(opts.now, zone);
     if (!anchorRow) db.prepare("INSERT INTO app_meta (key, value) VALUES ('seed_anchor_date', ?)").run(anchorDate);
     const resolve = (d: string): LocalDate => (d.startsWith("+") ? addLocalDays(anchorDate, Number(d.slice(1, -1)), zone) : d);
+    // Re-check the D-08 exception rules on the resolved dates: "+4d" and "2026-10-20" may be the same day (review DB-1).
+    const problems = exceptionProblems(seed.exceptions.map((e) => ({ ...e, key: `${e.branch}|${resolve(e.date)}` })));
+    if (problems.length) throw new SeedValidationError(problems);
 
     db.prepare("INSERT INTO restaurant (id, name, cuisine, about) VALUES (1, @name, @cuisine, @about) ON CONFLICT(id) DO UPDATE SET name = excluded.name, cuisine = excluded.cuisine, about = excluded.about").run(seed.restaurant);
 

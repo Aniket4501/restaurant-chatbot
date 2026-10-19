@@ -112,3 +112,23 @@ describe("test:unit:tz harness", () => {
     if (process.env.TZ === "America/New_York") expect(offset).toBe(240);
   });
 });
+
+describe("DST-safe instants (review AV-4)", () => {
+  it.each([
+    ["Europe/London", "2026-10-25"],
+    ["America/New_York", "2026-03-08"],
+    ["America/New_York", "2026-11-01"],
+  ])("builds %s %s wall-clock times from parts, not midnight + minutes", (zone, date) => {
+    for (const time of ["12:00", "19:00", "23:30"]) {
+      const at = instantAtMinutes(date, minutesOf(time), zone);
+      expect(at).toBe(toInstant(date, time, zone));
+      expect(localTimeOf(at, zone)).toBe(time);
+      expect(localDateOf(at, zone)).toBe(date);
+    }
+  });
+  it("rejects minutes outside 0–1440", () => {
+    expect(() => instantAtMinutes("2026-10-17", 1441, IST)).toThrow(RangeError);
+    expect(() => instantAtMinutes("2026-10-17", -1, IST)).toThrow(RangeError);
+    expect(() => instantAtMinutes("2026-10-17", 1.5, IST)).toThrow(RangeError);
+  });
+});

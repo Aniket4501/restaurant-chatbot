@@ -60,4 +60,32 @@ Totals: verdicts {'valid': 41, 'invalid': 4, 'uncertain': 4}; severity after ver
 | T13 | low (low) | valid | Missing or stale document embeddings are not detected, so the retrieval mode is misreported and deleted facts can still be retrieved | `docs/ARCHITECTURE.md:47` | Fixed in D-13 (index coverage rule; stale rows deleted; kb:index exits non-zero) |
 | T14 | low (low) | valid | No rule picks the branch phone for the fallback and manage-booking replies when the guest has not named a branch | `docs/ARCHITECTURE.md:79` | Fixed in D-15 (both branches listed when no single branch is known) |
 
+
+## Phase 4: implementation review of T-03…T-07 (2026-10-19)
+
+15 findings: 13 valid (all fixed, with regression tests), 2 invalid. 2 medium, 13 low, no critical or high. One more defect was found by our own testing.
+
+**Method.** Workflow `wf_40517700-616` ran three read-only lens reviewers over commits `gate-g2m..480c77a`: availability engine (AV), booking integrity (BI), and DB layer and seed loader (DB). They ran probes against temp databases, and each lens had a skeptic who tried to refute every finding. Raw results: `docs/research/2026-10-19-phase4-review-t03-t07.json`.
+
+**Regression evidence.** 30 regression tests were added first. With the `lib/` and `scripts/` fixes stashed, all 30 fail; with the fixes, the full suite passes (276 tests, 3 consecutive runs).
+
+| ID | Severity | Verdict | Finding | Location | Disposition |
+| --- | --- | --- | --- | --- | --- |
+| BI-1 | medium | valid | A blank optional email ("" or whitespace) is rejected with 400, so a booking without an email fails if the client sends an empty string | `lib/booking/create.ts:34-41` | Fixed: a blank optional email is treated as no email (and hashes the same) |
+| DB-1 | medium | valid | D-08 exception rules run on the raw date string before "+Nd" is resolved, so a whole-day closure next to per-service rows gets through and is ignored | `lib/db/seed-schema.ts:19` | Fixed: exception rules re-run on resolved dates in applySeed (SeedValidationError); one spelling per relative date |
+| AV-1 | low | valid | checkStart() rejects starts the engine offers when lunch and dinner windows overlap | `lib/booking/availability.ts:182-184` | Fixed: checkStart() considers every containing window and round-trips the wall-clock minute; openStarts() dedupes starts; the seed rejects overlapping lunch/dinner windows (weekly and per exception date) |
+| AV-2 | low | valid | Re-validation failure 'branch_inactive' returns no alternatives, though the other branch is open | `lib/booking/availability.ts:96-97` | Fixed: alternativesFor() offers the other active branch when the requested branch is inactive |
+| AV-3 | low | valid | Booking path loads hours and exceptions by the RULES.timezone date, not the branch-zone date checkStart uses | `lib/booking/create.ts:96` | Fixed: the booking path uses the branch's own zone for its date; the loader widens the exception window one day each side |
+| AV-4 | low | valid | instantAtMinutes() adds minutes to local midnight, so slots shift by an hour on DST-transition days | `lib/time/tz.ts:60-63` | Fixed: instantAtMinutes() builds instants from numeric parts (DST-safe); toInstant() routes through it |
+| AV-5 | low | invalid | Loader throws on a malformed or empty date list and getAvailability throws on a malformed time, so the typed errors can't be returned | `lib/booking/load.ts:16-18;` | Not acted on: no caller passes unvalidated dates or times (the API validates with Zod first) |
+| BI-2 | low | valid | Names with NUL or other control/invisible characters pass Zod: a NUL gives an unmapped CHECK error (500); a zero-width-only name is booked | `lib/booking/create.ts:22-25` | Fixed: names with control or format characters are rejected; at least 2 letters required |
+| BI-3 | low | valid | startsAt has no range check: very large or very small integers throw RangeError (500) instead of 400/409 | `lib/booking/create.ts:20` | Fixed: startsAt bounded to 2000–2100 (VALIDATION outside) |
+| BI-4 | low | valid | J7 name match checks only the earliest overlapping booking, so a guest sharing a mobile gets the generic message for their own booking | `lib/booking/create.ts:105-108` | Fixed: the J7 name match checks every overlapping booking on the mobile |
+| BI-5 | low | valid | Idempotency-Key is compared case-sensitively, so the same UUID in a different letter case is treated as a new key | `lib/booking/create.ts:83` | Fixed: Idempotency-Key is lower-cased before use |
+| DB-2 | low | valid | db:reset deletes the database before validating the seed and without checking whether the DB is open | `scripts/db-reset.ts:12-16` | Fixed: db:reset validates the seed and refuses an in-use database before deleting |
+| DB-3 | low | valid | migrate() reads the applied set outside the IMMEDIATE transaction, so concurrent runs re-apply 001 and fail | `lib/db/migrate.ts:14-17` | Fixed: migrate() checks applied versions inside its IMMEDIATE transaction |
+| DB-4 | low | invalid | migrate() silently skips .sql files whose names don't match the pattern and still reports "up to date" | `lib/db/migrate.ts:10-13` | Not acted on: skipping files that don't match NNN_name.sql is the intended convention |
+| DB-5 | low | valid | Seed objects are not strict, so a misspelled flag is dropped and the default isActive=true applies | `lib/db/seed-schema.ts:28-35` | Fixed: every seed object is strict, so unknown keys are errors |
+| OWN-1 | low | valid | Concurrent `openDb()` on a NEW file: the WAL switch returns SQLITE_BUSY at once (no busy handler), 15 of 160 opens in a 4-process probe. Found when the concurrent-migrate test flaked once in a full run | `lib/db/client.ts` | Fixed: `enableWal()` reads the persistent mode first, then retries the switch with back-off up to the busy timeout. Regression test `concurrent-open.test.ts` (10 runs × 4 processes) fails 3/4 opens without the fix. Production creates the DB once with `db:migrate`, so the impact was limited to concurrent first opens |
+
 Phase 8 adds its own section below this one (MASTER_PROMPT §8 Phase 8 step 4).

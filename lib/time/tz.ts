@@ -49,17 +49,20 @@ export function timeOfMinutes(min: number): LocalTime {
   return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
 }
 
-/** The instant of a branch-local date and time. */
-export function toInstant(date: LocalDate, time: LocalTime, zone: string): number {
-  const [y, m, d] = parts(date);
-  const min = minutesOf(time);
-  return new TZDate(y, m - 1, d, Math.floor(min / 60), min % 60, zone).getTime();
+/** The instant of a branch-local date and time ("24:00" = the next day's midnight). */
+export function toInstant(date: LocalDate, time: string, zone: string): number {
+  return instantAtMinutes(date, minutesOf(time), zone);
 }
 
-/** The instant at a number of minutes after local midnight (handles 24:00 = next midnight). */
+/**
+ * The instant of a branch-local wall-clock time given as minutes after midnight (0–1440). Built from numeric parts,
+ * not by adding minutes to midnight, so DST transition days in zones that have them stay correct (review AV-4).
+ */
 export function instantAtMinutes(date: LocalDate, minutes: number, zone: string): number {
-  const [y, m, d] = parts(date);
-  return new TZDate(y, m - 1, d, 0, 0, zone).getTime() + minutes * 60_000;
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new RangeError(`minutes out of range: ${minutes}`);
+  const [y, m, d] = parts(minutes === 1440 ? addLocalDays(date, 1, zone) : date);
+  const min = minutes % 1440;
+  return new TZDate(y, m - 1, d, Math.floor(min / 60), min % 60, zone).getTime();
 }
 
 export function localDateOf(instant: number, zone: string): LocalDate {

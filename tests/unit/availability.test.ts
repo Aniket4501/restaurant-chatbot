@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getAvailability, isOpenStart, openStarts, pickTable, type AvailabilityResult, type Slot } from "@/lib/booking/availability";
+import { alternativesFor, checkStart, getAvailability, isOpenStart, openStarts, pickTable, type AvailabilityResult, type Slot } from "@/lib/booking/availability";
 import { toInstant } from "@/lib/time/tz";
 import { bookingAt, fixtureBundle } from "../helpers/bundle";
 
@@ -178,5 +178,34 @@ describe("table choice (BR-10)", () => {
     expect(pickTable(b, 1, 2, start, end)?.label).toBe("T3");
     b.bookings.push(bookingAt(b, "hauz-khas", "T3", "2026-10-17", "19:00", 2), bookingAt(b, "hauz-khas", "T4", "2026-10-17", "19:00", 2));
     expect(pickTable(b, 1, 2, start, end)).toBeNull(); // T5 (4–6) and T6 (6–8) don't fit 2
+  });
+});
+
+describe("review regressions (T-03..T-07)", () => {
+  it("AV-1: overlapping windows offer each start once, and every offered start re-validates", () => {
+    const b = fixtureBundle();
+    b.weekly.set(1, [
+      { weekday: 6, service: "lunch", opens: "12:00", closes: "18:00" },
+      { weekday: 6, service: "dinner", opens: "16:15", closes: "23:00" },
+    ]);
+    const open = openStarts(b, b.branches[0], "2026-10-17", 2, NOW).open;
+    expect(new Set(open.map((s) => s.startsAt)).size).toBe(open.length);
+    for (const s of open) expect(checkStart(b, "hauz-khas", 2, s.startsAt, NOW)).toMatchObject({ ok: true });
+    expect(checkStart(b, "hauz-khas", 2, at("2026-10-17", "16:15"), NOW)).toMatchObject({ ok: true });
+  });
+  it("AV-4: a branch in a DST zone gets correct slot instants on the transition day", () => {
+    const b = fixtureBundle();
+    b.branches[0] = { ...b.branches[0], timezone: "Europe/London" };
+    const r = getAvailability({ branch: "hauz-khas", date: "2026-10-25", partySize: 2, window: "dinner" }, b, NOW);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.slots[0]).toMatchObject({ time: "19:00", label: "7:00 PM", startsAt: toInstant("2026-10-25", "19:00", "Europe/London") });
+    expect(checkStart(b, "hauz-khas", 2, r.slots[0].startsAt, NOW)).toMatchObject({ ok: true });
+    expect(checkStart(b, "hauz-khas", 2, r.slots[0].startsAt + 30_000, NOW)).toMatchObject({ ok: false, reason: "off_grid" });
+  });
+  it("AV-2: alternativesFor() gives the other branch's times when a branch is inactive", () => {
+    const b = fixtureBundle({ inactiveBranches: ["gurugram"] });
+    const alts = alternativesFor(b, { branch: "gurugram", date: "2026-10-17", partySize: 2, time: "20:00" }, NOW);
+    expect(alts.length).toBe(3);
+    expect(alts.every((a) => a.branch === "hauz-khas" && a.date === "2026-10-17")).toBe(true);
   });
 });
