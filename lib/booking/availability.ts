@@ -1,6 +1,6 @@
 import { RULES } from "@/lib/config";
 import { windowsFor, type HoursException, type Service, type WeeklyHours } from "@/lib/booking/hours";
-import { addLocalDays, daysBetween, instantAtMinutes, isLocalDate, minutesOf, timeLabel, timeOfMinutes, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
+import { addLocalDays, daysBetween, instantAtMinutes, isLocalDate, localDateOf as localDateOfInstant, minutesOf, timeLabel, timeOfMinutes, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 
 // Availability engine (MASTER_PROMPT §5.5). Pure: everything it needs is in the bundle, and `now` is a
 // parameter. The booking service re-validates with the same functions inside its transaction.
@@ -154,4 +154,35 @@ function findAlternatives(bundle: AvailabilityBundle, branch: BranchRow, q: Avai
 /** True if `startsAt` is an open grid start for this query right now (used by the booking re-validation). */
 export function isOpenStart(bundle: AvailabilityBundle, branch: BranchRow, date: LocalDate, partySize: number, startsAt: number, now: number): boolean {
   return openStarts(bundle, branch, date, partySize, now).open.some((s) => s.startsAt === startsAt);
+}
+
+export type StartCheck =
+  | { ok: true; branch: BranchRow; date: LocalDate; endsAt: number }
+  | { ok: false; reason: "unknown_branch" | "branch_inactive" | "party_size" | "lead_time" | "past_horizon" | "closed" | "off_grid" | "full" };
+
+/**
+ * Re-validate one requested start with the engine's rules (§5.6 step 2). It says why a start can't be booked:
+ * - `lead_time`: in the past or within 60 minutes;
+ * - `closed`: the branch isn't serving at that time;
+ * - `off_grid`: not on the 30-minute grid, or past the last seating;
+ * - `full`: no free fitting table.
+ */
+export function checkStart(bundle: AvailabilityBundle, branchSlug: string, partySize: number, startsAt: number, now: number): StartCheck {
+  const branch = bundle.branches.find((b) => b.slug === branchSlug);
+  if (!branch) return { ok: false, reason: "unknown_branch" };
+  if (!branch.isActive) return { ok: false, reason: "branch_inactive" };
+  if (!Number.isInteger(partySize) || partySize < RULES.onlinePartyMin || partySize > RULES.onlinePartyMax) return { ok: false, reason: "party_size" };
+  const date = localDateOfInstant(startsAt, branch.timezone);
+  const offset = daysBetween(todayLocal(now, branch.timezone), date);
+  if (offset < 0 || startsAt < now + RULES.leadMinutes * 60_000) return { ok: false, reason: "lead_time" };
+  if (offset > RULES.horizonDays) return { ok: false, reason: "past_horizon" };
+  const sitting = RULES.sittingMinutes(partySize);
+  const minute = (startsAt - instantAtMinutes(date, 0, branch.timezone)) / 60_000;
+  const windows = windowsFor(date, weekdayOf(date, branch.timezone), bundle.weekly.get(branch.id) ?? [], bundle.exceptions.get(branch.id) ?? []);
+  const within = windows.find((w) => minute >= w.opensMin && minute < w.closesMin);
+  if (!within) return { ok: false, reason: "closed" };
+  if (!Number.isInteger(minute) || (minute - within.opensMin) % RULES.slotMinutes !== 0 || minute + sitting > within.closesMin) return { ok: false, reason: "off_grid" };
+  const endsAt = startsAt + sitting * 60_000;
+  if (!pickTable(bundle, branch.id, partySize, startsAt, endsAt)) return { ok: false, reason: "full" };
+  return { ok: true, branch, date, endsAt };
 }

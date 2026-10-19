@@ -12,9 +12,9 @@ export type DB = Database.Database;
  * - foreign keys on (per connection)
  * - synchronous=FULL, so a commit survives power loss; WAL would otherwise default to NORMAL after reopen
  */
-export function openDb(file: string): DB {
+export function openDb(file: string, opts: { timeoutMs?: number } = {}): DB {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new Database(file, { timeout: 5000 });
+  const db = new Database(file, { timeout: opts.timeoutMs ?? 5000 });
   const mode = db.pragma("journal_mode = WAL", { simple: true });
   if (file !== ":memory:" && mode !== "wal") {
     db.close();
