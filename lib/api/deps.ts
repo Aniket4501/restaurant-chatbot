@@ -12,7 +12,9 @@ export type ApiDeps = {
   now: () => number;
   config: () => AppConfig;
   fetch: typeof fetch;
-  limits: { createsPerPhone: Limiter; createsGlobal: Limiter };
+  /** Where admin secrets are read from (D-16); process.env in production. */
+  adminEnv: () => Record<string, string | undefined>;
+  limits: { createsPerPhone: Limiter; createsGlobal: Limiter; adminLogin: Limiter };
 };
 
 let shared: ApiDeps | null = null;
@@ -24,7 +26,9 @@ export function defaultDeps(): ApiDeps {
       now: () => getNow(),
       config: getConfig,
       fetch: (...a) => fetch(...a),
+      adminEnv: () => process.env,
       limits: {
+        adminLogin: createLimiter({ limit: getConfig().test?.adminLoginPerMin ?? LIMITS.adminLoginPerMin, windowMs: 60_000 }),
         createsPerPhone: createLimiter({ limit: testCreates() ?? LIMITS.createsPerMinPerPhone, windowMs: 60_000 }),
         createsGlobal: createLimiter({ limit: (testCreates() ?? 0) * 6 || LIMITS.createsPerMinGlobal, windowMs: 60_000 }),
       },

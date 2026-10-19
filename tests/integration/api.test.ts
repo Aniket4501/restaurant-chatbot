@@ -29,7 +29,8 @@ beforeEach(() => {
     now: () => NOW,
     config: () => loadConfig({ DATABASE_PATH: path.join(os.tmpdir(), "x.db") }),
     fetch: (...a) => fetchImpl(...a),
-    limits: { createsPerPhone: createLimiter({ limit: 5, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 30, windowMs: 60_000 }) },
+    adminEnv: () => ({}),
+    limits: { createsPerPhone: createLimiter({ limit: 5, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 30, windowMs: 60_000 }), adminLogin: createLimiter({ limit: 5, windowMs: 60_000 }) },
   };
 });
 afterEach(() => t.cleanup());

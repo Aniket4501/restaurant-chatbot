@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 
 // D-12: app code never reads the clock directly; only lib/time may. Booking logic takes `now` as input.
 const ROOT = path.resolve(__dirname, "../..");
-const SCANNED = ["app", "lib", "components"];
+const SCANNED = ["app", "lib", "components", "proxy.ts"];
 const ALLOWED = [path.join("lib", "time") + path.sep];
 const CLOCK = /\bDate\.now\s*\(|\bnew Date\s*\(\s*\)/;
 
 function files(dir: string): string[] {
   const abs = path.join(ROOT, dir);
   if (!fs.existsSync(abs)) return [];
+  if (fs.statSync(abs).isFile()) return [dir];
   return fs.readdirSync(abs, { withFileTypes: true }).flatMap((d) => {
     const rel = path.join(dir, d.name);
     if (d.isDirectory()) return files(rel);
