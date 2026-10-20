@@ -9,6 +9,7 @@
 //                                [--only B01,F03] [--no-ab] [--no-edge] [--no-all-facts] [--skip-chat] [--out evals/results]
 //                                [--prompt v1|v2] [--sets chat,heldout] [--conditions retrieval/tuned,all-facts/tuned]
 //   node scripts/model-probe.mjs --dump-facts > evals/fixtures/probe-facts.v2.json   (facts only, no model calls)
+//   node scripts/model-probe.mjs --dump-prompt > evals/fixtures/probe-prompt.v2.json (one sample prompt, no model calls)
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -224,6 +225,14 @@ function userPrompt({ guest, draft, history, retrieved, nowMs }) {
   parts.push(`Conversation so far:\n${hist || '(none)'}`);
   parts.push(`<guest_message>${guest}</guest_message>`);
   return parts.join('\n\n');
+}
+
+// --dump-prompt prints the v2 retrieval-layout prompt for one fixed sample turn and exits before any model call:
+// the reference that lib/llm/prompt.ts is diffed against (T-11). Writes nothing.
+if (flag('dump-prompt')) {
+  const sample = { guest: 'is the dal vegan?', draft: null, history: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'Hello! How can I help?' }], retrieved: ['menu:dal-ember', 'faq:vegan-options'], nowMs: NOW_MS };
+  process.stdout.write(`${JSON.stringify({ promptVersion: PROMPT, now: PROBE.now, sample, system: systemPrompt('retrieval', SCHEMAS.base), user: userPrompt(sample) }, null, 2)}\n`);
+  process.exit(0);
 }
 
 // ---------- minimal JSON Schema validator (subset used by TurnSchema) ----------
