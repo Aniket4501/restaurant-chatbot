@@ -2,6 +2,9 @@ import type { AppConfig } from "@/lib/config";
 import { ModelError, type ModelClient } from "@/lib/llm/client";
 import { fakeModel, loadFakeScript } from "@/lib/llm/fake";
 
+/** False until T-18 wires lib/llm/ollama.ts; `npm run eval` (live) refuses to run while false. */
+export const OLLAMA_CHAT_READY = false;
+
 /**
  * The configured chat model. `fake` replays FAKE_SCRIPT (honoured only in test mode, D-12) and otherwise answers
  * "unclear". `ollama` is wired in T-18 (lib/llm/ollama.ts); until then every call fails as MODEL_UNAVAILABLE, so the

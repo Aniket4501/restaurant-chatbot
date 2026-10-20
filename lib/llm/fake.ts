@@ -45,12 +45,27 @@ export function loadFakeScript(file: string): FakeScript {
   return JSON.parse(fs.readFileSync(file, "utf8")) as FakeScript;
 }
 
-export function fakeModel(opts: { script?: FakeScript; model?: string } = {}): ModelClient {
+/** Replies in call order, one per model call including retries (the eval case `modelScript`, §6.3). */
+export function sequenceModel(replies: FakeReply[], opts: { model?: string } = {}): ModelClient & { remaining: () => number } {
+  const queue = [...replies];
+  const inner = fakeModel({ model: opts.model ?? "fake-sequence" });
+  return {
+    provider: "fake",
+    model: opts.model ?? "fake-sequence",
+    remaining: () => queue.length,
+    async chat(req) {
+      if (!queue.length) throw new Error("fake model: modelScript has no reply left for this call");
+      return inner.chat({ ...req, messages: req.messages }, queue.shift());
+    },
+  };
+}
+
+export function fakeModel(opts: { script?: FakeScript; model?: string } = {}): ModelClient & { chat(req: ModelRequest, forced?: FakeReply): Promise<RawEnvelope> } {
   const script = opts.script ?? {};
   return {
     provider: "fake",
     model: opts.model ?? "fake-scripted",
-    async chat(req) {
+    async chat(req: ModelRequest, forced?: FakeReply) {
       const promptChars = req.messages.reduce((n, m) => n + m.content.length, 0);
       const envelope = (over: Partial<RawEnvelope>): RawEnvelope => ({
         status: 200,
@@ -98,6 +113,7 @@ export function fakeModel(opts: { script?: FakeScript; model?: string } = {}): M
       };
       const reply = (r: FakeReply): RawEnvelope => (typeof r === "string" ? directive(r) : "raw" in r ? envelope(r.raw) : ofTurn(r));
 
+      if (forced !== undefined) return reply(forced);
       const guest = guestTextOf(req);
       if (/[<‹]{2}DOWN[>›]{2}/.test(guest)) return directive("#fake:down");
       const inline = DIRECTIVES.find((d) => guest.includes(d));

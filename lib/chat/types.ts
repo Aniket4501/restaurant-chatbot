@@ -99,7 +99,20 @@ export type Block =
       sittingMinutes: number;
     }
   | { type: "info"; factIds: string[]; items: { id: string; text: string }[] }
-  | { type: "notice"; tone: "info" | "warning"; text: string };
+  | { type: "notice"; tone: "info" | "warning"; text: string }
+  /** Added by the client, and only from a 201/200 reservation response (BR-12, §5.7). Never sent by /api/chat. */
+  | {
+      type: "confirmation";
+      ref: string;
+      status: "confirmed" | "cancelled";
+      branchName: string;
+      address: string;
+      phone: string;
+      dateLabel: string;
+      timeLabel: string;
+      partySize: number;
+      guestName: string;
+    };
 
 export type Outcome =
   | "faq_answer"
@@ -131,7 +144,10 @@ export type TraceEntry =
   | { action: "pending_confirm" }
   | { action: "degraded"; code: string }
   | { action: "rate_limited" }
-  | { action: "metrics_write_failed" };
+  | { action: "metrics_write_failed" }
+  | { action: "availability_error" }
+  /** Recorded by the eval runner for {submit} turns (§5.7). */
+  | { action: "create_reservation"; result: { status: number; code: string | null; ref: string | null } };
 
 export type TurnReply = {
   status: "ok" | "rate_limited";

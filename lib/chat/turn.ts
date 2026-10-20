@@ -39,6 +39,8 @@ export type TurnDeps = {
   modelTimeoutMs?: number;
   /** Test trace (D-12): receives the masked prompt of each model turn. */
   onPrompt?: (p: { system: string; user: string }) => void;
+  /** Availability reads; the eval runner injects a failing one for backend-failure cases (§6.2 #16). */
+  loadBundle?: (db: DB, dates: LocalDate[]) => AvailabilityBundle;
 };
 
 /** Pre-call prompt budget in characters (D-15): the token budget at the ≈2.9 characters per token the probe measured. */
@@ -102,7 +104,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     trace,
     bundle: (dates: LocalDate[]) => {
       const key = [...dates].sort().join(",");
-      if (!bundles.has(key)) bundles.set(key, loadAvailabilityData(deps.db, dates));
+      if (!bundles.has(key)) bundles.set(key, (deps.loadBundle ?? loadAvailabilityData)(deps.db, dates));
       return bundles.get(key)!;
     },
   };

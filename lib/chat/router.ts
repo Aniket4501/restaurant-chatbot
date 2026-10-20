@@ -132,9 +132,26 @@ export function nextStep(merge: Pick<MergeResult, "draft" | "issues" | "ambiguit
   return availabilityStep(draft, ctx);
 }
 
+/** Availability couldn't be read (§6.2 #16): say so, show no times, and offer a retry chip. Never invents slots. */
+function couldntCheck(draft: Draft, ctx: FlowCtx): Step {
+  ctx.trace.push({ action: "availability_error" });
+  const retry: Chip[] = draft.partySize !== null ? [{ label: "Try again", action: { type: "set_field", field: "partySize", value: draft.partySize } }] : [];
+  return { text: T.couldntCheck, blocks: [{ type: "notice", tone: "warning", text: T.couldntCheck }, ...(retry.length ? [{ type: "quick_replies" as const, chips: retry }] : [])], draft: { ...draft, selected: null }, outcome: "slots" };
+}
+
+function loadBundle(ctx: FlowCtx, dates: LocalDate[]): AvailabilityBundle | null {
+  try {
+    return ctx.bundle(dates);
+  } catch {
+    return null;
+  }
+}
+
 function availabilityStep(draft: Draft, ctx: FlowCtx, lead?: string): Step {
   const q = { branch: draft.branch!, date: draft.date!, partySize: draft.partySize!, time: draft.time, window: draft.timeWindow };
-  const r = getAvailability(q, ctx.bundle([q.date]), ctx.now);
+  const bundle = loadBundle(ctx, [q.date]);
+  if (!bundle) return couldntCheck(draft, ctx);
+  const r = getAvailability(q, bundle, ctx.now);
   const args = { branch: q.branch, date: q.date, partySize: q.partySize, time: q.time, window: q.window };
   if (!r.ok) {
     ctx.trace.push({ action: "check_availability", args, result: r.error, slots: 0, alternatives: 0 });
@@ -190,7 +207,9 @@ function availabilityStep(draft: Draft, ctx: FlowCtx, lead?: string): Step {
 export function handleAction(action: Action, draft: Draft, ctx: FlowCtx): Step {
   if (action.type === "set_field") return nextStep(applySetField(draft, action.field, action.value, ctx), ctx);
   if (draft.partySize === null) return ask("partySize", draft, ctx);
-  const check = checkStart(ctx.bundle([localDateOf(action.startsAt, ctx.zone)]), action.branch, draft.partySize, action.startsAt, ctx.now);
+  const bundle = loadBundle(ctx, [localDateOf(action.startsAt, ctx.zone)]);
+  if (!bundle) return couldntCheck(draft, ctx);
+  const check = checkStart(bundle, action.branch, draft.partySize, action.startsAt, ctx.now);
   const b = ctx.branches.find((x) => x.slug === action.branch);
   if (!check.ok || !b) {
     ctx.trace.push({ action: "check_availability", args: { branch: action.branch, date: localDateOf(action.startsAt, ctx.zone), partySize: draft.partySize, time: null, window: null }, result: check.ok ? "unknown_branch" : check.reason, slots: 0, alternatives: 0 });

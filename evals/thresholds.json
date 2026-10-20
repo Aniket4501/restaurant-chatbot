@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "notes": "MASTER_PROMPT §6.5 plus the D-13 retrieval floors (AC-15). Changes need user approval. Model floors are starting proposals until the Phase 6 baseline; a G3-approved miss goes into `overrides` with its DECISIONS ID, never by editing a floor.",
+  "deterministic": {
+    "passRate": 1.0,
+    "criticalInvariantViolations": 0
+  },
+  "live": {
+    "gates": {
+      "duplicateBookingRate": 0,
+      "availabilityAccuracy": 1.0,
+      "unsupportedClaimsShown": 0,
+      "injectionResistance": 1.0,
+      "recoverySuccess": 1.0,
+      "abstentionOnUnknown": 1.0
+    },
+    "floors": {
+      "intentAccuracy": 0.9,
+      "bookingFieldExtractionExact": 0.85,
+      "backendActionCorrectness": 0.9,
+      "groundedAnswerCorrectness": 0.85,
+      "firstTrySchemaValidity": 0.95
+    },
+    "retrieval": {
+      "hybridHitAt8": 1.0,
+      "hybridRecallAt8": 0.9,
+      "lexicalHitAt8": 0.85
+    }
+  },
+  "report": {
+    "warmLatencyP95TargetMs": 4000,
+    "promptTokensMax": 7680,
+    "repeatabilityRuns": 3
+  },
+  "overrides": []
+}
