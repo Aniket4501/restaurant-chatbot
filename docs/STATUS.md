@@ -12,7 +12,7 @@ Mobile-first redesign (user, 2026-10-20; D-19 amendment): phone frame on larger 
 Local run: `npm run start -- -p 3005` (3000-3002 are used by other projects), .env.local created with generated admin values
 Not done (out of the D-19 scope, would need a decision to resume): Phase 8 independent review of the restyle and the D-17 large-party addendum; the rest of Phase 9 (fresh-clone check AC-11, final report)
 Notes:
-- `.env.local` does not exist yet: admin returns "not configured" until you create it from .env.example (README Quick start)
+- `.env.local` exists (created 2026-10-20 with generated admin values, git-ignored); see the password with `grep ADMIN_PASSWORD .env.local`
 - Latency on this shared machine is noisy; identical repeated prompts hit the prefix cache, so run 1 is reported separately
 - New eval-case guest texts need `npx tsx scripts/kb-embed-fixture.ts` (Ollama) for real vectors under the fake embedder
 Open questions / blockers:
