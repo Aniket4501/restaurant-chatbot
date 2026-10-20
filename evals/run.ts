@@ -26,7 +26,7 @@ import { sequenceModel, type FakeReply } from "@/lib/llm/fake";
 import { PROMPT_VERSION } from "@/lib/llm/prompt";
 import { modelFor, OLLAMA_CHAT_READY } from "@/lib/llm/provider";
 import { toInstant } from "@/lib/time/tz";
-import { CATEGORIES, loadCases, type CaseTurn, type EvalCase, type Expectation } from "@/evals/case";
+import { CATEGORIES, loadCases, type EvalCase, type Expectation } from "@/evals/case";
 import { checkCase, offeredStarts, snapshotRows, type CaseRecord, type TurnRecord, type Violation } from "@/evals/invariants";
 
 // Eval runner (MASTER_PROMPT §6, D-12): `npm run eval:scripted` (D1, fake model) and `npm run eval` (D2, Ollama).

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { offeredStarts } from "@/lib/chat/offered";
 import { runTurn } from "@/lib/chat/turn";
 import { ChatBodySchema } from "@/lib/chat/types";
 import { errorResponse, okResponse, readJson } from "@/lib/http/json";
@@ -7,7 +8,8 @@ import type { ApiDeps } from "@/lib/api/deps";
 /**
  * POST /api/chat → 200 { reply, draft, intent, context, meta } / 400 / 413 / 429 (§5.9, D-15). The trace is included
  * only in test mode. With TEST_TRACE_PATH set (test mode only), each turn appends
- * { sessionId, now, blocks, citedFactIds, trace, maskedPrompt } to that file for the invariant checks (D-12).
+ * { sessionId, now, text, blocks, citedFactIds, trace, outcome, offered, maskedPrompt } to that file for the invariant checks
+ * (D-12).
  */
 export function chatHandler(deps: ApiDeps) {
   return async (req: Request): Promise<Response> => {
@@ -29,11 +31,13 @@ export function chatHandler(deps: ApiDeps) {
       { db: deps.db(), model: deps.chat.model(), embedder: deps.chat.embedder(), limiter: deps.chat.limiter, gate: deps.chat.gate, onPrompt: tracePath ? (p) => prompts.push(p) : undefined },
     );
     if (tracePath) {
-      const entry = { sessionId, now, blocks: r.reply.blocks, citedFactIds: r.meta.citedFactIds, trace: r.trace, outcome: r.meta.outcome, maskedPrompt: prompts.at(-1) ?? null };
+      // Test mode only: what was shown, plus an engine re-check of every offered time for INV-03 (§6.4).
+      const offered = offeredStarts(deps.db(), r.reply.blocks, now);
+      const entry = { sessionId, now, text: r.reply.text, blocks: r.reply.blocks, citedFactIds: r.meta.citedFactIds, trace: r.trace, outcome: r.meta.outcome, offered, maskedPrompt: prompts.at(-1) ?? null };
       fs.appendFileSync(tracePath, `${JSON.stringify(entry)}\n`);
     }
     if (r.status === "rate_limited") return errorResponse(429, "RATE_LIMITED", r.reply.text, {}, { "retry-after": String(Math.max(1, Math.ceil((r.retryAfterMs ?? 1000) / 1000))) });
-    const { trace, status: _status, retryAfterMs: _retry, ...rest } = r;
-    return okResponse(200, config.testMode ? { ...rest, trace } : rest);
+    const out = { reply: r.reply, draft: r.draft, intent: r.intent, context: r.context, meta: r.meta };
+    return okResponse(200, config.testMode ? { ...out, trace: r.trace } : out);
   };
 }

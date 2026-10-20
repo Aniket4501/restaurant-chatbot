@@ -20,7 +20,7 @@
     "test:unit": "vitest run --project unit",
     "test:unit:tz": "TZ=UTC vitest run --project unit && TZ=America/New_York vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build && playwright test",
     "eval:scripted": "tsx evals/run.ts --mode scripted",
     "eval": "tsx evals/run.ts --mode live",
     "model:check": "tsx scripts/model-check.ts",

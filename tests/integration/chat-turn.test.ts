@@ -52,7 +52,6 @@ function deps(o: { script?: FakeScript; model?: ModelClient; embedder?: TurnDeps
 const say = (text: string, d: Partial<TurnInput> = {}, history: TurnInput["messages"] = []): TurnInput => ({ now: NOW, sessionId: SID, messages: [...history, { role: "guest", content: text }], draft: null, ...d });
 const act = (action: TurnInput["action"], draft: Draft): TurnInput => ({ now: NOW, sessionId: SID, messages: [], draft, action });
 const block = <K extends Block["type"]>(r: TurnReply, type: K) => r.reply.blocks.find((b) => b.type === type) as Extract<Block, { type: K }> | undefined;
-const actions = (r: TurnReply) => r.trace.map((x) => x.action);
 
 describe("booking flow (J3, J5; AC-01 logic)", () => {
   it("typed only: one message with every field and an open time gives the confirm card; model prose is dropped", async () => {

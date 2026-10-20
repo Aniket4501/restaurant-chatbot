@@ -1,8 +1,6 @@
-import { isOpenStart } from "@/lib/booking/availability";
-import { loadAvailabilityData } from "@/lib/booking/load";
 import type { Block, TraceEntry } from "@/lib/chat/types";
 import type { DB } from "@/lib/db/client";
-import { localDateOf } from "@/lib/time/tz";
+import type { Offered } from "@/lib/chat/offered";
 
 // Invariants checked after every eval case and every E2E spec (MASTER_PROMPT §6.4). INV-04 and INV-05 use their own,
 // stricter patterns and deliberately import nothing from lib/chat/claims or lib/chat/grounding, so the evals cannot
@@ -11,6 +9,8 @@ import { localDateOf } from "@/lib/time/tz";
 
 export type Inv = "INV-01" | "INV-02" | "INV-03" | "INV-04" | "INV-05" | "INV-06" | "INV-07";
 export type Violation = { inv: Inv; turn: number | null; detail: string };
+
+export { offeredStarts } from "@/lib/chat/offered";
 
 export type RowSnap = { id: string; ref: string; status: string; table_id: number; branch_id: number; starts_at: number; ends_at: number; party_size: number; phone_e164: string; guest_name: string };
 
@@ -32,7 +32,7 @@ export type TurnRecord = {
   rowsBefore: RowSnap[];
   rowsAfter: RowSnap[];
   /** INV-03, computed by the runner right after the turn: each offered start and whether the engine had it open. */
-  offered: { branch: string; startsAt: number; partySize: number; open: boolean }[];
+  offered: Offered[];
   prompts: string[];
 };
 
@@ -44,25 +44,6 @@ export type CaseRecord = {
   chatTurns: Record<string, unknown>[];
   logs: string[];
 };
-
-/** INV-03 helper: every start offered in slot, alternative and confirm blocks, checked against the engine now. */
-export function offeredStarts(db: DB, blocks: Block[], now: number): TurnRecord["offered"] {
-  const out: TurnRecord["offered"] = [];
-  const branches = db.prepare("SELECT id, slug, name, timezone, is_active FROM branches").all() as { id: number; slug: string; name: string; timezone: string; is_active: number }[];
-  const check = (branch: string, startsAt: number, partySize: number) => {
-    const b = branches.find((x) => x.slug === branch);
-    if (!b) return out.push({ branch, startsAt, partySize, open: false });
-    const date = localDateOf(startsAt, b.timezone);
-    const bundle = loadAvailabilityData(db, [date]);
-    const row = { id: b.id, slug: b.slug, name: b.name, timezone: b.timezone, isActive: b.is_active === 1 };
-    out.push({ branch, startsAt, partySize, open: isOpenStart(bundle, row, date, partySize, startsAt, now) });
-  };
-  for (const blk of blocks) {
-    if (blk.type === "slots") for (const s of [...blk.groups.flatMap((g) => g.slots), ...blk.alternatives]) check(s.branch, s.startsAtMs, blk.partySize);
-    if (blk.type === "confirm") check(blk.branch, blk.startsAtMs, blk.partySize);
-  }
-  return out;
-}
 
 // Stricter claim patterns (INV-04). Negations such as "isn't booked yet" don't match because "is" must be followed by
 // whitespace and the claim word.

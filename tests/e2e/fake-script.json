@@ -1,0 +1,4 @@
+{
+  "can I bring my dog?": { "intent": "faq", "booking": { "branch": null, "date": null, "time": null, "timeWindow": null, "partySize": null, "ambiguity": null }, "answer": "Well-behaved dogs are welcome on the Golf Course Road terrace.", "citedFactIds": ["faq:pets"], "answerable": true },
+  "table for 4 tomorrow at 8pm in Hauz Khas": { "intent": "booking", "booking": { "branch": "hauz-khas", "date": "2026-10-17", "time": "20:00", "timeWindow": null, "partySize": 4, "ambiguity": null }, "answer": null, "citedFactIds": [], "answerable": true }
+}

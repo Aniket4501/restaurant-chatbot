@@ -6,7 +6,7 @@ import type { Limiter } from "@/lib/http/ratelimit";
 //   (documented in D-14).
 // - Model calls: at most one at a time (one Ollama runner slot, D-05), with a small queue; beyond it, 429.
 
-export type TurnLimiter = { allow(sessionId: string, now: number): { ok: true } | { ok: false; retryAfterMs: number } };
+export type TurnLimiter = { allow(sessionId: string, now: number): { ok: true } | { ok: false; retryAfterMs: number }; reset?(): void };
 
 export function turnLimiter(perSession: Limiter, perAddress: Limiter, addressKey = "local"): TurnLimiter {
   return {
@@ -14,6 +14,10 @@ export function turnLimiter(perSession: Limiter, perAddress: Limiter, addressKey
       const s = perSession.hit(`session:${sessionId}`, now);
       if (!s.ok) return s;
       return perAddress.hit(`addr:${addressKey}`, now);
+    },
+    reset() {
+      perSession.reset();
+      perAddress.reset();
     },
   };
 }
