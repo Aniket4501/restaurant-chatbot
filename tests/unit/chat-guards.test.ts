@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guardExtraction, plainWeekday, timeStated } from "@/lib/chat/guards";
+import { guardExtraction, largePartyStated, plainWeekday, timeStated } from "@/lib/chat/guards";
 import { nullBooking } from "@/lib/llm/fake";
 import type { Turn } from "@/lib/llm/schema";
 import { weekdayDate } from "@/lib/time/calendar";
@@ -106,5 +106,26 @@ describe("guardExtraction (D-17)", () => {
     const r = guardExtraction(booking({ branch: "gurugram", date: "2026-10-17", time: "19:30", partySize: 2 }), "table for 2 at Golf Course Road tomorrow at 7:30pm", NOW, ZONE);
     expect(r.trace).toEqual([]);
     expect(r.turn.booking.time).toBe("19:30");
+  });
+});
+
+describe("large parties (BR-07, enforced in code; live walkthrough 2026-10-20)", () => {
+  it.each([
+    ["Can I book a table for 20 people tomorrow?", 20],
+    ["we'd like to reserve for a party of 12 on Saturday", 12],
+    ["table for 15 guests at Hauz Khas", 15],
+    ["can 10 of us come for dinner?", 10],
+  ])("%s → %i", (text, n) => expect(largePartyStated(text)).toBe(n));
+  it.each(["table for 8 people", "Can you seat a large group?", "we have 20 people in our office", "for 2 people at 8", "Book for 4 guests on the 20th"])("%s → null", (text) => expect(largePartyStated(text)).toBeNull());
+
+  it("turns an FAQ answer to 'book for 20 people' into the large-party booking path", () => {
+    const faq: Turn = { intent: "faq", booking: nullBooking(), answer: "For groups of 9 or more guests, please call the branch directly.", citedFactIds: ["faq:large-groups"], answerable: true };
+    const r = guardExtraction(faq, "Can I book a table for 20 people tomorrow?", NOW, ZONE);
+    expect(r.turn).toMatchObject({ intent: "booking", answer: null, citedFactIds: [], booking: { partySize: 20 } });
+    expect(r.trace).toContainEqual({ action: "correct_field", field: "partySize", reason: "large_party" });
+  });
+  it("fills a dropped large party and leaves a correct one alone", () => {
+    expect(guardExtraction(booking({ date: "2026-10-17" }), "Can I book a table for 20 people tomorrow?", NOW, ZONE).turn.booking.partySize).toBe(20);
+    expect(guardExtraction(booking({ partySize: 12 }), "table for 12 people at Hauz Khas", NOW, ZONE).trace).toEqual([]);
   });
 });

@@ -1,3 +1,4 @@
+import { RULES } from "@/lib/config";
 import type { TraceEntry } from "@/lib/chat/types";
 import { foldDigits } from "@/lib/llm/redact";
 import type { Turn } from "@/lib/llm/schema";
@@ -66,6 +67,21 @@ export function plainWeekday(raw: string): number | null {
   return DAYS.indexOf(day);
 }
 
+// "20 people", "party of 12", "a group of 15 guests". Only an explicit count with a people word counts.
+const PARTY_RE = /\b(?:party|group|table)\s+of\s+(\d{1,3})\b|\b(\d{1,3})\s*(?:people|persons|guests|pax|adults|of us)\b/i;
+const BOOKING_CUE_RE = /\b(?:book\w*|reserv\w*|table|seat\w*|come|coming|visit)\b/i;
+
+/**
+ * A party above the online limit stated in a booking message (BR-07: 9+ gets the branch phone), or null. The model
+ * sometimes answers "can I book for 20 people?" as an FAQ, or drops the 20 (live walkthrough, 2026-10-20).
+ */
+export function largePartyStated(raw: string): number | null {
+  const t = foldDigits(raw);
+  const m = PARTY_RE.exec(t);
+  const n = m ? Number(m[1] ?? m[2]) : NaN;
+  return n > RULES.onlinePartyMax && BOOKING_CUE_RE.test(t) ? n : null;
+}
+
 /** Apply the D-17 checks to a model turn. Returns the corrected turn and the trace entries for what changed. */
 export function guardExtraction(turn: Turn, text: string, now: number, zone: string): { turn: Turn; trace: TraceEntry[] } {
   const trace: TraceEntry[] = [];
@@ -81,7 +97,16 @@ export function guardExtraction(turn: Turn, text: string, now: number, zone: str
       trace.push({ action: "ignore_field", field: "time", reason: "not_stated" });
     }
   }
-  const wd = turn.intent === "booking" ? plainWeekday(text) : null;
+  // BR-07, enforced: a booking message for 9+ people always gets the large-party reply, whatever the model returned.
+  const large = largePartyStated(text);
+  let intent = turn.intent;
+  if (large !== null && (intent !== "booking" || b.partySize !== large)) {
+    if (intent !== "booking") b = { ...b, ambiguity: null };
+    intent = "booking";
+    b = { ...b, partySize: large };
+    trace.push({ action: "correct_field", field: "partySize", reason: "large_party" });
+  }
+  const wd = intent === "booking" ? plainWeekday(text) : null;
   if (wd !== null && wd !== weekdayOf(todayLocal(now, zone), zone)) {
     const date = weekdayDate(now, zone, wd);
     if (b.date !== date || b.ambiguity?.field === "date") {
@@ -89,5 +114,6 @@ export function guardExtraction(turn: Turn, text: string, now: number, zone: str
       trace.push({ action: "correct_field", field: "date", reason: "weekday" });
     }
   }
+  if (intent !== turn.intent) return { turn: { ...turn, intent, booking: b, answer: null, citedFactIds: [], answerable: true }, trace };
   return { turn: b === turn.booking ? turn : { ...turn, booking: b }, trace };
 }

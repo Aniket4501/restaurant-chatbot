@@ -138,7 +138,7 @@ export type TraceEntry =
   /** A model value the guest's latest message doesn't state, dropped before the merge (§5.7). */
   | { action: "ignore_field"; field: Field; reason: "not_stated" }
   /** A model value replaced by a deterministic reading of the guest's message (D-17). */
-  | { action: "correct_field"; field: Field; reason: "weekday" }
+  | { action: "correct_field"; field: Field; reason: "weekday" | "large_party" }
   | { action: "confirm"; branch: string; startsAt: number }
   | { action: "answer_faq"; ids: string[]; rendered: boolean }
   | { action: "fallback_unknown"; reason: string }
