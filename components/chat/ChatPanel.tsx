@@ -6,6 +6,7 @@ import type { Action, Block, TurnReply } from "@/lib/chat/types";
 import { BlockView, type BlockHandlers } from "@/components/chat/Blocks";
 import { ConfirmCard, type CardState } from "@/components/chat/ConfirmCard";
 import { clear, load, save, type CreateBody, type Item, type Pending, type Saved } from "@/components/chat/storage";
+import { ArrowUpIcon, LeafMark } from "@/components/ui/icons";
 
 // The reservations-and-questions panel (§5.7 client side, §5.10, D-14).
 // - Typed messages and chip/slot taps go to POST /api/chat; the server returns the reply, blocks and new draft.
@@ -18,33 +19,34 @@ type ChatRequest = { messages: { role: "guest" | "assistant"; content: string }[
 
 const uid = () => crypto.randomUUID();
 
-function welcome(name: string, branches: SubmitBranch[]): Item {
+function welcome(name: string): Item {
   return {
     id: "welcome",
     role: "assistant",
-    text: `Welcome to ${name}. Ask about our menu, opening hours or branches, or book a table.`,
+    text: `Welcome to ${name}. Ask me about the menu or opening hours, or book a table in a few taps.`,
     blocks: [
       {
         type: "quick_replies",
         chips: [
-          ...branches.map((b) => ({ label: `Book at ${b.short}`, action: { type: "set_field", field: "branch", value: b.slug } as Action })),
-          { label: "Opening hours", text: "What are your opening hours?" },
           { label: "Menu", text: "What's on the menu?" },
+          { label: "Opening hours", text: "What are your opening hours?" },
+          // No model call: an empty set_field asks for the first missing field, the branch (§5.7 step 2).
+          { label: "Book a table", action: { type: "set_field", field: "branch", value: null } as Action },
         ],
       },
     ],
   };
 }
 
-function fresh(name: string, branches: SubmitBranch[]): Saved {
-  return { sessionId: uid(), items: [welcome(name, branches)], draft: null, context: { lastCitedIds: [] }, pending: null, selected: null };
+function fresh(name: string): Saved {
+  return { sessionId: uid(), items: [welcome(name)], draft: null, context: { lastCitedIds: [] }, pending: null, selected: null };
 }
 
 const NO_CARD: CardState = { submitting: false, locked: false, fieldErrors: null, done: false, message: null };
 
 /** Rendered in the browser only (ChatPanelClient), so the saved conversation is read synchronously, without a hydration pass. */
 export function ChatPanel({ branches, restaurantName, scripted }: Props) {
-  const [initial] = useState<Saved>(() => load() ?? fresh(restaurantName, branches));
+  const [initial] = useState<Saved>(() => load() ?? fresh(restaurantName));
   const [s, setS] = useState<Saved>(initial);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<ChatRequest | null>(null);
@@ -190,7 +192,7 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
       if (!ref.current.pending && ref.current.draft === null) return;
     }
     setCard(NO_CARD);
-    update((prev) => ({ ...prev, pending: null, draft: null, selected: null, context: { lastCitedIds: [] }, items: [...prev.items, { ...welcome(restaurantName, branches), id: uid(), text: "Let's start again. What would you like to do?" }] }));
+    update((prev) => ({ ...prev, pending: null, draft: null, selected: null, context: { lastCitedIds: [] }, items: [...prev.items, { ...welcome(restaurantName), id: uid(), text: "Let's start again. What would you like to do?" }] }));
   };
 
   // After a reload with a submit in flight, replay it with the same key to learn the outcome (D-14).
@@ -203,7 +205,7 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
 
   const newConversation = () => {
     clear();
-    const next = fresh(restaurantName, branches);
+    const next = fresh(restaurantName);
     ref.current = next;
     setS(next);
     setCard(NO_CARD);
@@ -228,78 +230,94 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
   return (
     <section aria-label="Reservations and questions" className="flex min-h-0 flex-1 flex-col">
       <div aria-live="polite" aria-relevant="additions" className="flex-1 space-y-5 overflow-y-auto px-4 py-6 sm:px-8">
-        {s.items.map((item) => (
-          <div key={item.id} className={item.role === "guest" ? "flex justify-end" : ""}>
-            {item.role === "guest" ? (
-              <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-paper px-4 py-2.5 text-[16px] text-ink shadow-[0_1px_0_var(--line)]">{item.text}</p>
-            ) : (
-              <div className="max-w-[40rem] space-y-3">
-                {item.text && <p className={`text-[16px] leading-relaxed ${item.tone === "error" ? "text-warn" : "text-ink"}`}>{item.text}</p>}
-                {item.blocks?.map((b, k) =>
-                  b.type === "confirm" ? (
-                    <ConfirmCard
-                      key={`${b.startsAtMs}-${k}`}
-                      block={b}
-                      state={item === lastAssistant || item === pendingCardItem ? card : { ...NO_CARD, done: true }}
-                      initial={s.pending?.body.startsAt === b.startsAtMs ? s.pending.body : null}
-                      active={item === lastAssistant || item === pendingCardItem}
-                      onSubmit={submit}
-                      onRetry={retry}
-                      onStartOver={startOver}
-                    />
-                  ) : (
-                    <BlockView key={k} block={b} h={handlers(item)} />
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-        {busy && (
-          <p className="text-muted" aria-label="Checking">
-            <span className="inline-block animate-pulse">Checking…</span>
-          </p>
-        )}
-        {failed && (
-          <div role="alert" className="space-y-2">
-            <p className="text-warn">We couldn&apos;t reach the restaurant just now. Check your connection and try again.</p>
-            <button type="button" onClick={() => void send(failed)} disabled={composerLocked} className="min-h-11 rounded-md border border-line bg-paper px-4 hover:border-neem hover:text-neem disabled:opacity-50">
-              Try again
-            </button>
-          </div>
-        )}
-        <div ref={listEnd} />
+        <div className="mx-auto w-full max-w-2xl space-y-5">
+          {s.items.map((item) => (
+            <div key={item.id} className={item.role === "guest" ? "flex justify-end" : "flex gap-2.5"}>
+              {item.role === "guest" ? (
+                <p className="max-w-[85%] rounded-2xl rounded-br-md bg-neem px-4 py-2.5 text-[16px] text-white">{item.text}</p>
+              ) : (
+                <>
+                  <span aria-hidden className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neem-tint text-neem">
+                    <LeafMark className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-3">
+                    {item.text && (
+                      <p className={`w-fit max-w-full rounded-2xl rounded-tl-md border border-line bg-paper px-4 py-2.5 text-[16px] leading-relaxed ${item.tone === "error" ? "text-warn" : "text-ink"}`}>{item.text}</p>
+                    )}
+                    {item.blocks?.map((b, k) =>
+                      b.type === "confirm" ? (
+                        <ConfirmCard
+                          key={`${b.startsAtMs}-${k}`}
+                          block={b}
+                          state={item === lastAssistant || item === pendingCardItem ? card : { ...NO_CARD, done: true }}
+                          initial={s.pending?.body.startsAt === b.startsAtMs ? s.pending.body : null}
+                          active={item === lastAssistant || item === pendingCardItem}
+                          onSubmit={submit}
+                          onRetry={retry}
+                          onStartOver={startOver}
+                        />
+                      ) : (
+                        <BlockView key={k} block={b} h={handlers(item)} />
+                      ),
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          {busy && (
+            <div className="flex gap-2.5">
+              <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neem-tint text-neem">
+                <LeafMark className="h-5 w-5" />
+              </span>
+              <p className="rounded-2xl rounded-tl-md border border-line bg-paper px-4 py-2.5 text-muted" aria-label="Checking">
+                <span className="inline-block animate-pulse">Checking…</span>
+              </p>
+            </div>
+          )}
+          {failed && (
+            <div role="alert" className="space-y-2 rounded-xl bg-warn-tint px-4 py-3">
+              <p className="text-warn">We couldn&apos;t reach the restaurant just now. Check your connection and try again.</p>
+              <button type="button" onClick={() => void send(failed)} disabled={composerLocked} className="min-h-11 rounded-full border border-line bg-paper px-4 hover:border-neem hover:text-neem disabled:opacity-50">
+                Try again
+              </button>
+            </div>
+          )}
+          <div ref={listEnd} />
+        </div>
       </div>
       <form
-        className="border-t border-line bg-ash px-4 py-3 sm:px-8"
+        className="border-t border-line bg-paper px-4 py-3 sm:px-8"
         onSubmit={(e) => {
           e.preventDefault();
           sendText(text);
         }}
       >
-        <div className="flex items-end gap-2">
-          <label htmlFor="composer" className="sr-only">
-            Your message
-          </label>
-          <input
-            id="composer"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            maxLength={500}
-            autoComplete="off"
-            disabled={composerLocked}
-            placeholder={composerLocked ? "Finish or retry your booking above first" : "Ask a question, or tell us when you'd like to come"}
-            className="min-h-11 flex-1 rounded-md border border-line bg-white px-3 text-[16px] text-ink placeholder:text-muted disabled:bg-ash"
-          />
-          <button type="submit" disabled={busy || composerLocked || !text.trim()} className="min-h-11 rounded-md bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-50">
-            Send
-          </button>
-        </div>
-        <div className="mt-2 flex items-center justify-between text-sm text-muted">
-          <button type="button" onClick={newConversation} disabled={locked || card.submitting} className="min-h-11 underline decoration-line underline-offset-4 hover:text-neem disabled:opacity-50">
-            New conversation
-          </button>
-          {scripted && <span className="rounded-full border border-line px-2.5 py-0.5">Scripted model (test)</span>}
+        <div className="mx-auto w-full max-w-2xl">
+          <div className="flex items-center gap-2">
+            <label htmlFor="composer" className="sr-only">
+              Your message
+            </label>
+            <input
+              id="composer"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              maxLength={500}
+              autoComplete="off"
+              disabled={composerLocked}
+              placeholder={composerLocked ? "Finish or retry your booking above first" : "Type a message…"}
+              className="min-h-12 flex-1 rounded-full border border-line bg-ash px-5 text-[16px] text-ink placeholder:text-muted disabled:opacity-70"
+            />
+            <button type="submit" aria-label="Send" disabled={busy || composerLocked || !text.trim()} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neem text-white hover:bg-neem-dark disabled:opacity-40">
+              <ArrowUpIcon className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-sm text-muted">
+            <button type="button" onClick={newConversation} disabled={locked || card.submitting} className="min-h-11 underline decoration-line underline-offset-4 hover:text-neem disabled:opacity-50">
+              New conversation
+            </button>
+            {scripted && <span className="rounded-full border border-line px-2.5 py-0.5">Scripted model (test)</span>}
+          </div>
         </div>
       </form>
     </section>

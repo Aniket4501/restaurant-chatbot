@@ -13,9 +13,10 @@ export default async function Home() {
   const identity = loadIdentity(getDb(), getNow());
   const scripted = getConfig().llmProvider === "fake";
   return (
-    <div className="flex min-h-dvh flex-col lg:flex-row">
+    <div className="flex h-dvh flex-col lg:flex-row">
       <IdentityPanel identity={identity} />
-      <main className="flex h-dvh min-w-0 flex-1 flex-col lg:h-dvh">
+      {/* On a phone the header stays put and only the messages scroll. */}
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatPanelClient branches={identity.branches.map(({ slug, name, short, phoneLabel }) => ({ slug, name, short, phoneLabel }))} restaurantName={identity.name} scripted={scripted} />
       </main>
     </div>

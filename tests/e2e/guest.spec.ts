@@ -21,7 +21,8 @@ async function axe(page: Page, state: string) {
 }
 
 async function chipsToConfirm(page: Page, o: { branch?: string; date?: string; party?: string; time?: string } = {}) {
-  await page.getByRole("button", { name: `Book at ${o.branch ?? "Hauz Khas"}` }).click();
+  await page.getByRole("button", { name: "Book a table" }).click();
+  await page.getByRole("button", { name: o.branch ?? "Hauz Khas", exact: true }).click();
   await page.getByRole("button", { name: o.date ?? "Tomorrow, Sat 17 Oct" }).click();
   await page.getByRole("button", { name: o.party ?? "4 guests", exact: true }).click();
   await page.getByRole("button", { name: o.time ?? "7:30 PM", exact: true }).last().click();
@@ -43,9 +44,10 @@ const say = async (page: Page, text: string) => {
 test("J3 chips only: branch, date, party, time and details give a confirmation from the saved row @cat:booking_success", async ({ page, server, observed }) => {
   observed.pii.push("Asha Rao", "98765 43210");
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Book at Hauz Khas" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Book a table" })).toBeVisible();
   await axe(page, "welcome");
-  await page.getByRole("button", { name: "Book at Hauz Khas" }).click();
+  await page.getByRole("button", { name: "Book a table" }).click();
+  await page.getByRole("button", { name: "Hauz Khas", exact: true }).click();
   await page.getByRole("button", { name: "Tomorrow, Sat 17 Oct" }).click();
   await page.getByRole("button", { name: "4 guests", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Sat 17 Oct · Hauz Khas · 4 guests" })).toBeVisible();
@@ -105,7 +107,7 @@ test("J6 a lost response locks the card; Retry with the same key shows the same 
   await form.getByRole("button", { name: "Confirm" }).click();
   await expect(form.getByRole("alert")).toContainText("We couldn't reach the restaurant to confirm your booking");
   await expect(form.getByLabel("Name")).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Book at Hauz Khas" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Book a table" })).toBeDisabled();
   await expect(page.getByLabel("Your message")).toBeDisabled(); // nothing can strand the locked card (review UI-1)
   await axe(page, "pending submit");
   await form.getByRole("button", { name: "Retry" }).click();
@@ -189,7 +191,7 @@ test("on a phone the chat is the page and the hours fold away", async ({ page })
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Neem & Ember");
   await expect(page.getByText("Hours and locations")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Book at Golf Course Road" })).toBeVisible();
+  for (const name of ["Menu", "Opening hours", "Book a table"]) await expect(page.getByRole("button", { name })).toBeVisible();
   await axe(page, "phone");
 });
 
@@ -198,5 +200,5 @@ test("focus stays visible on the dark identity panel (WCAG 1.4.11, review UI-4)"
   const link = page.getByRole("link", { name: "+91 11 4155 0101" }).last();
   await link.focus();
   const ring = await link.evaluate((el) => ({ visible: el.matches(":focus-visible"), color: getComputedStyle(el).outlineColor, style: getComputedStyle(el).outlineStyle }));
-  expect(ring).toEqual({ visible: true, color: "rgb(241, 235, 226)", style: "solid" });
+  expect(ring).toEqual({ visible: true, color: "rgb(245, 241, 232)", style: "solid" }); // --smoke-ink
 });

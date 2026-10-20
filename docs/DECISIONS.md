@@ -220,6 +220,7 @@ Decision (`lib/chat/guards.ts`, applied in `runTurn` before the merge):
 - **Weekday (approved by the user, 2026-10-20).** If a booking message names exactly one plain weekday ("Monday", "this Monday", "on Monday", "this coming Monday") and no other date words, code sets the date to that weekday's first date after today, the same date the prompt's Weekdays list gives. Other date words are "next", "after", "following", "last", "every", today, tonight, tomorrow, weekend, a month name, or a day number. A model date that disagrees is replaced (trace `correct_field`). A weekday that is today's weekday is left to the model, because "this Friday" said on a Friday is ambiguous.
 - **Ambiguity.** With exactly one usable reading, the old value is cleared and the field is asked plainly. A party ambiguity with any 9+ reading gets the large-party reply. With no usable reading, the reason is chosen by priority (large party, past the horizon, inactive branch, past date, then the rest), not by candidate order. This is within §5.7 ("if one message contradicts itself, ask").
 Consequences: Unit tests for each pattern, both positive and negative. D1 cases SC-REG-006…009; D2 cases that state a meal without a clock time now expect `time: null` and no confirm card.
+- **Addendum (2026-10-20, within BR-07, no approval needed):** a booking message that states 9 or more people ("for 20 people", "party of 12") always gets the large-party reply with the branch phone, whatever intent or party size the model returned (trace `correct_field` with reason `large_party`). In the live walkthrough, "Can I book a table for 20 people tomorrow?" was answered as an FAQ and D-15 replaced the answer with the generic fallback; another time the model dropped the 20 and asked for the branch. Cases SC-REG-013 and SC-REG-014.
 
 ## D-18 Guest chat and admin dashboard redesign (2026-10-20, status: approved by the user, 2026-10-20; build after T-20, before Phase 8)
 Context: The user supplied two mockups, an "Olivia Kitchen & Bar" mobile chat and a reservations dashboard, and asked for the UI to look like them. Answers on 2026-10-20:
@@ -246,4 +247,14 @@ Decision:
   - read-only Tables, Menu and Opening hours pages. Editing stays a non-goal (§4.3).
 - **Left out, because there is no data or feature behind them:** pending, completed and no-show statuses (bookings are confirmed or cancelled); floor plan; settings; notifications; attachments; "Most popular" badges; read receipts.
 Consequences: New tasks in docs/PLAN.md before Phase 8. Every E2E and axe check is updated, and the invariants still run after every spec.
+
+## D-19 Scope reduction for a two-hour demo (2026-10-20, status: requested by the user, 2026-10-20; supersedes D-18's admin extras)
+Context: The user set a two-hour deadline. They asked for a polished, working demo of exactly three things: a mobile-first customer chat, the reservation flow, and a single-page admin reservations dashboard. Plus a README covering setup, architecture, model choice and known limitations.
+Decision:
+- **Keep and reuse.** Everything already built and verified stays: Next.js, SQLite, the Ollama `qwen3.5:9b` setup, the booking engine, the grounding and the existing hybrid retrieval. Nothing is removed or rebuilt.
+- **Restyle.** Warm off-white, deep forest green, restrained sage accents, the existing serif and sans system stacks, subtle borders, phone-first.
+- **Chat.** Three quick actions: Menu, Opening hours, and Book a table, which needs no model call.
+- **Admin.** The existing single page, restyled: date selector defaulting to today, compact booking and guest counts, and a table of time, guest, party, branch and status with cancel. On phones, party and status sit under the time.
+- **Dropped from D-18:** staff "New reservation" with a channel migration, search, sorting and paging, stat cards against last week, and the read-only Tables, Menu and Hours pages. The open walk-in lead-time question (BR-06) is moot.
+Consequences: E2E specs follow the new entry point ("Book a table", then the branch). The README is written now, ahead of the rest of Phase 9. Phase 8's independent review has not been run on the restyle.
 

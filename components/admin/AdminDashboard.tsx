@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronIcon, LeafMark } from "@/components/ui/icons";
 
 // Staff bookings view (§5.10, AC-07, J10, BR-13). Data loads client-side through the admin API (D-16): a date
 // navigator starting on the server's today, a branch filter, totals, a time-sorted table with status pills, an in-app
@@ -111,132 +112,159 @@ export function AdminDashboard({ today, branches, zone }: Props) {
     router.replace("/admin/login");
   };
 
-  const button = "min-h-11 rounded-md border border-line bg-paper px-4 text-[15px] hover:border-neem hover:text-neem disabled:opacity-50";
+  const button = "min-h-11 rounded-full border border-line bg-paper px-4 text-[15px] hover:border-neem hover:text-neem disabled:opacity-50";
+  const iconButton = "flex h-11 w-11 items-center justify-center rounded-full border border-line bg-paper hover:border-neem hover:text-neem";
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8">
-      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line pb-4">
-        <h1 className="font-display text-3xl">Bookings</h1>
-        <button type="button" onClick={signOut} className="min-h-11 text-[15px] underline decoration-line underline-offset-4 hover:text-neem">
-          Sign out
-        </button>
+    <div className="min-h-dvh">
+      <header className="on-smoke bg-smoke text-smoke-ink">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-8">
+          <p className="flex items-center gap-2.5 font-display text-xl">
+            <LeafMark className="h-6 w-6" />
+            Neem &amp; Ember <span className="font-sans text-[15px] text-smoke-muted">Staff</span>
+          </p>
+          <button type="button" onClick={signOut} className="min-h-11 text-[15px] underline decoration-smoke-muted underline-offset-4 hover:decoration-smoke-ink">
+            Sign out
+          </button>
+        </div>
       </header>
 
-      <div className="mt-5 flex flex-wrap items-end gap-3">
-        <div role="group" aria-label="Date" className="flex flex-wrap items-center gap-2">
-          <button type="button" className={button} onClick={() => go(shift(date, -1))}>
-            Previous day
-          </button>
-          <button type="button" className={button} onClick={() => go(today)} disabled={date === today}>
-            Today
-          </button>
-          <button type="button" className={button} onClick={() => go(shift(date, 1))}>
-            Next day
-          </button>
-          <label className="sr-only" htmlFor="admin-date">
-            Date
-          </label>
-          <input id="admin-date" type="date" value={date} onChange={(e) => e.target.value && go(e.target.value)} className="min-h-11 rounded-md border border-line bg-white px-3 text-[15px]" />
-        </div>
-        <label className="text-[15px]" htmlFor="admin-branch">
-          <span className="mr-2">Branch</span>
-          <select
-            id="admin-branch"
-            value={branch}
-            onChange={(e) => {
-              setData(null);
-              setBranch(e.target.value);
-            }}
-            className="min-h-11 rounded-md border border-line bg-white px-3 text-[15px]"
-          >
-            <option value="all">All branches</option>
-            {branches.map((b) => (
-              <option key={b.slug} value={b.slug}>
-                {short(b.name)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8">
+        <h1 className="font-display text-3xl sm:text-4xl">Bookings</h1>
 
-      <section aria-labelledby="day-heading" className="mt-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="day-heading" className="font-display text-2xl">
-            {longLabel(date, zone)}
-          </h2>
-          {data && (
-            <p className="text-[15px] text-muted" data-testid="totals">
-              {data.totals.confirmed} {data.totals.confirmed === 1 ? "booking" : "bookings"}, {data.totals.covers} {data.totals.covers === 1 ? "guest" : "guests"}
-            </p>
-          )}
-        </div>
-
-        {error && (
-          <div role="alert" className="mt-4 flex flex-wrap items-center gap-3 rounded-md bg-warn-tint px-4 py-3 text-warn">
-            {error}
-            <button type="button" className={button} onClick={load}>
-              Retry
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-line bg-paper p-2 sm:flex-row sm:items-center">
+          <div role="group" aria-label="Date" className="flex items-center gap-2">
+            <button type="button" className={iconButton} onClick={() => go(shift(date, -1))} aria-label="Previous day">
+              <ChevronIcon dir="left" className="h-5 w-5" />
+            </button>
+            <label className="sr-only" htmlFor="admin-date">
+              Date
+            </label>
+            <input id="admin-date" type="date" value={date} onChange={(e) => e.target.value && go(e.target.value)} className="min-h-11 min-w-0 flex-1 rounded-full border border-line bg-ash px-3 text-[15px] sm:flex-none sm:px-4" />
+            <button type="button" className={iconButton} onClick={() => go(shift(date, 1))} aria-label="Next day">
+              <ChevronIcon dir="right" className="h-5 w-5" />
+            </button>
+            <button type="button" className={`${button} shrink-0 px-3 sm:px-4`} onClick={() => go(today)} disabled={date === today}>
+              Today
             </button>
           </div>
-        )}
+          <label className="flex items-center gap-2 text-[15px] sm:ml-auto" htmlFor="admin-branch">
+            <span className="text-muted">Branch</span>
+            <select
+              id="admin-branch"
+              value={branch}
+              onChange={(e) => {
+                setData(null);
+                setBranch(e.target.value);
+              }}
+              className="min-h-11 flex-1 rounded-full border border-line bg-ash px-4 text-[15px] sm:flex-none"
+            >
+              <option value="all">All branches</option>
+              {branches.map((b) => (
+                <option key={b.slug} value={b.slug}>
+                  {short(b.name)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-        {!data && !error && (
-          <div aria-busy="true" aria-label="Loading bookings" className="mt-4 space-y-2">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-12 animate-pulse rounded-md bg-paper" />
-            ))}
+        <section aria-labelledby="day-heading" className="mt-6">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 id="day-heading" className="font-display text-2xl">
+              {longLabel(date, zone)}
+            </h2>
+            {data && (
+              <p className="text-[15px] text-muted" data-testid="totals">
+                <span className="font-display text-2xl text-neem">{data.totals.confirmed}</span> {data.totals.confirmed === 1 ? "booking" : "bookings"},{" "}
+                <span className="font-display text-2xl text-neem">{data.totals.covers}</span> {data.totals.covers === 1 ? "guest" : "guests"}
+              </p>
+            )}
           </div>
-        )}
 
-        {data && data.items.length === 0 && <p className="mt-6 text-[16px] text-muted">No bookings for this day{branch !== "all" ? " at this branch" : ""}.</p>}
+          {error && (
+            <div role="alert" className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-warn-tint px-4 py-3 text-warn">
+              {error}
+              <button type="button" className={button} onClick={load}>
+                Retry
+              </button>
+            </div>
+          )}
 
-        {data && data.items.length > 0 && (
-          <div className="mt-4 overflow-x-auto rounded-lg border border-line bg-paper">
-            <table className="w-full min-w-[46rem] text-left text-[15px]">
-              <thead className="border-b border-line text-muted">
-                <tr>
-                  <th scope="col" className="px-4 py-3 font-normal">Time</th>
-                  <th scope="col" className="px-4 py-3 font-normal">Guest</th>
-                  <th scope="col" className="px-4 py-3 font-normal">Party</th>
-                  <th scope="col" className="px-4 py-3 font-normal">Branch</th>
-                  <th scope="col" className="px-4 py-3 font-normal">Status</th>
-                  <th scope="col" className="px-4 py-3 font-normal">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((i) => (
-                  <tr key={i.ref} className={`border-b border-line last:border-0 ${i.status === "cancelled" ? "text-muted" : ""}`}>
-                    <td className="px-4 py-3 tabular-nums">{i.timeLabel}</td>
-                    <td className="px-4 py-3">
-                      {i.guestName}
-                      <span className="block text-sm text-muted">
-                        {i.phoneLabel} · {i.ref}
-                      </span>
-                      {i.note && <span className="block text-sm text-muted">Note: {i.note}</span>}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums">{i.partySize}</td>
-                    <td className="px-4 py-3">{short(i.branch.name)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-sm ${i.status === "confirmed" ? "bg-neem-tint text-neem-dark" : "bg-ash text-muted"}`}>{i.status === "confirmed" ? "Confirmed" : "Cancelled"}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {i.status === "confirmed" && (
-                        <button type="button" className={button} onClick={() => openCancel(i)} aria-label={`Cancel ${i.guestName}'s booking at ${i.timeLabel}`}>
-                          Cancel
-                        </button>
-                      )}
-                    </td>
+          {!data && !error && (
+            <div aria-busy="true" aria-label="Loading bookings" className="mt-4 space-y-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-14 animate-pulse rounded-xl bg-paper" />
+              ))}
+            </div>
+          )}
+
+          {data && data.items.length === 0 && (
+            <p className="mt-4 rounded-xl border border-dashed border-line px-4 py-8 text-center text-[16px] text-muted">No bookings for this day{branch !== "all" ? " at this branch" : ""}.</p>
+          )}
+
+          {data && data.items.length > 0 && (
+            <div className="mt-4 overflow-hidden rounded-xl border border-line bg-paper">
+              <table className="w-full text-left text-[15px]">
+                <thead className="border-b border-line bg-ash/60 text-[14px] text-muted">
+                  <tr>
+                    <th scope="col" className="px-3 py-2.5 font-medium sm:px-4">Time</th>
+                    <th scope="col" className="px-3 py-2.5 font-medium sm:px-4">Guest</th>
+                    <th scope="col" className="hidden px-4 py-2.5 font-medium sm:table-cell">Party</th>
+                    <th scope="col" className="hidden px-4 py-2.5 font-medium md:table-cell">Branch</th>
+                    <th scope="col" className="hidden px-4 py-2.5 font-medium sm:table-cell">Status</th>
+                    <th scope="col" className="hidden px-4 py-2.5 sm:table-cell">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {data.items.map((i) => (
+                    <tr key={i.ref} className={`border-b border-line align-top last:border-0 ${i.status === "cancelled" ? "text-muted" : ""}`}>
+                      <td className="px-3 py-3 whitespace-nowrap sm:px-4">
+                        <span className="font-medium tabular-nums">{i.timeLabel}</span>
+                        {/* On a phone, party and status sit under the time: four columns don't fit 390 px. */}
+                        <span className="block text-sm text-muted sm:hidden">
+                          {i.partySize} {i.partySize === 1 ? "guest" : "guests"}
+                        </span>
+                        <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-sm sm:hidden ${i.status === "confirmed" ? "bg-neem-tint text-neem-dark" : "bg-ash text-muted"}`}>{i.status === "confirmed" ? "Confirmed" : "Cancelled"}</span>
+                      </td>
+                      <td className="px-3 py-3 sm:px-4">
+                        {i.guestName}
+                        <span className="block text-sm whitespace-nowrap text-muted">{i.phoneLabel}</span>
+                        <span className="block text-sm whitespace-nowrap text-muted">
+                          {i.ref}
+                          <span className="md:hidden"> · {short(i.branch.name)}</span>
+                        </span>
+                        {i.note && <span className="block text-sm text-muted">Note: {i.note}</span>}
+                        {i.status === "confirmed" && (
+                          <button type="button" className="mt-1.5 min-h-11 text-[15px] text-warn underline underline-offset-4 sm:hidden" onClick={() => openCancel(i)} aria-label={`Cancel ${i.guestName}'s booking at ${i.timeLabel}`}>
+                            Cancel
+                          </button>
+                        )}
+                      </td>
+                      <td className="hidden px-4 py-3 tabular-nums sm:table-cell">{i.partySize}</td>
+                      <td className="hidden px-4 py-3 md:table-cell">{short(i.branch.name)}</td>
+                      <td className="hidden px-4 py-3 sm:table-cell">
+                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-sm whitespace-nowrap ${i.status === "confirmed" ? "bg-neem-tint text-neem-dark" : "bg-ash text-muted"}`}>{i.status === "confirmed" ? "Confirmed" : "Cancelled"}</span>
+                      </td>
+                      <td className="hidden px-4 py-2 text-right sm:table-cell">
+                        {i.status === "confirmed" && (
+                          <button type="button" className={button} onClick={() => openCancel(i)} aria-label={`Cancel ${i.guestName}'s booking at ${i.timeLabel}`}>
+                            Cancel
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
 
-      <dialog ref={dialog} aria-labelledby="cancel-title" onClose={() => setCancelling(null)} className="m-auto w-[min(28rem,calc(100%-2rem))] rounded-lg border border-line bg-paper p-6 text-ink backdrop:bg-black/40">
+      <dialog ref={dialog} aria-labelledby="cancel-title" onClose={() => setCancelling(null)} className="m-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-line bg-paper p-6 text-ink backdrop:bg-black/40">
         {cancelling && (
           <>
             <h2 id="cancel-title" className="font-display text-xl">
@@ -254,7 +282,7 @@ export function AdminDashboard({ today, branches, zone }: Props) {
               <button type="button" className={button} onClick={() => dialog.current?.close()} disabled={busy}>
                 Keep booking
               </button>
-              <button type="button" className="min-h-11 rounded-md bg-warn px-4 text-[15px] font-medium text-white hover:opacity-90 disabled:opacity-60" onClick={confirmCancel} disabled={busy}>
+              <button type="button" className="min-h-11 rounded-full bg-warn px-4 text-[15px] font-medium text-white hover:opacity-90 disabled:opacity-60" onClick={confirmCancel} disabled={busy}>
                 {busy ? "Cancelling…" : "Cancel booking"}
               </button>
             </div>

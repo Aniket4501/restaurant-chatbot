@@ -1,19 +1,22 @@
 @import "tailwindcss";
 
-/* Neem & Ember (T-16, §5.10). A warm ash surface, wood-smoke identity panel, and one accent: neem-leaf green for
-   primary actions and the selected time. System font stacks only: the app never fetches fonts (local-only, §7.4). */
+/* Neem & Ember (T-16, §5.10; restyled 2026-10-20 to the user's hospitality brief): warm off-white surface, deep
+   forest green for the brand panel and primary actions, restrained sage accents, subtle borders. System font stacks
+   only: the app never fetches fonts (local-only, §7.4). Contrast (WCAG AA): muted on off-white 5.4:1, sage-on-forest
+   7.0:1, white on forest 10.7:1. */
 :root {
-  --ash: #ece8e1;
-  --paper: #f8f6f2;
-  --ink: #1f1d1a;
-  --muted: #5f584f;
-  --line: #d3cbbf;
-  --smoke: #2a2622;
-  --smoke-ink: #f1ebe2;
-  --smoke-muted: #c4b9aa;
-  --neem: #2e5e3e;
-  --neem-dark: #234a30;
-  --neem-tint: #e3ebe2;
+  --ash: #f6f2ea;
+  --paper: #ffffff;
+  --ink: #1d2a22;
+  --muted: #5b665e;
+  --line: #e3ddd1;
+  --smoke: #1f3a2a;
+  --smoke-ink: #f5f1e8;
+  --smoke-muted: #b8c8b4;
+  --neem: #24452f;
+  --neem-dark: #1a3322;
+  --neem-tint: #e7eee3;
+  --sage: #8aa889;
   --warn: #7a4a12;
   --warn-tint: #f6ead6;
 }
@@ -30,6 +33,7 @@
   --color-neem: var(--neem);
   --color-neem-dark: var(--neem-dark);
   --color-neem-tint: var(--neem-tint);
+  --color-sage: var(--sage);
   --color-warn: var(--warn);
   --color-warn-tint: var(--warn-tint);
   --font-display: "Iowan Old Style", "Charter", "Palatino Linotype", "Book Antiqua", Georgia, serif;

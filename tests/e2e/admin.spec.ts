@@ -22,7 +22,8 @@ const SAT_8PM = Date.parse("2026-10-17T20:00:00+05:30");
 test("AC-07 a booking made in chat appears in admin, by date and branch @cat:booking_success", async ({ page, observed }) => {
   observed.pii.push("Asha Rao", "98765 43210");
   await page.goto("/");
-  await page.getByRole("button", { name: "Book at Hauz Khas" }).click();
+  await page.getByRole("button", { name: "Book a table" }).click();
+  await page.getByRole("button", { name: "Hauz Khas", exact: true }).click();
   await page.getByRole("button", { name: "Tomorrow, Sat 17 Oct" }).click();
   await page.getByRole("button", { name: "4 guests", exact: true }).click();
   await page.getByRole("button", { name: "7:30 PM", exact: true }).last().click();

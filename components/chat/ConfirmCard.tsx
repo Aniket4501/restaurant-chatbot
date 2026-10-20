@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Block } from "@/lib/chat/types";
 import type { CreateBody } from "@/components/chat/storage";
+import { CalendarIcon, GuestsIcon, PinIcon } from "@/components/ui/icons";
 
 // The confirm card (§5.10, BR-09, D-14): repeats branch, date, time and party, and asks for name and mobile
 // (+91 prefilled), optional email and note. Confirm disables while submitting. If the outcome is unknown (lost
@@ -12,7 +13,7 @@ type Confirm = Extract<Block, { type: "confirm" }>;
 export type CardState = { submitting: boolean; locked: boolean; fieldErrors: Record<string, string> | null; done: boolean; message: string | null };
 
 const input =
-  "mt-1 block min-h-11 w-full rounded-md border border-line bg-white px-3 text-[16px] text-ink placeholder:text-muted/70 disabled:bg-ash disabled:text-muted aria-[invalid=true]:border-warn";
+  "mt-1 block min-h-11 w-full rounded-lg border border-line bg-ash px-3 text-[16px] text-ink placeholder:text-muted/70 disabled:text-muted disabled:opacity-70 aria-[invalid=true]:border-warn";
 
 export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, onStartOver }: {
   block: Confirm;
@@ -34,20 +35,30 @@ export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, 
   return (
     <form
       aria-label="Confirm your booking"
-      className="rounded-lg border border-line bg-paper p-5"
+      className="rounded-xl border border-line bg-paper p-5"
       onSubmit={(e) => {
         e.preventDefault();
         if (disabled) return;
         onSubmit({ branch: block.branch, startsAt: block.startsAtMs, partySize: block.partySize, name: name.trim(), phone: phone.trim(), email: email.trim() || null, note: note.trim() || null });
       }}
     >
-      <h3 className="font-display text-xl text-ink">
+      <p className="text-sm text-muted">Your selection</p>
+      <h3 className="mt-1 flex items-center gap-2 font-display text-xl text-ink">
+        <CalendarIcon className="h-5 w-5 shrink-0 text-neem" />
         {block.dateLabel}, {block.timeLabel}
       </h3>
-      <p className="mt-1 text-[15px] text-muted">
-        {block.partySize} {block.partySize === 1 ? "guest" : "guests"} at {block.branchName}
-      </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <ul className="mt-2 space-y-1 text-[15px] text-ink">
+        <li className="flex items-center gap-2">
+          <GuestsIcon className="h-5 w-5 shrink-0 text-neem" />
+          {block.partySize} {block.partySize === 1 ? "guest" : "guests"}
+        </li>
+        <li className="flex items-center gap-2">
+          <PinIcon className="h-5 w-5 shrink-0 text-neem" />
+          {block.branchName}
+        </li>
+      </ul>
+      <div className="mt-4 border-t border-line pt-4 text-[15px] font-medium text-ink">Your details</div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="block text-[15px]" htmlFor={`${id}-name`}>
           Name
           <input id={`${id}-name`} className={input} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required maxLength={80} disabled={disabled} aria-invalid={!!err.name} aria-describedby={err.name ? `${id}-name-err` : undefined} />
@@ -70,22 +81,22 @@ export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, 
         </label>
       </div>
       {state.message && (
-        <p role="alert" className="mt-4 rounded-md bg-warn-tint px-4 py-2.5 text-[15px] text-warn">
+        <p role="alert" className="mt-4 rounded-lg bg-warn-tint px-4 py-2.5 text-[15px] text-warn">
           {state.message}
         </p>
       )}
       {state.locked ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" onClick={onRetry} disabled={state.submitting} className="min-h-11 rounded-md bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-60">
+          <button type="button" onClick={onRetry} disabled={state.submitting} className="min-h-11 rounded-full bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-60">
             {state.submitting ? "Checking…" : "Retry"}
           </button>
-          <button type="button" onClick={onStartOver} disabled={state.submitting} className="min-h-11 rounded-md border border-line bg-paper px-5 text-[15px] hover:border-neem hover:text-neem disabled:opacity-60">
+          <button type="button" onClick={onStartOver} disabled={state.submitting} className="min-h-11 rounded-full border border-line bg-paper px-5 text-[15px] hover:border-neem hover:text-neem disabled:opacity-60">
             Start over
           </button>
         </div>
       ) : (
         !state.done && (
-          <button type="submit" disabled={disabled} className="mt-4 min-h-11 rounded-md bg-neem px-6 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-60">
+          <button type="submit" disabled={disabled} className="mt-4 min-h-12 w-full rounded-full bg-neem px-6 text-[16px] font-medium text-white hover:bg-neem-dark disabled:opacity-60">
             {state.submitting ? "Confirming…" : "Confirm"}
           </button>
         )

@@ -12,7 +12,7 @@ export function LoginForm() {
   return (
     <form
       aria-label="Staff sign-in"
-      className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-paper p-6"
+      className="w-full max-w-sm space-y-4 rounded-xl border border-line bg-paper p-6"
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -35,14 +35,14 @@ export function LoginForm() {
       <h1 className="font-display text-2xl">Staff sign-in</h1>
       <label htmlFor="password" className="block text-[15px]">
         Password
-        <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={!!error} aria-describedby={error ? "login-error" : undefined} className="mt-1 block min-h-11 w-full rounded-md border border-line bg-white px-3 text-[16px]" />
+        <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={!!error} aria-describedby={error ? "login-error" : undefined} className="mt-1 block min-h-11 w-full rounded-lg border border-line bg-ash px-3 text-[16px]" />
       </label>
       {error && (
         <p id="login-error" role="alert" className="text-[15px] text-warn">
           {error}
         </p>
       )}
-      <button type="submit" disabled={busy || !password} className="min-h-11 w-full rounded-md bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-60">
+      <button type="submit" disabled={busy || !password} className="min-h-12 w-full rounded-full bg-neem px-5 text-[16px] font-medium text-white hover:bg-neem-dark disabled:opacity-60">
         {busy ? "Signing in…" : "Sign in"}
       </button>
     </form>
