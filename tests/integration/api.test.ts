@@ -12,6 +12,7 @@ import { applySeed, parseSeed } from "@/lib/db/seed";
 import { createLimiter } from "@/lib/http/ratelimit";
 import { toInstant } from "@/lib/time/tz";
 import { tempDb } from "./helpers/db";
+import { testChatDeps } from "../helpers/chat-deps";
 
 // §5.9 contracts through the real handlers (the route files only bind them to default deps).
 const NOW = Date.parse("2026-10-16T14:00:00+05:30");
@@ -31,6 +32,7 @@ beforeEach(() => {
     fetch: (...a) => fetchImpl(...a),
     adminEnv: () => ({}),
     limits: { createsPerPhone: createLimiter({ limit: 5, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 30, windowMs: 60_000 }), adminLogin: createLimiter({ limit: 5, windowMs: 60_000 }) },
+    chat: testChatDeps(),
   };
 });
 afterEach(() => t.cleanup());

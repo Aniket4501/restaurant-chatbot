@@ -13,6 +13,7 @@ import { applySeed, parseSeed } from "@/lib/db/seed";
 import { createLimiter } from "@/lib/http/ratelimit";
 import { toInstant } from "@/lib/time/tz";
 import { tempDb } from "./helpers/db";
+import { testChatDeps } from "../helpers/chat-deps";
 
 // AC-07 (API part), BR-13, D-16. Admin handlers re-check the cookie themselves (no proxy in these tests).
 const NOW = Date.parse("2026-10-17T10:00:00+05:30");
@@ -33,6 +34,7 @@ beforeEach(() => {
     fetch: fetch,
     adminEnv: () => env,
     limits: { createsPerPhone: createLimiter({ limit: 100, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 100, windowMs: 60_000 }), adminLogin: createLimiter({ limit: 5, windowMs: 60_000 }) },
+    chat: testChatDeps(),
   };
 });
 afterEach(() => t.cleanup());

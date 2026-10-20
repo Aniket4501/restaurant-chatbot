@@ -109,6 +109,19 @@ Phase 2 reproduced the race design: 20 processes → 1 created and 19 `SLOT_TAKE
 
 The §5.9 endpoints, plus D-14's typed 409 bodies (`SLOT_TAKEN`, `SLOT_UNAVAILABLE`, `DUPLICATE_BOOKING`) and a test-only `POST /api/__test/reset`, which returns 404 unless `E2E_TEST_MODE=1`. All bodies are Zod-validated. Errors use `{ error: { code, message, fields? } }`, with the typed extras above.
 
+**`POST /api/chat` as built (T-13, `lib/chat/types.ts`).**
+- **Body:** `{ sessionId (UUID), messages, draft, action?, context? }`.
+  - `messages`: at most 8; guest text ≤ 500 characters, assistant text ≤ 600. The last message must be the guest's unless an action is sent.
+  - `draft`: `{ branch, date, time, timeWindow, partySize (1–8), selected }`, validated strictly. `selected` is the slot behind a shown confirm card.
+  - `context`: `{ lastCitedIds }` from the previous reply.
+- **Actions:**
+  - `set_field {field, value}`. An explicit null clears the field, for "change" links.
+  - `select_slot {branch, startsAt (ms)}`. It carries the branch because an alternative may be at the other branch.
+- **Response:** `{ reply: { text, blocks }, draft, intent, context: { lastCitedIds }, meta }`, with `trace` only in test mode.
+- **Blocks:** `quick_replies`, `field_request`, `slots`, `confirm` and `info` (the cited facts in guest wording). `notice` is used for the degraded reply.
+- **429** (`Retry-After`) when either limit is full: 20 turns per minute per session and per address, or the model gate (1 call running, 4 queued).
+- **Until T-18**, `LLM_PROVIDER=ollama` has no chat client, so every model turn takes the degraded path. Booking through chips still works.
+
 ## Failure handling
 
 | Failure | Detected by | Guest sees | State |
