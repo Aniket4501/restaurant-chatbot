@@ -8,6 +8,7 @@
 //   node scripts/model-probe.mjs [--models qwen3.5:9b,qwen3.5:4b] [--runs 3] [--embed qwen3-embedding:0.6b]
 //                                [--only B01,F03] [--no-ab] [--no-edge] [--no-all-facts] [--skip-chat] [--out evals/results]
 //                                [--prompt v1|v2] [--sets chat,heldout] [--conditions retrieval/tuned,all-facts/tuned]
+//   node scripts/model-probe.mjs --dump-facts > evals/fixtures/probe-facts.v2.json   (facts only, no model calls)
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -158,6 +159,12 @@ function buildFacts() {
 const { staticFacts, kbFacts } = buildFacts();
 const ALL_FACTS = new Map([...staticFacts, ...kbFacts].map((f) => [f.id, f.text]));
 const factLine = (f) => `${f.id} | ${f.text}`;
+// --dump-facts prints the rendered facts as JSON and exits before any model call: the reference that
+// lib/kb/facts.ts is tested against for byte compatibility (D-13). Writes nothing.
+if (flag('dump-facts')) {
+  process.stdout.write(`${JSON.stringify({ promptVersion: PROMPT, now: PROBE.now, fixture: 'evals/fixtures/base.json', staticFacts, kbFacts }, null, 2)}\n`);
+  process.exit(0);
+}
 
 // ---------- prompt (§5.7 layout, static first; D-02 moves menu/FAQ facts into the dynamic part) ----------
 const nextWeekday = (wd, skipWeeks = 0) => {

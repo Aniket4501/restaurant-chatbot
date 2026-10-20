@@ -94,7 +94,7 @@ Phase 2 reproduced the race design: 20 processes → 1 created and 19 `SLOT_TAKE
 
 ## Retrieval (D-02, D-13)
 
-**Index.** One entry per menu item, FAQ, and aggregate fact (`menu-cat:<category>` price-sorted lists, `menu-diet:<tag>` lists). Index text is the rendered fact line, including branch scope ("Golf Course Road only.") and availability ("Currently unavailable.").
+**Index.** One entry per menu item, FAQ, and aggregate fact (`menu-cat:<category>` price-sorted lists, `menu-diet:<tag>` lists). Index text is the rendered fact line, including branch scope ("Golf Course Road only.") and availability ("Currently unavailable."). Aggregates are indexed by a one-sentence description instead, and at most 2 are retrieved per turn (D-13 T-10 amendment, approved 2026-10-20). `applySeed` rebuilds `kb_fts`; `kb:index` adds the embeddings.
 
 **Search.**
 - **Lexical:** FTS5 with the tested sanitiser (NFKC, stopwords removed, quoted OR terms, at most 16), ordered by `bm25`.

@@ -152,6 +152,21 @@ Decision:
 Evidence: probe retrieval metrics; reviewer experiments (lexical 0/14 vegan items for "which of your dishes are vegan" without stopword removal) \[Verified by reviewer and skeptic\].
 Consequences: New fact ID prefixes `restaurant:`, `menu-cat:` and `menu-diet:`. Schema adds `restaurant` and `fact_embeddings.model_digest` (appendix). Changes the retrieval evals.
 
+**T-10 implementation note and amendment (2026-10-20, status: amendment approved by the user, 2026-10-20).**
+Measured with real `qwen3-embedding:0.6b` vectors (`evals/fixtures/embeddings.json`, digest ac6da0dfba84) over the 86 retrievable facts of `base.json`: the 30 probe queries (R01–R30) plus 10 new list questions that only an aggregate answers completely (`evals/fixtures/retrieval-aggregates.json`, A01–A10). Script: `tests/unit/kb-retrieve.test.ts`; live re-check on the dev DB with the Ollama embedder gave identical top-8 lists for all 40 queries.
+
+| Variant | R01–R30 hybrid hit@8 / recall@8 | R01–R30 lexical hit@8 / recall@8 | A01–A10 hybrid hit@8 | A01–A10 lexical hit@8 |
+| --- | --- | --- | --- | --- |
+| As approved: aggregates indexed by their full text | 1.000 / 0.947 | 0.867 / 0.828 | 0.5 | 0.1 |
+| Proposed: short index text, at most 2 aggregates per turn | 1.000 / 0.950 | 0.867 / 0.828 | 1.0 | 1.0 |
+| Short index text, cap 1 | 1.000 / 0.958 | 0.867 / 0.828 | 0.9 | 0.9 |
+| Short index text, cap 3 | 1.000 / 0.942 | 0.867 / 0.828 | 1.0 | 1.0 |
+| Short index text, no cap | 0.967 / 0.933 (R18 lost) | 0.867 / 0.828 | 1.0 | 1.0 |
+
+- **Change to "Both are indexed like other facts" (approved):** aggregates are indexed (FTS5 and embeddings) by a one-sentence description, e.g. "Vegan: every vegan (plant-based) option, with prices, cheapest to most expensive.", while the prompt and grounding use the full list. A 35-item list ranks poorly on bm25 (length normalisation) and its vector is diluted, so as approved the aggregates were found for only 5 of 10 list questions (1 of 10 lexically), which misses this decision's purpose (M5, M10).
+- **Addition (approved):** at most 2 aggregates per turn (`LIMITS.retrievalAggregateMax`). Without a cap, "seafood dishes" (R18) retrieved only aggregates and failed the hybrid hit@8 = 100% floor. The cap also bounds prompt size (aggregates are up to ~1,500 characters).
+- **Within the approved decision (no approval needed):** carried `lastCitedIds` are capped at 4 (`LIMITS.retrievalCarryMax`), so every turn still retrieves at least 4 new facts; `applySeed` rebuilds `kb_fts` in its own transaction, so the lexical index always matches the seed; RRF ties keep lexical-then-semantic first-seen order, as the probe did; the restaurant fact is `restaurant:about`; the D-10 exception note on weekly hours facts is rendered by `lib/kb/facts.ts`. Aggregate headings avoid the word "dishes" ("Vegan (14 available)…"): with "Vegan dishes" labels, probe hybrid recall@8 fell to 0.931.
+
 ## D-14 Booking API contract and write-path details (2026-10-19, status: approved at G2, 2026-10-19)
 Context: Six reservation-integrity findings and two security findings: R1–R6, T6, S1/S5.
 Decision:

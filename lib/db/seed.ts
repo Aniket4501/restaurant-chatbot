@@ -6,6 +6,8 @@ import { immediate } from "@/lib/db/tx";
 import { exceptionProblems, SeedSchema, type SeedData } from "@/lib/db/seed-schema";
 import { windowsFor, type HoursException, type Service, type WeeklyHours } from "@/lib/booking/hours";
 import { addLocalDays, DAY_KEYS, instantAtMinutes, localDateOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
+import { loadFactSource, renderKbFacts } from "@/lib/kb/facts";
+import { rebuildLexical } from "@/lib/kb/index";
 
 export const SEED_DIR = path.join(process.cwd(), "data", "seed");
 const SEED_FILES = ["restaurant", "branches", "hours", "exceptions", "tables", "menu", "faq"] as const;
@@ -43,6 +45,7 @@ export type SeedReport = { anchorDate: LocalDate; counts: Record<string, number>
  * - Hours, exceptions, menu and FAQ rows are replaced (nothing references them).
  * - Relative dates ("+Nd") resolve against app_meta.seed_anchor_date, written on the first seed and reused.
  * - Confirmed future bookings that the new data would invalidate abort the load unless acceptConflicts.
+ * - kb_fts is rebuilt from the new menu and FAQ rows in the same transaction.
  */
 export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptConflicts?: boolean }): SeedReport {
   const zone = seed.branches[0].timezone;
@@ -98,6 +101,9 @@ export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptCon
     for (const f of seed.faq) upsertFaq.run(f.slug, f.question, f.answer, f.branch ? branchId.get(f.branch) : null);
     const faqSlugs = seed.faq.map((f) => f.slug);
     db.prepare(`DELETE FROM faq_entries WHERE slug NOT IN (${faqSlugs.map(() => "?").join(",") || "''"})`).run(...faqSlugs);
+
+    // The lexical index always matches the seeded menu and FAQ (D-13); kb:index adds the embeddings.
+    rebuildLexical(db, renderKbFacts(loadFactSource(db)));
 
     db.prepare("INSERT INTO app_meta (key, value) VALUES ('seed_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
       createHash("sha256").update(JSON.stringify(seed)).digest("hex").slice(0, 16),

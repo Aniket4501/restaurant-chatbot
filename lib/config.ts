@@ -27,6 +27,8 @@ export const LIMITS = {
   createsPerMinPerPhone: 5, // D-14
   createsPerMinGlobal: 30,
   retrievalTopK: 8,
+  retrievalAggregateMax: 2, // menu-cat/menu-diet facts per turn (T-10 measurement, D-13 note)
+  retrievalCarryMax: 4, // D-13 follow-ups: at most 4 of last turn's cited facts are kept, leaving room for new hits
 } as const;
 
 export const MODEL = {

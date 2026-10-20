@@ -1,0 +1,377 @@
+{
+  "promptVersion": "v2",
+  "now": "2026-10-16T14:05:00+05:30",
+  "fixture": "evals/fixtures/base.json",
+  "staticFacts": [
+    {
+      "id": "branch:hauz-khas",
+      "text": "Neem & Ember, Hauz Khas. Address: 24 Hauz Khas Village, New Delhi 110016. Phone: +91 11 4155 0101."
+    },
+    {
+      "id": "branch:gurugram",
+      "text": "Neem & Ember, Golf Course Road. Address: Unit 3, Ember Court, Golf Course Road, Sector 54, Gurugram 122011. Phone: +91 124 455 0202."
+    },
+    {
+      "id": "hours:hauz-khas:mon",
+      "text": "Hauz Khas on Mondays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:hauz-khas:tue",
+      "text": "Hauz Khas on Tuesdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:hauz-khas:wed",
+      "text": "Hauz Khas on Wednesdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:hauz-khas:thu",
+      "text": "Hauz Khas on Thursdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:hauz-khas:fri",
+      "text": "Hauz Khas on Fridays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:hauz-khas:sat",
+      "text": "Hauz Khas on Saturdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:hauz-khas:sun",
+      "text": "Hauz Khas on Sundays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:gurugram:mon",
+      "text": "Golf Course Road on Mondays: closed for lunch; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:gurugram:tue",
+      "text": "Golf Course Road on Tuesdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:gurugram:wed",
+      "text": "Golf Course Road on Wednesdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:gurugram:thu",
+      "text": "Golf Course Road on Thursdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:gurugram:fri",
+      "text": "Golf Course Road on Fridays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:gurugram:sat",
+      "text": "Golf Course Road on Saturdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "hours:gurugram:sun",
+      "text": "Golf Course Road on Sundays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM."
+    },
+    {
+      "id": "exception:hauz-khas:2026-10-22",
+      "text": "Hauz Khas on Thu 22 Oct 2026 (special hours replacing the usual ones): lunch 12:00 PM–3:30 PM; closed for dinner (Regular lunch; Closed for a private event)."
+    },
+    {
+      "id": "exception:gurugram:2026-10-27",
+      "text": "Golf Course Road on Tue 27 Oct 2026 (special hours replacing the usual ones): closed all day (Closed all day for kitchen maintenance)."
+    },
+    {
+      "id": "exception:hauz-khas:2026-10-31",
+      "text": "Hauz Khas on Sat 31 Oct 2026 (special hours replacing the usual ones): lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:30 PM (Regular lunch; Extended dinner hours)."
+    }
+  ],
+  "kbFacts": [
+    {
+      "id": "menu:dahi-puri-shots",
+      "text": "Dahi Puri Shots (small plates), ₹325. Crisp puris with spiced potato, sweet yoghurt, tamarind and mint. Vegetarian; contains dairy. Spice: mild."
+    },
+    {
+      "id": "menu:beetroot-peanut-tikki",
+      "text": "Beetroot & Peanut Tikki (small plates), ₹345. Pan-seared beetroot patties, peanut crumble, coriander chutney. Vegan, gluten-free; contains nuts. Spice: mild."
+    },
+    {
+      "id": "menu:amritsari-fish-fry",
+      "text": "Amritsari Fish Fry (small plates), ₹545. Carom-spiced basa in a gram-flour batter with chaat masala. Non-vegetarian, gluten-free. Spice: medium spicy."
+    },
+    {
+      "id": "menu:ember-chicken-65",
+      "text": "Ember Chicken 65 (small plates), ₹495. Crisp-fried chicken tossed with curry leaf and red chilli. Non-vegetarian. Spice: hot."
+    },
+    {
+      "id": "menu:mushroom-galouti",
+      "text": "Mushroom Galouti (small plates), ₹425. Melt-in-the-mouth mushroom kebabs on mini parathas. Vegetarian; contains nuts. Spice: mild."
+    },
+    {
+      "id": "menu:kale-pakoda",
+      "text": "Kale Pakoda (small plates), ₹295. Kale and onion fritters with tamarind dip. Vegan, gluten-free. Spice: mild."
+    },
+    {
+      "id": "menu:prawn-koliwada",
+      "text": "Prawn Koliwada (small plates), ₹645. Mumbai-style crisp prawns with green chutney. Non-vegetarian, gluten-free. Spice: medium spicy."
+    },
+    {
+      "id": "menu:papdi-chaat",
+      "text": "Papdi Chaat (small plates), ₹315. Crisp wafers, chickpeas, yoghurt and pomegranate. Vegetarian; contains dairy. Spice: mild."
+    },
+    {
+      "id": "menu:keema-pav-sliders",
+      "text": "Keema Pav Sliders (small plates), ₹525. Spiced lamb mince in buttered pav buns. Non-vegetarian; contains dairy. Spice: medium spicy. Golf Course Road only."
+    },
+    {
+      "id": "menu:smoked-paneer-tikka",
+      "text": "Smoked Paneer Tikka (tandoor), ₹495. Hung-curd marinated paneer with charred peppers. Vegetarian, gluten-free; contains dairy. Spice: mild."
+    },
+    {
+      "id": "menu:tandoori-broccoli",
+      "text": "Tandoori Broccoli (tandoor), ₹445. Broccoli in a cheddar and cardamom marinade. Vegetarian, gluten-free; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:malai-chicken-tikka",
+      "text": "Malai Chicken Tikka (tandoor), ₹575. Chicken in cream cheese, cardamom and mace. Non-vegetarian, gluten-free; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:tandoori-chicken-half",
+      "text": "Ember Tandoori Chicken (half) (tandoor), ₹625. Half a bird in Kashmiri chilli and yoghurt, finished on embers. Non-vegetarian, gluten-free; contains dairy. Spice: medium spicy."
+    },
+    {
+      "id": "menu:lamb-seekh-kebab",
+      "text": "Lamb Seekh Kebab (tandoor), ₹695. Minced lamb skewers with ginger and green chilli. Non-vegetarian, gluten-free. Spice: medium spicy."
+    },
+    {
+      "id": "menu:tandoori-pomfret",
+      "text": "Tandoori Pomfret (tandoor), ₹895. Whole pomfret in ajwain and red chilli (seasonal). Non-vegetarian, gluten-free. Spice: medium spicy. Currently unavailable."
+    },
+    {
+      "id": "menu:achari-soya-chaap",
+      "text": "Achari Soya Chaap (tandoor), ₹425. Soya chaap in a pickling-spice marinade. Vegan. Spice: medium spicy."
+    },
+    {
+      "id": "menu:bharwan-aloo",
+      "text": "Bharwan Aloo (tandoor), ₹395. Potatoes stuffed with cashew, raisin and paneer. Vegetarian, gluten-free; contains dairy, nuts. Spice: mild."
+    },
+    {
+      "id": "menu:old-delhi-butter-chicken",
+      "text": "Old Delhi Butter Chicken (mains), ₹645. Tandoori chicken in a tomato, butter and cashew gravy. Non-vegetarian, gluten-free; contains dairy, nuts. Spice: mild."
+    },
+    {
+      "id": "menu:dal-ember",
+      "text": "Dal Ember (mains), ₹445. Black lentils slow-cooked overnight over embers, finished with butter. Vegetarian, gluten-free; contains dairy. Spice: mild."
+    },
+    {
+      "id": "menu:yellow-dal-tadka",
+      "text": "Yellow Dal Tadka (mains), ₹375. Yellow lentils tempered with cumin and dried chilli. Vegan, gluten-free, Jain option available. Spice: mild."
+    },
+    {
+      "id": "menu:paneer-lababdar",
+      "text": "Paneer Lababdar (mains), ₹525. Paneer in a rich tomato, onion and cashew gravy. Vegetarian, gluten-free; contains dairy, nuts. Spice: mild."
+    },
+    {
+      "id": "menu:lamb-rogan-josh",
+      "text": "Lamb Rogan Josh (mains), ₹745. Kashmiri lamb curry with fennel and dry ginger. Non-vegetarian, gluten-free. Spice: medium spicy."
+    },
+    {
+      "id": "menu:kerala-prawn-curry",
+      "text": "Kerala Prawn Curry (mains), ₹795. Prawns in coconut milk with kokum and curry leaf. Non-vegetarian, gluten-free. Spice: medium spicy."
+    },
+    {
+      "id": "menu:baingan-bharta",
+      "text": "Baingan Bharta (mains), ₹425. Fire-roasted aubergine mash with onion and tomato. Vegan, gluten-free. Spice: mild."
+    },
+    {
+      "id": "menu:chana-pindi",
+      "text": "Chana Pindi (mains), ₹395. Dark, tangy Punjabi chickpea curry. Vegan, gluten-free. Spice: medium spicy."
+    },
+    {
+      "id": "menu:chicken-chettinad",
+      "text": "Chicken Chettinad (mains), ₹625. Fiery Tamil chicken curry with black pepper and star anise. Non-vegetarian, gluten-free. Spice: hot."
+    },
+    {
+      "id": "menu:mushroom-matar-makhana",
+      "text": "Mushroom Matar Makhana (mains), ₹475. Mushrooms, green peas and fox nuts in a mild cashew gravy. Vegetarian, gluten-free; contains dairy, nuts. Spice: mild."
+    },
+    {
+      "id": "menu:butter-naan",
+      "text": "Butter Naan (breads and rice), ₹110. Leavened bread from the tandoor, brushed with butter. Vegetarian; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:garlic-naan",
+      "text": "Garlic Naan (breads and rice), ₹125. Naan with garlic and coriander. Vegetarian; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:tandoori-roti",
+      "text": "Tandoori Roti (breads and rice), ₹75. Whole-wheat flatbread from the tandoor. Vegan. Spice: not spicy."
+    },
+    {
+      "id": "menu:laccha-paratha",
+      "text": "Laccha Paratha (breads and rice), ₹110. Flaky layered whole-wheat bread. Vegetarian; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:missi-roti",
+      "text": "Missi Roti (breads and rice), ₹95. Gram-flour and wheat flatbread with carom and onion. Vegan. Spice: mild."
+    },
+    {
+      "id": "menu:steamed-basmati",
+      "text": "Steamed Basmati Rice (breads and rice), ₹245. Aged basmati rice. Vegan, gluten-free, Jain option available. Spice: not spicy."
+    },
+    {
+      "id": "menu:jeera-rice",
+      "text": "Jeera Rice (breads and rice), ₹275. Basmati rice tempered with cumin. Vegan, gluten-free. Spice: not spicy."
+    },
+    {
+      "id": "menu:lamb-dum-biryani",
+      "text": "Lamb Dum Biryani (breads and rice), ₹795. Lamb and basmati sealed and slow-cooked with saffron. Non-vegetarian, gluten-free; contains dairy. Spice: medium spicy."
+    },
+    {
+      "id": "menu:subz-dum-biryani",
+      "text": "Subz Dum Biryani (breads and rice), ₹595. Seasonal vegetables and basmati, slow-cooked with saffron. Vegetarian, gluten-free; contains dairy. Spice: mild."
+    },
+    {
+      "id": "menu:gulab-jamun-rabri",
+      "text": "Gulab Jamun with Rabri (desserts), ₹295. Warm milk dumplings in rose syrup with thickened milk. Vegetarian; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:pistachio-kulfi",
+      "text": "Ember Pistachio Kulfi (desserts), ₹275. Slow-reduced milk ice cream with pistachio. Vegetarian, gluten-free; contains dairy, nuts. Spice: not spicy."
+    },
+    {
+      "id": "menu:coconut-jaggery-payasam",
+      "text": "Coconut Jaggery Payasam (desserts), ₹265. Rice pudding with coconut milk and jaggery. Vegan, gluten-free. Spice: not spicy."
+    },
+    {
+      "id": "menu:mango-sorbet",
+      "text": "Mango Sorbet (desserts), ₹245. Alphonso mango sorbet. Vegan, gluten-free. Spice: not spicy."
+    },
+    {
+      "id": "menu:chocolate-chilli-mousse",
+      "text": "Chocolate Chilli Mousse (desserts), ₹345. Dark chocolate mousse with a hint of chilli. Vegetarian; contains dairy, egg. Spice: mild."
+    },
+    {
+      "id": "menu:shahi-tukda",
+      "text": "Shahi Tukda (desserts), ₹295. Saffron bread pudding with rabri and almonds. Vegetarian; contains dairy, nuts. Spice: not spicy."
+    },
+    {
+      "id": "menu:masala-chaas",
+      "text": "Masala Chaas (drinks), ₹145. Spiced buttermilk. Vegetarian, gluten-free; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:kokum-cooler",
+      "text": "Kokum Cooler (drinks), ₹195. Kokum, black salt and soda. Vegan, gluten-free. Spice: not spicy."
+    },
+    {
+      "id": "menu:fresh-lime-soda",
+      "text": "Fresh Lime Soda (drinks), ₹165. Sweet, salted or mixed. Vegan, gluten-free. Spice: not spicy."
+    },
+    {
+      "id": "menu:mango-lassi",
+      "text": "Mango Lassi (drinks), ₹225. Yoghurt and Alphonso mango. Vegetarian, gluten-free; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:filter-coffee",
+      "text": "Filter Coffee (drinks), ₹175. South Indian filter coffee with milk. Vegetarian, gluten-free; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "menu:masala-chai",
+      "text": "Masala Chai (drinks), ₹145. Spiced milk tea. Vegetarian, gluten-free; contains dairy. Spice: not spicy."
+    },
+    {
+      "id": "faq:parking-hauz-khas",
+      "text": "(Hauz Khas) Q: Is there parking at Hauz Khas? A: Hauz Khas Village has paid public parking at the village entrance, about a 3-minute walk away. We don't offer valet at Hauz Khas."
+    },
+    {
+      "id": "faq:parking-gurugram",
+      "text": "(Golf Course Road) Q: Is there parking at Golf Course Road? A: Golf Course Road has free valet parking from 12:00 PM to 11:00 PM."
+    },
+    {
+      "id": "faq:alcohol-gurugram",
+      "text": "(Golf Course Road) Q: Do you serve alcohol at Golf Course Road? A: Yes. Golf Course Road has a licensed bar serving beer, wine and cocktails. Guests must be of legal drinking age and may be asked for ID."
+    },
+    {
+      "id": "faq:alcohol-hauz-khas",
+      "text": "(Hauz Khas) Q: Do you serve alcohol at Hauz Khas? A: Hauz Khas is not licensed to serve alcohol, and outside alcohol isn't allowed."
+    },
+    {
+      "id": "faq:children",
+      "text": "Q: Are children welcome? A: Yes. High chairs are available, and the kitchen can make child-sized portions of dal, rice and naan on request."
+    },
+    {
+      "id": "faq:pets",
+      "text": "Q: Can I bring my dog? A: Well-behaved dogs are welcome on the Golf Course Road terrace. Only assistance animals are allowed indoors at either branch."
+    },
+    {
+      "id": "faq:dress-code",
+      "text": "Q: Is there a dress code? A: No formal dress code. Most guests dress smart casual."
+    },
+    {
+      "id": "faq:accessibility-hauz-khas",
+      "text": "(Hauz Khas) Q: Is Hauz Khas wheelchair accessible? A: The Hauz Khas dining room is on the first floor and reached by stairs only. For step-free dining, we recommend Golf Course Road."
+    },
+    {
+      "id": "faq:accessibility-gurugram",
+      "text": "(Golf Course Road) Q: Is Golf Course Road wheelchair accessible? A: Yes. Golf Course Road has a step-free entrance and an accessible washroom."
+    },
+    {
+      "id": "faq:large-groups",
+      "text": "Q: Can you seat a large group? A: Online bookings are for 1 to 8 guests. For 9 or more, please call the branch and we'll arrange seating and a set menu."
+    },
+    {
+      "id": "faq:change-or-cancel",
+      "text": "Q: How do I change or cancel my booking? A: Please call the branch to change or cancel a booking. There is no cancellation fee."
+    },
+    {
+      "id": "faq:late-arrival",
+      "text": "Q: What if I'm running late? A: We hold your table for 15 minutes after the booking time. Call the branch if you'll be later than that."
+    },
+    {
+      "id": "faq:sitting-time",
+      "text": "Q: How long can we keep the table? A: Tables are booked for 90 minutes for 1 to 4 guests and 2 hours for 5 to 8 guests."
+    },
+    {
+      "id": "faq:celebration-cake",
+      "text": "Q: Can I bring a cake? A: Yes, you can bring a celebration cake. There is a ₹300 cakeage charge per cake. Mention it in the booking note."
+    },
+    {
+      "id": "faq:allergies",
+      "text": "Q: Can you handle food allergies? A: Tell your server about any allergy. Our kitchen handles nuts, dairy, gluten and shellfish, so we can't guarantee any dish is free of traces."
+    },
+    {
+      "id": "faq:vegan-options",
+      "text": "Q: Do you have vegan options? A: Yes. Dishes marked vegan contain no dairy, egg or honey, and there are vegan choices in every section of the menu."
+    },
+    {
+      "id": "faq:jain-food",
+      "text": "Q: Do you serve Jain food? A: Dishes marked Jain-available can be made without onion, garlic or root vegetables. Please ask your server when ordering."
+    },
+    {
+      "id": "faq:payment",
+      "text": "Q: How can I pay? A: We accept cards, UPI and cash."
+    },
+    {
+      "id": "faq:service-charge",
+      "text": "Q: Do you add a service charge? A: No service charge is added to the bill. Tipping is optional."
+    },
+    {
+      "id": "faq:walk-ins",
+      "text": "Q: Do you take walk-ins? A: Walk-ins are welcome when a table is free. We recommend booking for Friday and Saturday dinner."
+    },
+    {
+      "id": "faq:booking-window",
+      "text": "Q: How far ahead can I book? A: You can book up to 30 days ahead, and at least 60 minutes before your arrival time."
+    },
+    {
+      "id": "faq:outdoor-seating",
+      "text": "Q: Do you have outdoor seating? A: Golf Course Road has a covered terrace; ask for it in the booking note and we'll try to seat you there. Hauz Khas has indoor seating only."
+    },
+    {
+      "id": "faq:private-dining",
+      "text": "(Golf Course Road) Q: Do you have a private dining room? A: Golf Course Road has a private room for up to 16 guests. Please call the branch to arrange it."
+    },
+    {
+      "id": "faq:wifi",
+      "text": "Q: Do you have Wi-Fi? A: Yes, free Wi-Fi is available at both branches. Ask your server for the password."
+    },
+    {
+      "id": "faq:deposit",
+      "text": "Q: Do I need to pay a deposit to book? A: No. Bookings need no deposit and no card."
+    }
+  ]
+}

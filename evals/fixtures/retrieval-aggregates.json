@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "notes": "List and superlative questions that only an aggregate fact answers completely (D-13, review M5/M10). relevant = the aggregate that must be retrieved. Added in T-10; not part of the Phase 2 probe set (probe-messages.json R01–R30).",
+  "queries": [
+    { "id": "A01", "query": "which of your dishes are vegan", "relevant": ["menu-diet:vegan"] },
+    { "id": "A02", "query": "what's the cheapest dessert", "relevant": ["menu-cat:desserts"] },
+    { "id": "A03", "query": "list all your vegetarian options", "relevant": ["menu-diet:vegetarian"] },
+    { "id": "A04", "query": "which dishes have nuts in them", "relevant": ["menu-diet:contains-nuts"] },
+    { "id": "A05", "query": "what breads do you have", "relevant": ["menu-cat:breads-rice"] },
+    { "id": "A06", "query": "gluten free options", "relevant": ["menu-diet:gluten-free"] },
+    { "id": "A07", "query": "what drinks are there", "relevant": ["menu-cat:drinks"] },
+    { "id": "A08", "query": "most expensive main course", "relevant": ["menu-cat:mains"] },
+    { "id": "A09", "query": "which items contain dairy", "relevant": ["menu-diet:contains-dairy"] },
+    { "id": "A10", "query": "show me all the starters", "relevant": ["menu-cat:small-plates"] }
+  ]
+}
