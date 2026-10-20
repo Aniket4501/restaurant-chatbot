@@ -161,7 +161,8 @@ describe("hours answers are rendered from facts; exceptions win (D-10)", () => {
     const r = renderHoursAnswer(["hours:hauz-khas:thu"], facts, zoneOf);
     expect(r.factIds).toEqual(["hours:hauz-khas:thu", "exception:hauz-khas:2026-10-22"]);
     expect(r.text).toBe(
-      "Hauz Khas on Thursdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM. Special hours on Thu 22 Oct 2026. Special hours at Hauz Khas on Thu 22 Oct 2026: lunch 12:00 PM–3:30 PM; closed for dinner (Regular lunch; Closed for a private event).",
+      // D-21: the "Special hours on Thu 22 Oct 2026." pointer is dropped, since the special hours follow in full.
+      "Hauz Khas on Thursdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM. Special hours at Hauz Khas on Thu 22 Oct 2026: lunch 12:00 PM–3:30 PM; closed for dinner (Regular lunch; Closed for a private event).",
     );
   });
 

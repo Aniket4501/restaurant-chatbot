@@ -34,16 +34,38 @@ export function clockHours(raw: string): Set<number> {
     if (to) out.add(h12(h - 1)); // "quarter to nine" is 8:45
   };
   for (const m of t.matchAll(/(?<![\d.:/])(\d{1,2})[:.](\d{2})(?![.\d])/g)) if (Number(m[2]) < 60) add(Number(m[1]));
-  for (const m of t.matchAll(/(?<![\d.:/])(\d{1,2})\s*(?:am|pm|a\.m\.?|p\.m\.?|o'?clock|ish|hrs?|h)\b/g)) add(Number(m[1]));
+  for (const m of t.matchAll(/(?<![\d.:/])(\d{1,2})\s*(?:am|pm|a\.m\.?|p\.m\.?|o\s?'?\s?clock|ish|hrs?|h|baje)\b/g)) add(Number(m[1]));
+  // "7 30 pm" (a space for the colon) and "8 in the evening" / "9 at night" (D-21 audit).
+  for (const m of t.matchAll(/(?<![\d.:/])(\d{1,2})\s+[0-5]\d\s*(?:am|pm|a\.m\.?|p\.m\.?)\b/g)) add(Number(m[1]));
+  for (const m of t.matchAll(/(?<![\d.:/])(\d{1,2})\s+(?:in the (?:evening|morning|afternoon)|at night|tonight)\b/g)) add(Number(m[1]));
   for (const m of t.matchAll(/(?<![\d.:/])(\d{3,4})\s*(?:hrs?|hours|h)\b/g)) add(Math.floor(Number(m[1]) / 100));
   for (const m of t.matchAll(new RegExp(`\\b(${PREP})\\s+(?:like\\s+|maybe\\s+|roughly\\s+)?(\\d{1,2})(?![\\d:./])${NOT_A_TIME}`, "g"))) add(Number(m[2]), m[1] === "to");
-  for (const m of t.matchAll(new RegExp(`\\b(${W})\\s*(?:ish|o'?clock|am|pm|a\\.m\\.?|p\\.m\\.?)\\b`, "g"))) add(hourOfWord(m[1]));
+  for (const m of t.matchAll(new RegExp(`\\b(${W})\\s*(?:ish|o\\s?'?\\s?clock|am|pm|a\\.m\\.?|p\\.m\\.?|baje)\\b`, "g"))) add(hourOfWord(m[1]));
   for (const m of t.matchAll(new RegExp(`\\b(${W})\\s+(?:thirty|fifteen|forty five|forty|o five)\\b`, "g"))) add(hourOfWord(m[1]));
   for (const m of t.matchAll(new RegExp(`\\b(${PREP})\\s+(?:like\\s+)?(${W})\\b${NOT_A_TIME}`, "g"))) add(hourOfWord(m[2]), m[1] === "to");
   for (const m of t.matchAll(/\b(thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty(?: one| two| three)?)\s+hundred\b/g)) add(TEENS[m[1]]);
   for (const m of t.matchAll(new RegExp(`\\b(${W})\\s+hundred\\b`, "g"))) add(hourOfWord(m[1]));
   if (/\b(?:noon|midday|midnight)\b/.test(t)) add(12);
   return out;
+}
+
+/**
+ * The one clock time the message states unambiguously ("8 PM", "7:30pm", "20:30"), as HH:MM, or null. A bare "at 8" is
+ * not unambiguous (morning or evening), and two different times are not one (D-21: the model returned no time for
+ * "Do you have a table available at 8 PM?").
+ */
+export function statedClockTime(raw: string): string | null {
+  const t = foldDigits(raw).toLowerCase();
+  const found = new Set<string>();
+  const fmt = (h: number, m: number) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  for (const x of t.matchAll(/(?<![\d.:/])(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.?|p\.m\.?)(?![a-z])/g)) {
+    const h = Number(x[1]);
+    const m = Number(x[2] ?? 0);
+    if (h < 1 || h > 12 || m > 59) continue;
+    found.add(fmt(x[3].startsWith("p") ? (h % 12) + 12 : h % 12, m));
+  }
+  for (const x of t.matchAll(/(?<![\d.:/])(1[3-9]|2[0-3])[:.]([0-5]\d)(?![.\d])/g)) found.add(fmt(Number(x[1]), Number(x[2])));
+  return found.size === 1 ? [...found][0] : null;
 }
 
 /** Whether the guest's message states the hour of `time` (HH:MM) as a clock time. */
@@ -53,8 +75,10 @@ export function timeStated(time: string, text: string): boolean {
 
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 // Words that make a weekday more than a plain weekday ("may" is left out: it is usually the verb).
+// Negated or relative wording ("except Saturday", "the day before Sunday", "no wait", "nahi") makes it more than a plain
+// weekday too: the guard abstains and the model's reading stands (D-21 audit).
 const OTHER_DATE_WORDS =
-  /\b(?:next|after|following|last|every|weekend|today|tonight|tomorrow|week|fortnight|january|february|march|april|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b|\d{1,2}\s*(?:st|nd|rd|th)\b|\d{1,2}\s*[/-]\s*\d{1,2}|\d{4}-\d{2}-\d{2}/;
+  /\b(?:next|after|before|following|last|every|weekend|today|tonight|tomorrow|tomm?orr?ow|tmrw|tmr|kal|parso|week|fortnight|except|instead|not|nahi|wait|other than|apart from|january|february|march|april|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b|\d{1,2}\s*(?:st|nd|rd|th)\b|\d{1,2}\s*[/-]\s*\d{1,2}|\d{4}-\d{2}-\d{2}|\b\d{1,2}\.\d{1,2}\.(?:20)?\d{2}\b|\b(?:1\d|2\d|3[01])\.(?:0?[1-9]|1[0-2])\b(?!\s*(?:am|pm))/;
 
 /** The weekday (0 = Sunday) when the text names exactly one plain weekday and no other date words, else null. */
 export function plainWeekday(raw: string): number | null {
@@ -67,8 +91,11 @@ export function plainWeekday(raw: string): number | null {
   return DAYS.indexOf(day);
 }
 
-// "20 people", "party of 12", "a group of 15 guests". Only an explicit count with a people word counts.
-const PARTY_RE = /\b(?:party|group|table)\s+of\s+(\d{1,3})\b|\b(\d{1,3})\s*(?:people|persons|guests|pax|adults|of us)\b/i;
+// "20 people", "party of 12", "a group of 15 guests", "twenty people", "a dozen of us". Only an explicit count with a
+// people word counts, and the last one stated is the one that stands ("we were 10, now just 6 of us").
+const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, dozen: 12, "a dozen": 12 };
+const COUNT = `\\d{1,3}|a dozen|${Object.keys(COUNT_WORDS).filter((k) => k !== "a dozen").join("|")}`;
+const PARTY_RE = new RegExp(`\\b(?:party|group|table)\\s+(?:of|for)\\s+(${COUNT})\\b|\\b(${COUNT})\\s*(?:people|persons|guests|pax|adults|of us)\\b`, "gi");
 const BOOKING_CUE_RE = /\b(?:book\w*|reserv\w*|table|seat\w*|come|coming|visit)\b/i;
 
 /**
@@ -76,21 +103,30 @@ const BOOKING_CUE_RE = /\b(?:book\w*|reserv\w*|table|seat\w*|come|coming|visit)\
  * sometimes answers "can I book for 20 people?" as an FAQ, or drops the 20 (live walkthrough, 2026-10-20).
  */
 export function largePartyStated(raw: string): number | null {
-  const t = foldDigits(raw);
-  const m = PARTY_RE.exec(t);
-  const n = m ? Number(m[1] ?? m[2]) : NaN;
+  const t = foldDigits(raw).toLowerCase();
+  const m = [...t.matchAll(PARTY_RE)].at(-1);
+  const word = m ? (m[1] ?? m[2]) : null;
+  const n = word === null ? NaN : /^\d/.test(word) ? Number(word) : (COUNT_WORDS[word] ?? NaN);
   return n > RULES.onlinePartyMax && BOOKING_CUE_RE.test(t) ? n : null;
 }
 
 const MONTHS = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b/;
 const ANY_DAY = /\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|today|tonight|tomorrow|next|week|weekend)\b/;
 
-/** The day number when the text names exactly one day of the month ("the 28th") and no month or weekday, else null. */
+const NOT_A_DATE = "(?!\\s+(?:birthday|anniversary|floor|time|row|year|place|wedding|edition|street|avenue|cross|main|sector|block|phase|of us)\\b)";
+const RELATIVE = /\b(?:after|before|not|except|instead|other than|apart from|nahi)\b/;
+
+/**
+ * The day number when the text names exactly one day of the month in a date phrase ("on the 28th", "the 3rd") and no
+ * month, weekday or relative wording, else null. Any other ordinal ("my daughter's 18th birthday", "1st floor") is not
+ * a date (D-21 audit).
+ */
 export function plainDayOfMonth(raw: string): number | null {
   const t = foldDigits(raw).toLowerCase();
-  const days = [...t.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)\b/g)].map((m) => Number(m[1]));
-  if (days.length !== 1 || days[0] < 1 || days[0] > 31 || MONTHS.test(t) || ANY_DAY.test(t)) return null;
-  return days[0];
+  const ordinals = [...t.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)\b/g)];
+  const dated = [...t.matchAll(new RegExp(`(?:\\bon\\s+(?:the\\s+)?|\\bthe\\s+)(\\d{1,2})(?:st|nd|rd|th)\\b${NOT_A_DATE}`, "g"))].map((m) => Number(m[1]));
+  if (ordinals.length !== 1 || dated.length !== 1 || dated[0] < 1 || dated[0] > 31 || MONTHS.test(t) || ANY_DAY.test(t) || RELATIVE.test(t)) return null;
+  return dated[0];
 }
 
 /** The first date from today (inclusive) within the horizon with this day number: rule 2's reading of "the 28th". */
@@ -107,6 +143,12 @@ function dayOfMonthDate(now: number, zone: string, day: number): string | null {
 export function guardExtraction(turn: Turn, text: string, now: number, zone: string): { turn: Turn; trace: TraceEntry[] } {
   const trace: TraceEntry[] = [];
   let b = turn.booking;
+  // A booking message with one unambiguous clock time the model left out: code fills it in.
+  const clock = turn.intent === "booking" && b.time === null && b.ambiguity?.field !== "time" ? statedClockTime(text) : null;
+  if (clock) {
+    b = { ...b, time: clock };
+    trace.push({ action: "correct_field", field: "time", reason: "stated" });
+  }
   if (b.time !== null && !timeStated(b.time, text)) {
     b = { ...b, time: null };
     trace.push({ action: "ignore_field", field: "time", reason: "not_stated" });
@@ -121,7 +163,7 @@ export function guardExtraction(turn: Turn, text: string, now: number, zone: str
   // BR-07, enforced: a booking message for 9+ people always gets the large-party reply, whatever the model returned.
   const large = largePartyStated(text);
   let intent = turn.intent;
-  if (large !== null && (intent !== "booking" || b.partySize !== large)) {
+  if (large !== null && intent !== "recommend" && intent !== "menu" && (intent !== "booking" || b.partySize !== large)) {
     if (intent !== "booking") b = { ...b, ambiguity: null };
     intent = "booking";
     b = { ...b, partySize: large };

@@ -1,8 +1,11 @@
 # Status
-Phase: 7 — QA and AI evaluation (DONE) + D-19 demo scope + D-20 (user's implementation prompt)   Gate pending: none (G1, G2, G2-M approved 2026-10-19; G3 not triggered)   Updated: 2026-10-20
-Current task: D-20 (2/2): user walkthrough fixes done; release run (D2 × 3) pending a time the user isn't using the app   Branch: build/reservation-bot   Last commit: see `git log -1`
+Phase: 7 — QA and AI evaluation (DONE) + D-19 demo scope + D-20 + D-21 (eval framework, dashboard, improvements)   Gate pending: none (G1, G2, G2-M approved 2026-10-19; G3 not triggered)   Updated: 2026-10-20
+Current task: D-21: eval framework, evals dashboard, baseline, audit fixes; final live run and report   Branch: build/reservation-bot   Last commit: see `git log -1`
 D-20 (user, 2026-10-20): LLM-chosen recommendations validated by code, preference memory, menu browsing, one reply per action, no duplicate fact card. 46955af = D-20 (1/2)
 D-20 review (docs/research/2026-10-20-d20-review.json): 48 confirmed findings, 42 fixed with a test, 6 partly fixed or deliberately unchanged (listed in the file and in DECISIONS D-20 amendment)
+D-21 (user, 2026-10-21): eval framework (9 quality areas, suites, reports, baseline comparison), /admin/evals dashboard, +85 framework cases and +36 audit cases (24 scripted, 12 live), improvements measured against the baseline
+D-21 baseline (56297b8, evals/baseline.json): scripted 73/75, live 173/187, 0 invariant violations, recovery gate 0.80 (duplicate availability message)
+D-21 audit (read-only workflow): 32 confirmed findings, each a case; see DECISIONS D-21 improvements
 Last verification (2026-10-20):
 - After the review fixes: unit 424, integration 212, D1 70/70, E2E 27/27 (each run separately; `npm run verify` result in the D-20 (2/2) commit message)
 - Mutation checks: each new D1 case (SC-REC-007, 014, 015, 016) and E2E guard test (reload replay, chips during a submit, in-flight flag) fails when its fix is removed; the unmutated build passes

@@ -1,0 +1,356 @@
+{
+ "meta": {
+  "kind": "eval-live",
+  "formatVersion": 2,
+  "mode": "live",
+  "suite": "full",
+  "selection": {
+   "case": null,
+   "category": null,
+   "area": null
+  },
+  "startedAt": "2026-10-21T08:30:00.000Z",
+  "finishedAt": null,
+  "durationMs": 131000,
+  "gitSha": "abc1234",
+  "gitDirty": false,
+  "changedDuringRun": false,
+  "promptVersion": "v5",
+  "chooserVersion": "c5",
+  "dataset": {
+   "dir": "evals/cases",
+   "hash": "e2efixture00002",
+   "cases": 4
+  },
+  "numCtx": 8192,
+  "temperature": 0,
+  "seed": 42,
+  "runs": 1,
+  "model": "qwen3.5:9b",
+  "loadAverage": [
+   3.2,
+   3.1,
+   3.0
+  ]
+ },
+ "thresholds": [
+  {
+   "metric": "criticalInvariantViolations",
+   "value": 0,
+   "want": "≤ 0",
+   "ok": true,
+   "override": null
+  },
+  {
+   "metric": "groundedAnswerCorrectness",
+   "value": 0.8,
+   "want": "≥ 0.85",
+   "ok": false,
+   "override": null
+  }
+ ],
+ "results": [
+  {
+   "id": "LV-UX-901",
+   "category": "ux",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "status": "fail",
+   "durationMs": 2400,
+   "expect": {
+    "expect": null,
+    "forbidden": [],
+    "notes": null,
+    "variantOf": null
+   },
+   "failures": [
+    "turn 1: shows the same text twice: \"sorry, i couldn't check availability just now\""
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "ux.duplicate",
+     "ok": false,
+     "detail": "turn 1: shows the same text twice: \"sorry, i couldn't check availability just now\""
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "table for 2 tomorrow at hauz khas",
+     "reply": "Sorry, I couldn't check availability just now.",
+     "blocks": [
+      "notice: Sorry, I couldn't check availability just now."
+     ],
+     "cited": [],
+     "outcome": "degraded",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2100,
+     "modelMs": 2020,
+     "promptTokens": 4700,
+     "cachedTokens": 4600,
+     "outputTokens": 80,
+     "firstTryValid": true,
+     "trace": [
+      {
+       "action": "model_call",
+       "attempt": 1,
+       "result": "ok"
+      },
+      {
+       "action": "retrieve",
+       "mode": "hybrid",
+       "reason": null,
+       "ids": [
+        "faq:booking-window"
+       ]
+      },
+      {
+       "action": "availability_error"
+      }
+     ],
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.duplicate",
+       "ok": false,
+       "detail": "turn 1: shows the same text twice: \"sorry, i couldn't check availability just now\""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-INT-901",
+   "category": "booking_intent",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 2400,
+   "expect": {
+    "expect": {
+     "intent": "booking"
+    },
+    "forbidden": [],
+    "notes": null,
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": ""
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "Can I book a table?",
+     "reply": "Which branch would you like?",
+     "blocks": [],
+     "cited": [],
+     "outcome": "ask",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2100,
+     "modelMs": 2020,
+     "promptTokens": 4700,
+     "cachedTokens": 4600,
+     "outputTokens": 80,
+     "firstTryValid": true,
+     "trace": [
+      {
+       "action": "model_call",
+       "attempt": 1,
+       "result": "ok"
+      },
+      {
+       "action": "ask_field",
+       "field": "branch"
+      }
+     ],
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "intent",
+       "ok": true,
+       "detail": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-RES-901",
+   "category": "valid_slot",
+   "severity": "critical",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 2400,
+   "expect": {
+    "expect": null,
+    "forbidden": [],
+    "notes": null,
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": ""
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "table for 2 at Golf Course Road tomorrow at 7:30pm",
+     "reply": "Here are your booking details.",
+     "blocks": [
+      "confirm gurugram 2026-10-17 19:30 x2"
+     ],
+     "cited": [],
+     "outcome": "confirm",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2100,
+     "modelMs": 2020,
+     "promptTokens": 4700,
+     "cachedTokens": 4600,
+     "outputTokens": 80,
+     "firstTryValid": true,
+     "trace": [
+      {
+       "action": "model_call",
+       "attempt": 1,
+       "result": "ok"
+      },
+      {
+       "action": "check_availability",
+       "args": {
+        "branch": "gurugram",
+        "date": "2026-10-17",
+        "partySize": 2,
+        "time": "19:30",
+        "window": null
+       },
+       "result": "available",
+       "slots": 11,
+       "alternatives": 0
+      }
+     ],
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "draft",
+       "ok": true,
+       "detail": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-REC-901",
+   "category": "recommendation",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 2400,
+   "expect": {
+    "expect": null,
+    "forbidden": [],
+    "notes": null,
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "recommend.shown",
+     "ok": true,
+     "detail": ""
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "Suggest a dessert",
+     "reply": "The Mango Sorbet at ₹245 is light and fruity.",
+     "blocks": [
+      "recommend menu:mango-sorbet ₹245"
+     ],
+     "cited": [],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "hybrid",
+     "latencyMs": 3900,
+     "modelMs": 3820,
+     "promptTokens": 4700,
+     "cachedTokens": 4600,
+     "outputTokens": 80,
+     "firstTryValid": true,
+     "trace": [
+      {
+       "action": "model_call",
+       "attempt": 1,
+       "result": "ok"
+      },
+      {
+       "action": "recommend",
+       "attempt": 1,
+       "result": "ok",
+       "pick": "mango-sorbet",
+       "alternatives": [],
+       "rejected": []
+      }
+     ],
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "recommend.shown",
+       "ok": true,
+       "detail": ""
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -11,7 +11,9 @@ import { findPhones } from "@/lib/phone";
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 // ISO dates, clock times and day-month-year dates with one separator (22-10-2026, 22.10.2026, 22 10 2026): booking
 // needs them, and the 8+ digit fallback would otherwise mask them (review MB-5).
-const PROTECT_RE = /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)|(?<!\d)\d{1,2}:\d{2}(?!\d)|(?<!\d)(?:0?[1-9]|[12]\d|3[01])([-. /])(?:0?[1-9]|1[0-2])\1(?:20)?\d{2}(?!\d)/g;
+// Dotted times and day-month pairs ("20.30", "17.10", D-21 audit) are held too: "17.10, 20.30, 2 pax" was masked
+// whole as a phone number. A dotted phone number ("98.10.12.34.56") is still masked: each pair touches another dot.
+const PROTECT_RE = /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)|(?<!\d)\d{1,2}:\d{2}(?!\d)|(?<!\d)(?:0?[1-9]|[12]\d|3[01])([-. /])(?:0?[1-9]|1[0-2])\1(?:20)?\d{2}(?!\d)|(?<![\d.])(?:[01]?\d|2[0-3])\.[0-5]\d(?![.\d])/g;
 const DIGIT_RUN_RE = /\+?\d(?:[\d\s().,_-]*\d)?/g; // commas and underscores separate digits too (review MB-6)
 const HOLD = "\uE000"; // private-use placeholder: not a digit, never part of a phone match
 

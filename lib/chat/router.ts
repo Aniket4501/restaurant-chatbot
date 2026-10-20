@@ -5,10 +5,12 @@ import type { Turn } from "@/lib/llm/schema";
 import { addLocalDays, dayLabel, dayLabelLong, isoInZone, localDateOf, localTimeOf, timeLabel, timeLabelOf, todayLocal, type LocalDate } from "@/lib/time/tz";
 import { smalltalkShowable } from "@/lib/chat/claims";
 import { applySetField, bookingInProgress, mergeExtracted, type FieldCtx, type FieldIssue, type MergeResult } from "@/lib/chat/draft";
-import { checkGrounding, type GroundingContext } from "@/lib/chat/grounding";
+import { checkGrounding, dateSpans, type GroundingContext } from "@/lib/chat/grounding";
 import { isHoursOnly, renderHoursAnswer } from "@/lib/chat/hours";
 import { T, type BranchInfo } from "@/lib/chat/templates";
-import type { Action, Block, Chip, Draft, Field, Outcome, SlotChip, TraceEntry } from "@/lib/chat/types";
+import { ALLERGY_NOTE, needsAllergyNote, type MenuEntry } from "@/lib/chat/menu";
+import { claimProblems, explicitPrefs } from "@/lib/chat/recommend";
+import type { Action, Block, Chip, Draft, Field, Outcome, Prefs, SlotChip, TraceEntry } from "@/lib/chat/types";
 
 // Deterministic turn logic (§5.7 step 2 and 5): the booking flow driven by the draft, and routing of a validated
 // model turn by intent. Booking turns only ever show templates; model prose appears only for FAQ answers that pass
@@ -136,7 +138,8 @@ export function nextStep(merge: Pick<MergeResult, "draft" | "issues" | "ambiguit
 function couldntCheck(draft: Draft, ctx: FlowCtx): Step {
   ctx.trace.push({ action: "availability_error" });
   const retry: Chip[] = draft.partySize !== null ? [{ label: "Try again", action: { type: "set_field", field: "partySize", value: draft.partySize } }] : [];
-  return { text: T.couldntCheck, blocks: [{ type: "notice", tone: "warning", text: T.couldntCheck }, ...(retry.length ? [{ type: "quick_replies" as const, chips: retry }] : [])], draft: { ...draft, selected: null }, outcome: "slots" };
+  // The message once, as the reply (D-21: it was also repeated in a notice, so the guest read it twice).
+  return { text: T.couldntCheck, blocks: retry.length ? [{ type: "quick_replies", chips: retry }] : [], draft: { ...draft, selected: null }, outcome: "slots" };
 }
 
 function loadBundle(ctx: FlowCtx, dates: LocalDate[]): AvailabilityBundle | null {
@@ -230,7 +233,11 @@ export function handleAction(action: Exclude<Action, { type: "menu" }>, draft: D
 
 // ---------- model turns ----------
 
-export type FactCtx = GroundingContext & { staticFacts: Fact[] };
+/** The facts sent, plus (D-21) the guest's message, their food preferences in force and the menu, for FAQ claim checks. */
+export type FactCtx = GroundingContext & { staticFacts: Fact[]; guest?: string; foodPrefs?: Prefs | null; menu?: MenuEntry[] };
+
+// An allergen named in the guest's message: the answer gets the allergy note (D-21 audit: FAQ answers had none).
+const ALLERGEN_WORDS = /\ballerg\w*|\banaphyla|\b(?:pea|tree )?nuts?\b|\bcashews?\b|\balmonds?\b|\bpistachios?\b|\bdairy\b|\blactose\b|\beggs?\b|\bgluten\b|\bco?eliac\b|\bsesame\b|\bshellfish\b|\bsoy\b/i;
 
 // The same starting points as the welcome (D-20). "Find a table" asks for the branch with no model call.
 const QUICK_REPLIES = (): Block => ({
@@ -244,7 +251,7 @@ const QUICK_REPLIES = (): Block => ({
 });
 
 /** A recommend or menu turn worked out in runTurn (it needs the menu and, for recommendations, a second model call). */
-export type Prepared = { text: string; blocks: Block[]; cited: string[] };
+export type Prepared = { text: string; blocks: Block[]; cited: string[]; largeParty?: boolean };
 
 /** Route a validated model turn by intent (§5.7 step 5, D-10, D-15). */
 export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx, prepared: Prepared | null = null): Step {
@@ -257,10 +264,12 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
   // this reply carries a confirm card, and if the guest's selected slot was lost, that step's text is shown as a notice.
   const confirmShown = !!resumed?.blocks.some((b) => b.type === "confirm");
   const lostSelection = draft.selected !== null && !confirmShown;
+  // D-15, amended by D-21: next to a confirm card, an answer that passed grounding (no booking claims) is shown with
+  // the reminder after it, so the question the guest asked is still answered; smalltalk is replaced by the reminder.
   const prose = (text: string) => {
     if (!confirmShown) return text;
     ctx.trace.push({ action: "pending_confirm" });
-    return T.pendingConfirm;
+    return text ? `${text} ${T.pendingConfirm}` : T.pendingConfirm;
   };
   // The lost-slot note is a template, so it goes in a notice block and never mixes with model prose (INV-05).
   const lostNote: Block[] = lostSelection && resumed ? [{ type: "notice", tone: "warning", text: resumed.text }] : [];
@@ -281,19 +290,31 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       const cited = [...new Set(turn.citedFactIds)];
       const unknown = cited.length === 0 ? "no_citation" : cited.some((id) => !facts.factsById.has(id)) ? "unknown_citation" : cited.some((id) => !facts.sentIds.has(id)) ? "not_sent" : null;
       if (!unknown && isHoursOnly(cited)) {
-        const r = renderHoursAnswer(cited, facts.factsById, facts.zoneOf);
+        const mentionedDates = dateSpans(`${facts.guest ?? ""} ${turn.answer ?? ""}`);
+        const r = renderHoursAnswer(cited, facts.factsById, facts.zoneOf, (date) => mentionedDates.some((d) => d.day === Number(date.slice(8, 10)) && (d.month === null || d.month === Number(date.slice(5, 7)))));
         ctx.trace.push({ action: "answer_faq", ids: r.factIds, rendered: true });
         // No card repeating the cited facts under the answer (D-20: it duplicated every answer and showed internal
         // list wording); the cited IDs stay in the reply's metadata for the invariants.
         return reply(prose(r.text), "hours_answer", { cited: r.factIds });
       }
+      // An allergy in play (stated now or earlier, or an allergen named): the fixed note goes with the answer.
+      const allergyLead: Block[] =
+        (facts.guest !== undefined && ALLERGEN_WORDS.test(facts.guest)) || (facts.foodPrefs && needsAllergyNote(facts.foodPrefs)) || (facts.guest !== undefined && explicitPrefs(facts.guest).allergy) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
       const g = unknown ? ({ ok: false, reason: unknown, detail: "" } as const) : checkGrounding(turn.answer ?? "", cited, facts);
       if (!g.ok || !turn.answer?.trim()) {
         ctx.trace.push({ action: "fallback_unknown", reason: g.ok ? "empty_answer" : g.reason });
-        return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback");
+        return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback", { lead: allergyLead });
+      }
+      // Grounding checks numbers and booking words; the claims about dishes are checked against the cited dishes'
+      // labels and descriptions (D-21: "Yes, the Mango Sorbet is safe", "the Chana Pindi is a vegan paneer dish").
+      const menu = facts.menu ?? [];
+      const problems = claimProblems(turn.answer.trim(), menu.filter((d) => g.citedIds.includes(d.id)), menu);
+      if (problems.length) {
+        ctx.trace.push({ action: "fallback_unknown", reason: `unsupported claim: ${problems.join("; ")}` });
+        return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback", { lead: allergyLead });
       }
       ctx.trace.push({ action: "answer_faq", ids: g.citedIds, rendered: false });
-      return reply(prose(turn.answer.trim()), "faq_answer", { cited: g.citedIds });
+      return reply(prose(turn.answer.trim()), "faq_answer", { cited: g.citedIds, lead: allergyLead });
     }
     case "recommend":
     case "menu": {
@@ -307,7 +328,9 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
             return chips.length ? [{ ...b, chips }] : [];
           })
         : p.blocks;
-      return reply(prose(p.text), turn.intent, { lead, cited: p.cited });
+      // A party above the online limit in a food question: the answer stays, with the large-party line as a notice.
+      const largeNote: Block[] = p.largeParty ? [{ type: "notice", tone: "info", text: T.largeParty(phoneBranches(ctx, known)) }] : [];
+      return reply(prose(p.text), turn.intent, { lead: [...largeNote, ...lead], cited: p.cited });
     }
     case "manage_booking":
       ctx.trace.push({ action: "redirect", kind: "manage_booking" });
@@ -327,6 +350,13 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
   }
 }
 
+/** A blank message (whitespace only, D-21): the clarify reply and the starting points, with no model call. */
+export function blankStep(draft: Draft, ctx: FlowCtx): Step {
+  ctx.trace.push({ action: "clarify" });
+  const resumed = bookingInProgress(draft) ? nextStep({ draft, issues: [], ambiguity: null, largeParty: false }, ctx) : null;
+  return { text: T.clarify, blocks: resumed ? resumed.blocks : [QUICK_REPLIES()], draft: resumed?.draft ?? draft, outcome: "clarify" };
+}
+
 /**
  * The degraded reply (§5.7 step 4, D-20 amendment): the message once, and what works without the model. A booking in
  * progress continues with its next step; otherwise the menu and "Find a table" are offered. (It used to repeat the
@@ -335,7 +365,10 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
 export function degradedStep(draft: Draft, ctx: FlowCtx, code: string): Step {
   ctx.trace.push({ action: "degraded", code });
   const step = bookingInProgress(draft) ? nextStep({ draft, issues: [], ambiguity: null, largeParty: false }, ctx) : null;
-  if (step) return { text: T.degradedBooking, blocks: step.blocks, draft: step.draft, outcome: "degraded" };
+  if (step) {
+    const lost = draft.selected !== null && !step.blocks.some((b) => b.type === "confirm");
+    return { text: T.degradedBooking, blocks: [...(lost ? [{ type: "notice" as const, tone: "warning" as const, text: step.text }] : []), ...step.blocks], draft: step.draft, outcome: "degraded" };
+  }
   const chips: Chip[] = [
     { label: "Show me the menu", action: { type: "menu", course: null } },
     { label: "Find a table", action: { type: "set_field", field: "branch", value: null } },

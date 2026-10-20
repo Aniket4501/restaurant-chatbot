@@ -4,5 +4,5 @@ export const PORTS = { main: 3100, lowLimit: 3101 } as const;
 export const E2E_ADMIN = { password: "e2e-admin-password-not-secret", secret: "e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0" } as const;
 
 export function serverFiles(port: number) {
-  return { db: `test-results/e2e/app-${port}.db`, trace: `test-results/e2e/trace-${port}.jsonl`, log: `test-results/e2e/server-${port}.log` };
+  return { db: `test-results/e2e/app-${port}.db`, trace: `test-results/e2e/trace-${port}.jsonl`, log: `test-results/e2e/server-${port}.log`, evals: `test-results/e2e/evals-${port}`, evalsBaseline: `test-results/e2e/evals-baseline-${port}.json` };
 }

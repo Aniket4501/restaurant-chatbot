@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chatHandler, requestDeduper } from "@/lib/api/chat";
+import { PROMPT_VERSION } from "@/lib/llm/prompt";
 import type { ApiDeps } from "@/lib/api/deps";
 import { healthHandler } from "@/lib/api/health";
 import { createModelGate, noTurnLimit, turnLimiter } from "@/lib/chat/ratelimit";
@@ -197,11 +198,11 @@ describe("FAQ routing (J1, J2, J8, J12; D-10, D-15)", () => {
     expect(r.draft).toEqual(d);
   });
 
-  it("replaces FAQ and smalltalk prose while a confirm card is pending (D-15)", async () => {
+  it("shows a grounded answer with the reminder, and replaces smalltalk, while a confirm card is pending (D-15, amended by D-21)", async () => {
     const startsAt = toInstant("2026-10-17", "20:00", IST);
     const d = { ...emptyDraft(), branch: "hauz-khas", date: "2026-10-17", time: "20:00", partySize: 4, selected: { startsAt } };
     let r = await runTurn(say("can I bring my dog", { draft: d }), deps({ script: { "can I bring my dog": faq("Well-behaved dogs are welcome on the Golf Course Road terrace.", ["faq:pets"]) } }));
-    expect(r.reply.text).toBe("Your table isn't booked yet. Tap Confirm to finish.");
+    expect(r.reply.text).toBe("Well-behaved dogs are welcome on the Golf Course Road terrace. Your table isn't booked yet. Tap Confirm to finish.");
     expect(block(r, "confirm")).toMatchObject({ startsAtMs: startsAt });
     r = await runTurn(say("great thanks", { draft: d }), deps({ script: { "great thanks": simple("smalltalk", "You're all set, see you then!") } }));
     expect(r.reply.text).toBe("Your table isn't booked yet. Tap Confirm to finish.");
@@ -240,6 +241,20 @@ describe("other intents", () => {
     const r = await runTurn(say(q), deps({ script: { [q]: simple("off_topic") } }));
     expect(r.meta.outcome).toBe("redirect");
     expect((t.db.prepare("SELECT count(*) AS n FROM reservations").get() as { n: number }).n).toBe(0);
+  });
+});
+
+describe("blank messages (D-21)", () => {
+  it("answer whitespace with the clarify reply and no model call, keeping a booking in progress", async () => {
+    const r = await runTurn(say("   \n\t "), deps());
+    expect(r.trace.filter((x) => x.action === "model_call" || x.action === "retrieve")).toEqual([]);
+    expect(r.meta.outcome).toBe("clarify");
+    expect(r.reply.blocks.map((b) => b.type)).toEqual(["quick_replies"]);
+    const d = { ...emptyDraft(), branch: "hauz-khas", date: "2026-10-17", partySize: 2 };
+    const mid = await runTurn(say(" ", { draft: d }), deps());
+    expect(mid.trace.some((x) => x.action === "model_call")).toBe(false);
+    expect(mid.reply.blocks.map((b) => b.type)).toEqual(["slots"]);
+    expect(mid.draft).toMatchObject({ branch: "hauz-khas", date: "2026-10-17", partySize: 2 });
   });
 });
 
@@ -297,7 +312,7 @@ describe("privacy and metrics", () => {
     expect(prompts[0].user).not.toMatch(/98765|a@b\.com/);
     const rows = t.db.prepare("SELECT * FROM chat_turns").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ session_id: SID, intent: "booking", outcome: "ask_field", retrieval_mode: "hybrid", prompt_version: "v5", created_at: NOW });
+    expect(rows[0]).toMatchObject({ session_id: SID, intent: "booking", outcome: "ask_field", retrieval_mode: "hybrid", prompt_version: PROMPT_VERSION, created_at: NOW });
     expect(JSON.stringify(rows)).not.toMatch(/98765|a@b|number/);
   });
   it("writes one row per turn, including actions and rate-limited turns", async () => {

@@ -43,7 +43,7 @@ const input = (over: Partial<PromptInput> = {}): PromptInput => {
 };
 
 describe("buildPrompt matches probe prompt v2 apart from the approved changes", () => {
-  it("system message: v2 plus the D-13 role line and restaurant fact, D-10 notes, the D-15 rule 6, the v4 rules and the v5 food intents", () => {
+  it("system message: v2 plus the D-13 role line and restaurant fact, D-10 notes, the D-15 rule 6, the v4 rules, the v5 food intents and the v6 mixed-message rule", () => {
     const facts = renderStaticFacts(src, NOW);
     const text = (id: string) => facts.find((f) => f.id === id)!.text;
     const weekdays = ["Saturday = 2026-10-17", "Sunday = 2026-10-18", "Monday = 2026-10-19", "Tuesday = 2026-10-20", "Wednesday = 2026-10-21", "Thursday = 2026-10-22", "Friday = 2026-10-23"].join("\n");
@@ -82,6 +82,11 @@ describe("buildPrompt matches probe prompt v2 apart from the approved changes", 
       .replace(
         "For other intents, answer is null.",
         'For other intents, answer is null.\n8. prefs is only for "menu" and "recommend"; for every other intent it is null. It holds the guest\'s food preferences now in force: start from the current food preferences and keep them unless the guest changes or drops them. diet: what they need (vegetarian, vegan, gluten-free, jain). avoid: ingredients they don\'t want (dairy, nuts, egg). maxPrice: their budget per dish in rupees, else null. course: the menu section they want (small-plates, tandoor, mains, breads-rice, desserts, drinks), else null. mild: true if they want it not spicy. allergy: true if they mention an allergy. relation: "cheaper" or "another" when they ask for something cheaper than, or different from, the last suggestion, else null.',
+      )
+      // v6 (D-21): a message mixing an unrelated or meta request with a restaurant question gets the question's intent.
+      .replace(
+        '"smalltalk" for greetings and thanks; "unclear" otherwise.',
+        '"smalltalk" for greetings and thanks; "unclear" otherwise. A message that also asks something about the restaurant gets that question\'s intent: ignore the rest and answer the question.',
       );
     const nb = { branch: null, date: null, time: null, timeWindow: null, partySize: null, ambiguity: null };
     const examples = [
@@ -115,7 +120,7 @@ describe("buildPrompt matches probe prompt v2 apart from the approved changes", 
 
   it("is pinned by a snapshot", async () => {
     const p = buildPrompt(input({ draft: { branch: "hauz-khas", date: "2026-10-17", time: null, timeWindow: "dinner", partySize: 4 } }));
-    await expect(`${p.version}\n=== system ===\n${p.system}\n=== user ===\n${p.user}\n`).toMatchFileSnapshot("../golden/prompt-v5.txt");
+    await expect(`${p.version}\n=== system ===\n${p.system}\n=== user ===\n${p.user}\n`).toMatchFileSnapshot("../golden/prompt-v6.txt");
   });
 });
 

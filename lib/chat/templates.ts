@@ -42,7 +42,7 @@ export const T = {
   windowUnavailable: (window: string, short: string, dateLabel: string) => `${short} has no open ${window} times on ${dateLabel}.`,
   otherOptions: "Here are other options.",
   nearestTimes: "Here are the nearest open times.",
-  slotGone: "Sorry, that time is no longer available. Here are the latest open times.",
+  slotGone: "Sorry, that time is no longer available.",
   couldntCheck: "Sorry, I couldn't check availability just now, so I can't show any times. Please try again in a moment.",
   confirmIntro: "Here are your booking details. Add your name and mobile number, then tap Confirm.",
 } as const;

@@ -201,6 +201,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         // Booked: the booking's facts are done with, but the guest's food preferences (an allergy) stay (review).
         context: o.clearDraft ? { ...p.context, lastCitedIds: [] } : p.context,
         chatPending: o.clearDraft ? null : p.chatPending,
+        cardFields: o.clearDraft ? null : p.cardFields, // booked: the typed name and mobile are not kept
         selected: o.clearDraft ? null : p.selected,
         items: inCard ? p.items : [...p.items, { id: uid(), role: "assistant", text: o.text, blocks: o.blocks }],
       }));
@@ -247,7 +248,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     setCard(NO_CARD);
     setFailed(null);
     generation.current += 1;
-    update((prev) => ({ ...prev, pending: null, chatPending: null, draft: null, selected: null, context: { lastCitedIds: [] }, items: [...prev.items, { ...welcome(restaurantName), id: uid(), text: "Let's start again. What would you like to do?" }] }));
+    update((prev) => ({ ...prev, pending: null, chatPending: null, cardFields: null, draft: null, selected: null, context: { lastCitedIds: [] }, items: [...prev.items, { ...welcome(restaurantName), id: uid(), text: "Let's start again. What would you like to do?" }] }));
   };
 
   // After a reload with a submit in flight, replay it with the same key to learn the outcome (D-14).
@@ -313,7 +314,8 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
                           key={`${b.startsAtMs}-${k}`}
                           block={b}
                           state={item === lastAssistant || item === pendingCardItem ? card : { ...NO_CARD, done: true }}
-                          initial={s.pending?.body.startsAt === b.startsAtMs ? s.pending.body : null}
+                          initial={s.pending?.body.startsAt === b.startsAtMs ? s.pending.body : s.cardFields?.startsAt === b.startsAtMs ? s.cardFields : null}
+                          onFields={(f) => update((p) => ({ ...p, cardFields: { startsAt: b.startsAtMs, ...f } }))}
                           active={(item === lastAssistant || item === pendingCardItem) && !busy}
                           onSubmit={submit}
                           onRetry={retry}

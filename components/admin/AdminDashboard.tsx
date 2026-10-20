@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronIcon, LeafMark } from "@/components/ui/icons";
+import { AdminHeader } from "@/components/admin/AdminHeader";
+import { ChevronIcon } from "@/components/ui/icons";
 
 // Staff bookings view (§5.10, AC-07, J10, BR-13). Data loads client-side through the admin API (D-16): a date
 // navigator starting on the server's today, a branch filter, totals, a time-sorted table with status pills, an in-app
@@ -107,27 +108,12 @@ export function AdminDashboard({ today, branches, zone }: Props) {
     }
   };
 
-  const signOut = async () => {
-    await fetch("/api/admin/session", { method: "DELETE" }).catch(() => null);
-    router.replace("/admin/login");
-  };
-
   const button = "min-h-11 rounded-full border border-line bg-paper px-4 text-[15px] hover:border-neem hover:text-neem disabled:opacity-50";
   const iconButton = "flex h-11 w-11 items-center justify-center rounded-full border border-line bg-paper hover:border-neem hover:text-neem";
 
   return (
     <div className="min-h-dvh">
-      <header className="on-smoke bg-smoke text-smoke-ink">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-8">
-          <p className="flex items-center gap-2.5 font-display text-xl">
-            <LeafMark className="h-6 w-6" />
-            Neem &amp; Ember <span className="font-sans text-[15px] text-smoke-muted">Staff</span>
-          </p>
-          <button type="button" onClick={signOut} className="min-h-11 text-[15px] underline decoration-smoke-muted underline-offset-4 hover:decoration-smoke-ink">
-            Sign out
-          </button>
-        </div>
-      </header>
+      <AdminHeader current="bookings" />
 
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8">
         <h1 className="font-display text-3xl sm:text-4xl">Bookings</h1>

@@ -1,0 +1,12 @@
+{
+ "scripted-full": {
+  "id": "2026-10-20T20-53-01-862Z_scripted_baseline",
+  "setAt": "2026-10-20T21:20:50.311Z",
+  "note": "D-21 baseline at 56297b8, before improvements"
+ },
+ "live-full": {
+  "id": "2026-10-20T20-53-03-885Z_qwen3.5-9b_baseline",
+  "setAt": "2026-10-20T21:20:50.631Z",
+  "note": "D-21 baseline at 56297b8, before improvements"
+ }
+}

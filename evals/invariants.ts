@@ -153,7 +153,9 @@ export function guestPii(texts: string[]): string[] {
   const out = new Set<string>();
   for (const raw of texts) {
     if (raw !== foldDigits(raw)) out.add(raw.match(/\p{Nd}[\p{Nd}\s().,_-]{6,}\p{Nd}/u)?.[0] ?? raw); // non-ASCII digits as typed
-    const t = foldDigits(raw);
+    // Dates and clock times the guest gives ("17.10, 20.30, 2 pax") are booking details, not a phone number: they are
+    // left out of the runs, as the masking does (D-21 audit).
+    const t = foldDigits(raw).replace(/(?<![\d.])(?:[01]?\d|2[0-3])[.:][0-5]\d(?![.\d])|(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g, "§");
     for (const m of t.matchAll(/\+?\d[\d\s().,_-]{6,}\d/g)) {
       const digits = m[0].replace(/\D/g, "");
       const date = /^\d{4}-\d{2}-\d{2}/.test(m[0]) || /^(?:0?[1-9]|[12]\d|3[01])([-. /])(?:0?[1-9]|1[0-2])\1(?:20)?\d{2}$/.test(m[0].trim());

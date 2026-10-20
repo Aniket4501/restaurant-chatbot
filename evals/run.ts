@@ -100,6 +100,18 @@ function failingEmbedder(kind: "down" | "timeout"): Embedder {
   return { ...base, digest: base.digest, embed: async () => Promise.reject(err()) };
 }
 
+/** The label of the chip a case's action stands for, as the guest's bubble shows it. */
+function chipLabel(a: Action | { type: "select_slot"; branch: string; start: string }, branches: { slug: string; name: string }[]): string {
+  if (a.type === "select_slot") return "start" in a ? a.start.slice(11) : "a time";
+  if (a.type === "menu") return a.course ? a.course.replace(/-/g, " ") : "Show me the menu";
+  {
+    if (a.value === null) return a.field === "branch" ? "Find a table" : `Change the ${a.field}`;
+    if (a.field === "branch") return branches.find((b) => b.slug === a.value)?.name.split(", ").pop() ?? String(a.value);
+    if (a.field === "partySize") return `${a.value} guests`;
+  }
+  return String(a.value);
+}
+
 /** A unique valid Indian mobile for synthetic guests (setup bookings and other-guest turns). */
 const syntheticPhone = (i: number) => `+9190000${String(10000 + i).slice(-5)}`;
 
@@ -238,7 +250,10 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
     if (r.notIds) check("recommend.constraints", !items.some((i) => r.notIds!.includes(i.id)), `shows one of ${r.notIds.join(", ")}`);
     if (r.cheaperThanTurn !== undefined) {
       const prev = ctx.leadOfTurn?.(r.cheaperThanTurn - 1) ?? null;
-      check("recommend.relation", !!lead && !!prev && lead.price < prev.price, `lead ${lead?.id ?? "none"} (₹${lead?.price}) is not cheaper than turn ${r.cheaperThanTurn}'s ${prev?.id ?? "none"} (₹${prev?.price})`);
+      // A cheaper lead, or (no card) the code's own statement that the earlier dish is already the cheapest that fits:
+      // that is the correct answer when nothing cheaper exists (D-21 baseline: LV-REC-005 and LV-CONV-001 failed on it).
+      const honest = !lead && !!prev && new RegExp(`^The ${prev.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(₹${prev.price}\\) is already the cheapest`).test(t.shown?.text ?? "");
+      check("recommend.relation", (!!lead && !!prev && lead.price < prev.price) || honest, `lead ${lead?.id ?? "none"} (₹${lead?.price}) is not cheaper than turn ${r.cheaperThanTurn}'s ${prev?.id ?? "none"} (₹${prev?.price})`);
     }
     if (r.differentFromTurn !== undefined) {
       const prev = ctx.leadOfTurn?.(r.differentFromTurn - 1) ?? null;
@@ -463,11 +478,16 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         guestTexts.push(turn.guest);
         history = [...history, { role: "guest" as const, content: turn.guest }].slice(-8);
         const r = await chat({ messages: history });
-        history = [...history, { role: "assistant" as const, content: r.reply.text.slice(0, 600) }].slice(-7);
+        history = [...history, { role: "assistant" as const, content: historyContent(r.reply.text, r.reply.blocks).slice(0, 600) }].filter((m) => m.content).slice(-7);
       } else if ("action" in turn) {
         const a = turn.action;
         const action: Action = "start" in a ? { type: "select_slot", branch: a.branch, startsAt: toInstant(a.start.slice(0, 10), a.start.slice(11), ZONE) } : a;
-        await chat({ messages: [], action });
+        // As the browser does: the chip's label goes into the history as the guest's message, and the reply after it
+        // (D-21 audit: action-then-text cases ran the model without them).
+        const label = chipLabel(a, branches);
+        history = [...history, { role: "guest" as const, content: label }].slice(-8);
+        const r = await chat({ messages: history, action });
+        history = [...history, { role: "assistant" as const, content: historyContent(r.reply.text, r.reply.blocks).slice(0, 600) }].filter((m) => m.content).slice(-7);
       } else if ("submit" in turn) {
         if (!lastConfirm) throw new Error(`turn ${index + 1}: {submit} without a confirm card`);
         const card: Extract<Block, { type: "confirm" }> = lastConfirm;

@@ -42,15 +42,66 @@ export function guestHoursText(f: Fact): string {
  * fact that names in-horizon exceptions is followed by those exceptions, so "hours on Thursdays" also says what
  * changes on Thu 22 Oct. Returns the fact IDs shown (for the info card and the trace).
  */
-export function renderHoursAnswer(cited: string[], factsById: Map<string, Fact>, zoneOf: (slug: string) => string): { text: string; factIds: string[] } {
+export function renderHoursAnswer(cited: string[], factsById: Map<string, Fact>, zoneOf: (slug: string) => string, mentioned: (date: string) => boolean = () => true): { text: string; factIds: string[] } {
   const shown: string[] = [];
   const add = (id: string) => {
     if (factsById.has(id) && !shown.includes(id)) shown.push(id);
   };
-  for (const id of supersede(cited, zoneOf)) {
+  // An exception replaces its weekday's usual hours only when the guest asks about its date; "on Saturdays" in general
+  // keeps the usual hours and lists the exception after them (D-21 audit: only the one-off 31 Oct hours were shown).
+  const replacing = cited.filter((id) => {
+    const m = EXCEPTION_ID.exec(id);
+    return !m || mentioned(m[2]);
+  });
+  for (const id of supersede(replacing, zoneOf)) {
     add(id);
     const f = factsById.get(id);
     if (f?.kind === "hours") for (const m of f.text.matchAll(/see (exception:[a-z0-9-]+:\d{4}-\d{2}-\d{2})/g)) add(m[1]);
   }
-  return { text: shown.map((id) => guestHoursText(factsById.get(id)!)).join(" "), factIds: shown };
+  for (const id of cited) if (EXCEPTION_ID.test(id)) add(id);
+  return { text: compact(shown, factsById), factIds: shown };
+}
+
+const DAY_NAMES: Record<string, string> = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+const WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+/**
+ * The facts in guest wording, with a branch's weekly hours grouped by identical hours ("Hauz Khas, every day: …";
+ * "Golf Course Road, Tuesday to Sunday: …; Monday: …") when three or more of its weekdays are shown (D-21: the full
+ * week for both branches was 913 characters). Exceptions follow, once each.
+ */
+function compact(ids: string[], factsById: Map<string, Fact>): string {
+  const weekly = new Map<string, { branch: string; day: string; hours: string }[]>();
+  for (const id of ids) {
+    const m = HOURS_ID.exec(id);
+    const f = factsById.get(id)!;
+    const parts = /^(.+?) on \w+: (.+?)(?: Except .+)?$/.exec(f.text);
+    if (m && parts) weekly.set(m[1], [...(weekly.get(m[1]) ?? []), { branch: parts[1], day: m[2], hours: parts[2].replace(/\.$/, "") }]);
+  }
+  const grouped = new Set([...weekly].filter(([, days]) => days.length >= 3).map(([slug]) => slug));
+  const out: string[] = [];
+  const done = new Set<string>();
+  for (const id of ids) {
+    const m = HOURS_ID.exec(id);
+    if (m && grouped.has(m[1])) {
+      if (done.has(m[1])) continue;
+      done.add(m[1]);
+      const days = weekly.get(m[1])!;
+      const byHours = new Map<string, string[]>();
+      for (const d of [...days].sort((a, b) => WEEK.indexOf(a.day) - WEEK.indexOf(b.day))) byHours.set(d.hours, [...(byHours.get(d.hours) ?? []), d.day]);
+      const groups = [...byHours].sort((a, b) => b[1].length - a[1].length).map(([hours, ds]) => `${dayRange(ds)}: ${hours}`);
+      out.push(`${days[0].branch}, ${groups.join("; ")}.`);
+    } else if (m) out.push(factsById.get(id)!.text.replace(/ Except .+$/, "")); // its exceptions follow in full
+    else out.push(guestHoursText(factsById.get(id)!));
+  }
+  return out.join(" ");
+}
+
+function dayRange(days: string[]): string {
+  if (days.length === 7) return "every day";
+  const idx = days.map((d) => WEEK.indexOf(d)).sort((a, b) => a - b);
+  // A run of consecutive days, also across the week's end ("Tuesday to Sunday").
+  const contiguous = idx.every((v, i) => i === 0 || v === idx[i - 1] + 1);
+  if (contiguous && idx.length >= 3) return `${DAY_NAMES[WEEK[idx[0]]]} to ${DAY_NAMES[WEEK[idx.at(-1)!]]}`;
+  return idx.map((i) => DAY_NAMES[WEEK[i]]).join(", ");
 }

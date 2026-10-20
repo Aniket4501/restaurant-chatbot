@@ -19,6 +19,9 @@
   --sage: #8aa889;
   --warn: #7a4a12;
   --warn-tint: #f6ead6;
+  /* D-21 evals dashboard: failures and critical findings (AA on paper and on its tint). */
+  --bad: #8f2d22;
+  --bad-tint: #f8e4e0;
 }
 
 @theme inline {
@@ -36,6 +39,8 @@
   --color-sage: var(--sage);
   --color-warn: var(--warn);
   --color-warn-tint: var(--warn-tint);
+  --color-bad: var(--bad);
+  --color-bad-tint: var(--bad-tint);
   --font-display: "Iowan Old Style", "Charter", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --font-sans: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
 }

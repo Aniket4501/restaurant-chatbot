@@ -162,7 +162,13 @@ describe("recommendTurn: the full turn after the first model call", () => {
   it("answers an impossible request honestly, with no model call", async () => {
     const { res, calls } = await run(recTurn({ diet: ["vegan"], course: "mains", maxPrice: 200 }), [], { text: "Show me a vegan main course under ₹200" });
     expect(calls).toEqual([]);
-    expect(res.text).toBe("We don't have any vegan main courses, up to ₹200 on the menu. Want me to relax one of those?");
+    expect(res.text).toBe("We don't have any vegan main courses, up to ₹200 on the menu. Tap one to widen the search.");
+    // Each chip's words lift its constraint in code (D-21 audit: "yes" to "want me to relax one?" changed nothing).
+    const chips = (res.blocks.find((b) => b.type === "quick_replies") as { chips: { label: string; text?: string }[] }).chips;
+    expect(chips.map((c) => c.label)).toEqual(["Any price", "Not only vegan", "Show me the menu"]);
+    const lifted = resolvePrefs(null, res.prefs, chips[0].text!).prefs;
+    expect(lifted.maxPrice).toBeNull();
+    expect(resolvePrefs(null, res.prefs, chips[1].text!).prefs.diet).toEqual([]);
     expect(res.blocks.some((b) => b.type === "recommendation")).toBe(false);
   });
   it("falls back to dishes that fit, without a retry, when the model is down", async () => {

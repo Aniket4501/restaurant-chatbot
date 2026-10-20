@@ -121,3 +121,21 @@ describe("reading results files", () => {
     expect([...caseStatuses([res({ id: "A" }), fail({ id: "A", run: 2 })]).values()][0]).toMatchObject({ status: "flaky", runs: 2, passes: 1 });
   });
 });
+
+describe("response-shape checks (every reply, D-21)", async () => {
+  const { checkUx } = await import("@/evals/run");
+  const ux = (text: string, notices: string[] = []) => checkUx({ index: 0, kind: "guest", shown: { text, blocks: notices.map((n) => ({ type: "notice" as const, tone: "warning" as const, text: n })) } }).filter((c) => !c.ok).map((c) => c.key);
+  it("passes ordinary replies, prices, times and a question", () => {
+    expect(ux("The Mango Sorbet is ₹245. We're open 12:00 PM to 3:30 PM. Would you like a table?")).toEqual([]);
+    expect(ux("Golf Course Road has free valet parking from 12:00 PM to 11:00 PM.", ["Menu labels only list the main allergens."])).toEqual([]);
+  });
+  it("flags fact IDs, JSON, internal wording and the same text twice", () => {
+    expect(ux("See menu:dal-ember for details.")).toEqual(["ux.leak"]);
+    expect(ux('{"intent": "faq"}')).toEqual(["ux.json"]);
+    expect(ux("Desserts (6 available), cheapest first")).toEqual(["ux.internal"]);
+    expect(ux("Q: Can I bring my dog? A: Yes.")).toEqual(["ux.internal"]); // the old info card's format
+    expect(ux("Here it is.\nQ: Can I bring my dog?\nA: Yes.")).toEqual(["ux.internal"]);
+    expect(ux("Sorry, I couldn't check availability just now.", ["Sorry, I couldn't check availability just now."])).toEqual(["ux.duplicate"]);
+    expect(ux("I can help with bookings and the menu. I can help with bookings and the menu.")).toEqual(["ux.duplicate"]);
+  });
+});

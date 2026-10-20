@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { AREAS, areaOf } from "@/evals/areas";
-import { loadCases, type EvalCase, type Expectation } from "@/evals/case";
+import { loadCases, type EvalCase } from "@/evals/case";
+import { describeExpect } from "@/evals/describe";
 import { baselineFile, resultsDir } from "@/evals/paths";
 import { baselineFor, baselineKey, caseStatuses, compareRuns, listRuns, previousComparable, readBaseline, type Comparison, type Run } from "@/evals/report";
 import type { ApiDeps } from "@/lib/api/deps";
@@ -18,39 +19,21 @@ export const defaultEvalsDeps = (): EvalsDeps => ({ resultsDir, baselineFile, ro
 
 const MAX_RUNS = 60;
 
-/** A short, readable statement of what a case expects (the explorer's "Expected" column). */
-export function describeExpect(e: Expectation | null | undefined): string[] {
-  if (!e) return [];
-  const out: string[] = [];
-  if (e.intent !== undefined) out.push(`intent ${Array.isArray(e.intent) ? e.intent.join(" or ") : e.intent}`);
-  if (e.outcome) out.push(`outcome ${e.outcome}`);
-  if (e.draft) out.push(`booking ${Object.entries(e.draft).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")}`);
-  if (e.mustCite?.length) out.push(`cites ${e.mustCite.join(", ")}`);
-  if (e.mustCiteAny?.length) out.push(`cites one of ${e.mustCiteAny.join(", ")}`);
-  if (e.mustIncludeValues?.length) out.push(`shows ${e.mustIncludeValues.join(", ")}`);
-  if (e.mustNotIncludeValues?.length) out.push(`never shows ${e.mustNotIncludeValues.join(", ")}`);
-  if (e.mustAbstain !== undefined) out.push(e.mustAbstain ? "abstains (fallback)" : "answers from the facts");
-  if (e.recommend) {
-    const r = e.recommend;
-    if (r.shown !== undefined) out.push(r.shown ? "a dish card" : "no dish card");
-    if (r.satisfies) out.push(`dishes meet ${Object.entries(r.satisfies).map(([k, v]) => `${k} ${JSON.stringify(v)}`).join(", ")}`);
-    if (r.anyOf) out.push(`lead is one of ${r.anyOf.join(", ")}`);
-    if (r.leadIfShown) out.push(`any lead is one of ${r.leadIfShown.join(", ")}`);
-    if (r.notIds) out.push(`never shows ${r.notIds.join(", ")}`);
-    if (r.cheaperThanTurn) out.push(`cheaper than turn ${r.cheaperThanTurn}'s lead`);
-    if (r.differentFromTurn) out.push(`different from turn ${r.differentFromTurn}'s lead`);
-  }
-  if (e.menuShown !== undefined) out.push(e.menuShown ? "a menu list" : "no menu list");
-  if (e.blocks?.length) out.push(`blocks ${e.blocks.join(", ")}`);
-  if (e.fieldRequest) out.push(`asks for ${e.fieldRequest}`);
-  if (e.slotsInclude?.length) out.push(`offers ${e.slotsInclude.join(" ")}`);
-  if (e.reservationsCreated !== undefined) out.push(`${e.reservationsCreated} reservations created`);
-  if (e.submitStatus !== undefined) out.push(`submit HTTP ${e.submitStatus}${e.submitCode ? ` ${e.submitCode}` : ""}`);
-  if (e.modelCalls !== undefined) out.push(`${e.modelCalls} model calls`);
-  for (const re of e.replyMustMatch ?? []) out.push(`reply matches /${re}/`);
-  for (const re of e.replyMustNotMatch ?? []) out.push(`reply never matches /${re}/`);
-  return out;
-}
+export type CaseRow = {
+  id: string;
+  category: string;
+  area: string;
+  severity: string;
+  status: "pass" | "fail" | "error" | "flaky";
+  runs: number;
+  passes: number;
+  failure: string | null;
+  failureType: string | null;
+  expected: string[];
+  actual: { input: string; reply: string; outcome: string | null; intent: string | null } | null;
+  previous: "pass" | "fail" | "error" | "flaky" | null;
+  regression: "new" | "still failing" | "resolved" | "new case" | null;
+};
 
 const runRef = (r: Run) => r.summary;
 function findRun(runs: Run[], id: string): Run | null {
@@ -67,13 +50,18 @@ function comparisonFor(runs: Run[], run: Run, baseId: string | null, baselineFil
   return { base: p, reason: p ? "previous" : "none", cmp: p ? compareRuns(p, run) : null };
 }
 
+/** The dashboard's first data (also rendered into the page): run summaries, newest first, baselines and the job. */
+export function evalsOverview(ev: EvalsDeps = defaultEvalsDeps()) {
+  const runs = listRuns(ev.resultsDir());
+  return { runs: runs.slice(0, MAX_RUNS).map(runRef), totalRuns: runs.length, baseline: readBaseline(ev.baselineFile()), areas: AREAS.map(({ key, label, about }) => ({ key, label, about })), job: currentJob() };
+}
+
 /** GET /api/admin/evals: every run's summary (newest first), the saved baselines and the current job. */
 export function evalsOverviewHandler(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps()) {
   return async (req: Request): Promise<Response> => {
     const auth = requireAdmin(req, deps);
     if (!auth.ok) return auth.response;
-    const runs = listRuns(ev.resultsDir());
-    return okResponse(200, { runs: runs.slice(0, MAX_RUNS).map(runRef), totalRuns: runs.length, baseline: readBaseline(ev.baselineFile()), areas: AREAS.map(({ key, label, about }) => ({ key, label, about })), job: currentJob() });
+    return okResponse(200, { ...evalsOverview(ev), now: deps.now() });
   };
 }
 
@@ -93,7 +81,7 @@ export function evalsRunHandler(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps(
     const { base, reason, cmp } = comparisonFor(runs, run, q.data.base ?? null, ev.baselineFile());
     const before = base ? caseStatuses(base.results) : null;
     const statuses = caseStatuses(run.results);
-    const rows = [...statuses.entries()].map(([caseId, s]) => {
+    const rows: CaseRow[] = [...statuses.entries()].map(([caseId, s]): CaseRow => {
       const rs = run.results.filter((r) => r.id === caseId);
       const failing = rs.find((r) => r.status !== "pass") ?? rs[0];
       const lastTurn = failing.turns.at(-1);
@@ -176,7 +164,7 @@ export function evalsJobHandlers(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps
     GET: async (req: Request): Promise<Response> => {
       const auth = requireAdmin(req, deps);
       if (!auth.ok) return auth.response;
-      return okResponse(200, { job: currentJob() });
+      return okResponse(200, { job: currentJob(), now: deps.now() });
     },
     POST: async (req: Request): Promise<Response> => {
       const auth = requireAdmin(req, deps);

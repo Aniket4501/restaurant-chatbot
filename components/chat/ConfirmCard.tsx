@@ -15,11 +15,13 @@ export type CardState = { submitting: boolean; locked: boolean; fieldErrors: Rec
 const input =
   "mt-1 block min-h-11 w-full rounded-lg border border-line bg-ash px-3 text-[16px] text-ink placeholder:text-muted/70 disabled:text-muted disabled:opacity-70 aria-[invalid=true]:border-warn";
 
-export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, onStartOver }: {
+export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, onStartOver, onFields }: {
   block: Confirm;
   state: CardState;
   initial: Partial<CreateBody> | null;
   active: boolean;
+  /** Called as the guest types, so the fields survive the card being shown again or a reload (D-21 audit). */
+  onFields?: (f: { name: string; phone: string; email: string; note: string }) => void;
   onSubmit: (body: CreateBody) => void;
   onRetry: () => void;
   onStartOver: () => void;
@@ -28,6 +30,7 @@ export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, 
   const [phone, setPhone] = useState(initial?.phone ?? "+91 ");
   const [email, setEmail] = useState(initial?.email ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
+  const report = (patch: Partial<{ name: string; phone: string; email: string; note: string }>) => onFields?.({ name, phone, email, note, ...patch });
   const disabled = !active || state.submitting || state.locked || state.done;
   const err = state.fieldErrors ?? {};
   // Unique per card: the same slot's card can be shown twice (repeated after an answer during a booking), and shared
@@ -63,22 +66,22 @@ export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, 
       <div className="mt-3 grid gap-3">
         <label className="block text-[15px]" htmlFor={`${id}-name`}>
           Name
-          <input id={`${id}-name`} className={input} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required maxLength={80} disabled={disabled} aria-invalid={!!err.name} aria-describedby={err.name ? `${id}-name-err` : undefined} />
+          <input id={`${id}-name`} className={input} value={name} onChange={(e) => { setName(e.target.value); report({ name: e.target.value }); }} autoComplete="name" required maxLength={80} disabled={disabled} aria-invalid={!!err.name} aria-describedby={err.name ? `${id}-name-err` : undefined} />
           {err.name && <span id={`${id}-name-err`} className="mt-1 block text-sm text-warn">{err.name}</span>}
         </label>
         <label className="block text-[15px]" htmlFor={`${id}-phone`}>
           Mobile number
-          <input id={`${id}-phone`} className={input} value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" required disabled={disabled} aria-invalid={!!err.phone} aria-describedby={err.phone ? `${id}-phone-err` : undefined} />
+          <input id={`${id}-phone`} className={input} value={phone} onChange={(e) => { setPhone(e.target.value); report({ phone: e.target.value }); }} type="tel" inputMode="tel" autoComplete="tel" required disabled={disabled} aria-invalid={!!err.phone} aria-describedby={err.phone ? `${id}-phone-err` : undefined} />
           {err.phone && <span id={`${id}-phone-err`} className="mt-1 block text-sm text-warn">{err.phone}</span>}
         </label>
         <label className="block text-[15px]" htmlFor={`${id}-email`}>
           Email <span className="text-muted">(optional)</span>
-          <input id={`${id}-email`} className={input} value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" disabled={disabled} aria-invalid={!!err.email} />
+          <input id={`${id}-email`} className={input} value={email} onChange={(e) => { setEmail(e.target.value); report({ email: e.target.value }); }} type="email" autoComplete="email" disabled={disabled} aria-invalid={!!err.email} />
           {err.email && <span className="mt-1 block text-sm text-warn">{err.email}</span>}
         </label>
         <label className="block text-[15px]" htmlFor={`${id}-note`}>
           Note for the restaurant <span className="text-muted">(optional)</span>
-          <textarea id={`${id}-note`} className={`${input} min-h-20 py-2`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} disabled={disabled} aria-invalid={!!err.note} />
+          <textarea id={`${id}-note`} className={`${input} min-h-20 py-2`} value={note} onChange={(e) => { setNote(e.target.value); report({ note: e.target.value }); }} maxLength={300} disabled={disabled} aria-invalid={!!err.note} />
           {err.note && <span className="mt-1 block text-sm text-warn">{err.note}</span>}
         </label>
       </div>

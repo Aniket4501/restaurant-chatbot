@@ -9,14 +9,15 @@ import { retrievalQuery, retrieveFacts } from "@/lib/kb/retrieve";
 import { CORRECTIVE_MESSAGE, interpretEnvelope, interpretJson, ModelError, type ChatMessage as LlmMessage, type Interpreted, type ModelClient } from "@/lib/llm/client";
 import { CHOOSER_JSON_SCHEMA, CHOOSER_VERSION, ChooserSchema } from "@/lib/llm/chooser";
 import { buildPrompt, promptChars, PROMPT_VERSION, type SystemPromptInput } from "@/lib/llm/prompt";
-import { maskMessages } from "@/lib/llm/redact";
+import { foldDigits, maskMessages } from "@/lib/llm/redact";
 import { TURN_JSON_SCHEMA, type Intent } from "@/lib/llm/schema";
 import type { LocalDate } from "@/lib/time/tz";
+import { checkGrounding } from "@/lib/chat/grounding";
 import { guardExtraction, largePartyStated } from "@/lib/chat/guards";
-import { menuEntries, menuStep } from "@/lib/chat/menu";
-import { recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
+import { foodWords, menuEntries, menuStep } from "@/lib/chat/menu";
+import { explicitPrefs, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
 import { GateFullError, openGate, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
-import { degradedStep, handleAction, routeTurn, type FlowCtx, type Step } from "@/lib/chat/router";
+import { blankStep, degradedStep, handleAction, routeTurn, type FlowCtx, type Prepared, type Step } from "@/lib/chat/router";
 import { branchInfo } from "@/lib/chat/templates";
 import { emptyDraft, noPrefs, type Action, type ChatMessage, type Draft, type Prefs, type TraceEntry, type TurnContext, type TurnReply } from "@/lib/chat/types";
 
@@ -77,7 +78,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       reply: { text: step.text, blocks: step.blocks },
       draft: step.draft,
       intent,
-      context: { lastCitedIds: (step.citedFactIds ?? []).slice(0, 8), prefs: prefsOut, recommended: recommendedOut.slice(0, 6) },
+      // A turn the model couldn't answer keeps what the conversation was about (D-21 audit: a timeout erased it).
+      context: { lastCitedIds: (step.outcome === "degraded" || step.outcome === "rate_limited" ? (input.context?.lastCitedIds ?? []) : (step.citedFactIds ?? [])).slice(0, 8), prefs: prefsOut, recommended: recommendedOut.slice(0, 6) },
       trace,
       meta: {
         outcome: step.outcome,
@@ -128,7 +130,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const entries = menuEntries(src);
   if (input.action?.type === "menu") {
     const p = prefsOut ?? noPrefs();
-    const m = menuStep(entries, input.action.course === null ? noPrefs() : { ...noPrefs(), diet: p.diet, avoid: p.avoid, allergy: p.allergy }, input.action.course);
+    const m = menuStep(entries, input.action.course === null ? { ...noPrefs(), unlisted: p.unlisted } : { ...noPrefs(), diet: p.diet, avoid: p.avoid, allergy: p.allergy, unlisted: p.unlisted }, input.action.course, { branch: draft0.branch });
     trace.push({ action: "menu", course: input.action.course, items: m.shown });
     return finish({ text: m.text, blocks: m.blocks, draft: draft0, outcome: "menu", citedFactIds: m.cited }, null);
   }
@@ -139,6 +141,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const latest = masked.at(-1)!.content;
   const history = masked.slice(0, -1).slice(-(LIMITS.historyMax - 1));
   const previousGuest = history.filter((m) => m.role === "guest").at(-1)?.content ?? null;
+  // A blank message gets the clarify reply without retrieval or a model call (D-21: it used to call the model).
+  if (!latest.trim()) return finish(blankStep(draft0, ctx), null);
 
   // 4. Retrieve (D-02, D-13).
   const staticFacts = renderStaticFacts(src, input.now);
@@ -222,7 +226,17 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       const answerTurn = r.ok && (r.turn.intent === "faq" || r.turn.intent === "smalltalk");
       if (!r.ok && r.code === "MODEL_INVALID_OUTPUT") first = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: CORRECTIVE_MESSAGE }]);
       else if (r.ok && r.truncated && answerTurn) first = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: CORRECTIVE_MESSAGE }]);
-      else if (!r.ok && r.code === "CONTEXT_TOO_LARGE" && usedHistory.length > 2) {
+      else if (r.ok && r.turn.intent === "faq" && r.turn.answer) {
+        // One retry when an answer fails grounding only because it repeats a number from the guest's own message
+        // ("we'll be 20 minutes late" → "since you'll be 20 minutes late…"): the facts answer it, the echo doesn't
+        // (D-21 baseline LV-REG-007). The retry's answer is grounded like any other.
+        const g = checkGrounding(r.turn.answer, r.turn.citedFactIds.filter((id) => factsById.has(id)), { factsById, sentIds, zoneOf });
+        const guestNumbers = new Set(foldDigits(latest).match(/\d+/g) ?? []);
+        if (!g.ok && g.reason === "digits" && guestNumbers.has(g.detail)) {
+          const again = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: `Your answer repeats the guest's number ${g.detail}, which no fact states. Answer again using only numbers that appear in the facts.` }]);
+          if (again.result.ok) first = again;
+        }
+      } else if (!r.ok && r.code === "CONTEXT_TOO_LARGE" && usedHistory.length > 2) {
         usedHistory = usedHistory.slice(-2);
         prompt = promptFor(usedHistory);
         deps.onPrompt?.(prompt);
@@ -232,10 +246,10 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
         ]);
       }
       const t1 = first.result;
-      // A stated large party is a booking whatever the model said (D-17), so it never reaches the chooser.
-      if (t1.ok && t1.turn.intent === "recommend" && largePartyStated(latest) === null) {
+      // A food question keeps its answer even with a large party in it (D-21 audit); the large-party line is added.
+      if (t1.ok && t1.turn.intent === "recommend") {
         recommended.result = await recommendTurn(
-          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: retrieval.hits.map((h) => h.factId) },
+          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: retrieval.hits.map((h) => h.factId), branch: draft0.branch ?? t1.turn.booking.branch },
           chooser,
         );
         metrics.promptVersion = `${PROMPT_VERSION}+${CHOOSER_VERSION}`;
@@ -258,21 +272,40 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const turn = guarded.turn; // a truncated answer is still too long after the retry → fallback/greeting
 
   // 9. Food turns (D-20): menu browsing from the menu table; recommendations through the chooser.
-  let prepared: { text: string; blocks: TurnReply["reply"]["blocks"]; cited: string[] } | null = null;
+  let prepared: Prepared | null = null;
+  const largeParty = largePartyStated(latest) !== null;
   if (turn.intent === "menu") {
+    const previous = prefsOut;
     const { prefs, added } = resolvePrefs(turn.prefs, prefsOut, latest);
     trace.push({ action: "prefs", prefs, added });
     prefsOut = prefs;
-    const m = menuStep(entries, prefs, prefs.course);
-    trace.push({ action: "menu", course: prefs.course, items: m.shown });
-    prepared = { text: m.text, blocks: m.blocks, cited: m.cited };
+    // A typed menu request lists what this message asks for (D-21 audit): a stored budget or "mild" applies only when
+    // restated; with nothing new and no section, the sections are offered (as the menu button does); an ingredient
+    // ("paneer dishes?") lists the dishes that have it.
+    const ex = explicitPrefs(latest);
+    const newDiet = prefs.diet.some((d) => !previous?.diet.includes(d));
+    const words = foodWords(latest, entries);
+    const generic = prefs.course === null && !newDiet && !ex.avoid?.length && ex.maxPrice === undefined && !ex.mild && !words.length;
+    const listPrefs: Prefs = generic ? { ...noPrefs(), unlisted: prefs.unlisted } : { ...prefs, maxPrice: ex.maxPrice ?? (/\d/.test(latest) ? prefs.maxPrice : null), mild: !!ex.mild || (prefs.mild && !previous?.mild) };
+    const m = menuStep(entries, listPrefs, listPrefs.course, { branch: draft0.branch ?? turn.booking.branch, words });
+    trace.push({ action: "menu", course: listPrefs.course, items: m.shown });
+    prepared = { text: m.text, blocks: m.blocks, cited: m.cited, largeParty };
   } else if (turn.intent === "recommend" && recommended.result) {
     const rec = recommended.result;
     prefsOut = rec.prefs;
     recommendedOut = rec.recommended;
-    prepared = { text: rec.text, blocks: rec.blocks, cited: rec.cited };
+    prepared = { text: rec.text, blocks: rec.blocks, cited: rec.cited, largeParty };
+  } else {
+    // An allergy or diet stated in any other message ("table for 2 tomorrow, I'm allergic to nuts") is remembered for
+    // later suggestions (D-21 audit: it was never recorded).
+    const ex = explicitPrefs(latest);
+    if (ex.allergy || ex.avoid?.length || ex.unlisted?.length || ex.diet?.length) {
+      const r = resolvePrefs(null, prefsOut, latest);
+      prefsOut = { ...r.prefs, course: null };
+      trace.push({ action: "prefs", prefs: prefsOut, added: r.added });
+    }
   }
-  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts }, prepared);
+  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries }, prepared);
   return finish(step, turn.intent);
 }
 

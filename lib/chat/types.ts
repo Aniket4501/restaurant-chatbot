@@ -200,7 +200,7 @@ export type TraceEntry =
   /** A model value the guest's latest message doesn't state, dropped before the merge (§5.7). */
   | { action: "ignore_field"; field: Field; reason: "not_stated" }
   /** A model value replaced by a deterministic reading of the guest's message (D-17). */
-  | { action: "correct_field"; field: Field; reason: "weekday" | "day_of_month" | "large_party" }
+  | { action: "correct_field"; field: Field; reason: "weekday" | "day_of_month" | "large_party" | "stated" }
   /** Food preferences in force after this turn (D-20); `added` lists what code read from the guest's own words. */
   | { action: "prefs"; prefs: Prefs; added: string[] }
   /** The menu filtered by the preferences (D-20): how many dishes fit, and why none did. */

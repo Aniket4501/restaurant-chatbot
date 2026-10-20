@@ -9,7 +9,9 @@ export type CreateBody = { branch: string; startsAt: number; partySize: number; 
 export type Pending = { key: string; body: CreateBody; unknown: boolean };
 /** A chat request sent but not yet answered, kept so a reload can offer "Try again" with the same request id (D-20). */
 export type ChatPending = { messages: { role: "guest" | "assistant"; content: string }[]; action?: Action; requestId: string };
-export type Saved = { sessionId: string; items: Item[]; draft: Draft | null; context: TurnContext; pending: Pending | null; selected: number | null; chatPending?: ChatPending | null };
+/** What the guest has typed into the confirm card for a slot, so a card shown again (or a reload) keeps it (D-21). */
+export type CardFields = { startsAt: number; name: string; phone: string; email: string; note: string };
+export type Saved = { sessionId: string; items: Item[]; draft: Draft | null; context: TurnContext; pending: Pending | null; selected: number | null; chatPending?: ChatPending | null; cardFields?: CardFields | null };
 
 const KEY = "neem-ember-chat-v1";
 

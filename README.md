@@ -43,6 +43,8 @@ The booking reference appears only after the booking has been saved. Full times,
 
 **Staff** (`/admin`): sign in with `ADMIN_PASSWORD`, pick a date (it opens on today) and optionally a branch. You see the day's booking and guest counts and a table of each booking's time, guest, party size, branch and status. Cancelling a booking frees its table straight away.
 
+**Evals** (`/admin/evals`, staff only): how the chatbot scores on its test cases. Start a scripted or live run (smoke or full, optionally one quality area), follow its progress, compare any run with the saved baseline or another run, see quality by area with each metric's definition and case count, trends across runs, new failures and resolved cases, and open any case to see each turn's input, reply, tool calls, validation results and checks, with the command that reruns it. Every number comes from the results files in `evals/results`; see `evals/README.md`.
+
 ## How it works
 
 ```
@@ -115,8 +117,14 @@ Quality is measured on 92 live test conversations, 3 runs each (`docs/EVAL_REPOR
 
 ```bash
 npm run verify           # lint, types, unit, integration, scripted evals (fake model), build, Playwright E2E with axe accessibility checks
-npm run verify:release   # also checks the model and runs the live evals 3 times
+npm run eval:smoke       # scripted cases, then a few live cases per quality area (local model), with reports
+npm run eval:full        # scripted cases, then every live case (about an hour), with reports compared with the baseline
+npm run eval:report      # report on the latest run: evals/reports/<run>.md, .json and -review.md (for human review)
+npm run verify:release   # everything, plus the live cases 3 times with the release gates
+npx tsx evals/run.ts --mode live --case LV-REC-014   # rerun one case (or --area recommendations)
 ```
+
+The eval cases, layers, metrics, baseline and how to reproduce a failure are described in `evals/README.md`.
 
 ## Known limitations
 

@@ -329,3 +329,21 @@ test("J6 a reload while a submit is in flight treats the replay as uncertain: a 
   expect(rows(server.db)).toHaveLength(1);
 });
 
+test("the name and mobile typed into the confirm card survive a question and a reload (D-21 audit) @cat:booking_success", async ({ page, server, observed }) => {
+  observed.pii.push("Asha Rao", "98765 43210");
+  await page.goto("/");
+  await chipsToConfirm(page);
+  await fillDetails(page);
+  await say(page, "can I bring my dog?"); // the card is shown again under the answer
+  await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.").first()).toBeVisible();
+  const card = page.getByRole("form", { name: "Confirm your booking" }).last();
+  await expect(card.getByLabel("Name")).toHaveValue("Asha Rao");
+  await expect(card.getByLabel("Mobile number")).toHaveValue("+91 98765 43210");
+  await page.reload();
+  const again = page.getByRole("form", { name: "Confirm your booking" }).last();
+  await expect(again.getByLabel("Name")).toHaveValue("Asha Rao");
+  await again.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("[data-confirmation-ref]")).toBeVisible();
+  expect(rows(server.db)).toHaveLength(1);
+});
+

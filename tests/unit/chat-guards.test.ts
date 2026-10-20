@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guardExtraction, largePartyStated, plainDayOfMonth, plainWeekday, timeStated } from "@/lib/chat/guards";
+import { clockHours, guardExtraction, largePartyStated, plainDayOfMonth, plainWeekday, statedClockTime, timeStated } from "@/lib/chat/guards";
 import { nullBooking } from "@/lib/llm/fake";
 import type { Turn } from "@/lib/llm/schema";
 import { weekdayDate } from "@/lib/time/calendar";
@@ -143,6 +143,33 @@ describe("plain day of the month (D-17: rule 2, 'the 28th' is the first calendar
     expect(r.trace).toContainEqual({ action: "correct_field", field: "date", reason: "day_of_month" });
     expect(guardExtraction(booking({ date: "2026-11-03" }), "dinner for 2 on the 3rd", NOW, ZONE).trace).toEqual([]);
     expect(guardExtraction(booking({ date: null }), "lunch on the 16th", NOW, ZONE).turn.booking.date).toBe("2026-10-16");
+  });
+});
+
+describe("D-21 audit and baseline: dates, party sizes and times the guards read wrongly", () => {
+  it("leaves a weekday next to a dotted date, or a negated or relative weekday, to the model", () => {
+    for (const text of ["Table for 4 at Hauz Khas on Saturday 24.10.2026 at 8pm", "Saturday 24.10 at 8pm", "Table for 4 at Hauz Khas at 8pm, any day except Saturday", "not Saturday please", "the day before Sunday", "Sunday, no wait, tommorow", "Sunday nahi, kal"]) expect(plainWeekday(text), text).toBeNull();
+    expect(plainWeekday("Monday night for 2 at Golf Course Road")).toBe(1);
+  });
+  it("reads a day of the month only in a date phrase", () => {
+    for (const text of ["Table for 6 at Golf Course Road at 8pm for my daughter's 18th birthday", "Can we come the day after the 25th?", "not the 28th", "Hauz Khas at 8pm, 1st floor please"]) expect(plainDayOfMonth(text), text).toBeNull();
+    expect(plainDayOfMonth("I'd like to book for 7 on the 28th at 7")).toBe(28);
+    expect(plainDayOfMonth("dinner for 2 on the 3rd at Hauz Khas")).toBe(3);
+  });
+  it("takes the last party size stated, in digits or words", () => {
+    expect(largePartyStated("We were going to be 10 people but now it's just 6 of us, can we book Hauz Khas tomorrow at 8pm?")).toBeNull();
+    expect(largePartyStated("Can I book a table for twenty people tomorrow?")).toBe(20);
+    expect(largePartyStated("a dozen of us want to book for Saturday")).toBe(12);
+  });
+  it("counts more ways of writing a clock time", () => {
+    for (const [text, h] of [["table for 2 tomorrow 7 30 pm", 7], ["dinner tomorrow 8 o clock for 2", 8], ["kal raat 8 baje 4 log", 8], ["table for 2, 8 in the evening", 8]] as const) expect(clockHours(text).has(h), text).toBe(true);
+  });
+  it("fills one unambiguous clock time the model left out", () => {
+    expect(statedClockTime("Do you have a table available at 8 PM?")).toBe("20:00");
+    expect(statedClockTime("7:30pm for 2")).toBe("19:30");
+    expect(statedClockTime("at 20:30")).toBe("20:30");
+    expect(statedClockTime("at 8")).toBeNull();
+    expect(statedClockTime("7pm or 9pm")).toBeNull();
   });
 });
 

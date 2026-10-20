@@ -24,6 +24,10 @@ function server(port: number, limits: Record<string, string>) {
       FAKE_SCRIPT: "tests/e2e/fake-script.json",
       ADMIN_PASSWORD: E2E_ADMIN.password,
       ADMIN_SESSION_SECRET: E2E_ADMIN.secret,
+      // D-21: the evals dashboard reads (and its run buttons write) a results directory of its own, seeded by
+      // scripts/e2e-prepare.ts from tests/e2e/fixtures/evals; the repository's evals/results is never touched.
+      EVALS_RESULTS_DIR: f.evals,
+      EVALS_BASELINE_FILE: f.evalsBaseline,
       ...limits,
     },
   };
