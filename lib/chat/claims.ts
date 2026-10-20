@@ -7,6 +7,7 @@ import { NUMBER_WORDS, numberWordRe } from "@/lib/kb/canonical";
 //   flagged, 0 of 99 qwen3.5:9b answers.
 // - D-15: booking-state words (book*, reserv*, confirm*, table, seat, all set, see you, hold/held, expect you) make
 //   smalltalk show the fixed greeting, and an FAQ sentence containing them must appear verbatim in a cited fact.
+//   "Booking note" (a form field) and venue seating phrases ("outdoor seating") are not among them.
 // Known limit (README): a claim inside a hedged sentence ("we have tables if you come at 9") is not caught; booking
 // intents never show model prose, hours answers are rendered from facts (D-10), and the eval false_claim category
 // covers the rest.
@@ -44,7 +45,17 @@ export function bookingClaim(text: string): string | null {
   return sentences(text).find(isClaim) ?? null;
 }
 
-export const hasBookingStateWords = (text: string) => BOOKING_STATE_RE.test(fold(text));
+// D-15 amendments (approved by the user, 2026-10-20): "booking note" names a form field and "outdoor seating" (indoor,
+// terrace, covered, rooftop) describes the venue, so neither is a booking-state word. Correct answers about cakes and
+// the terrace were replaced by the fallback (D2 LV-FAQ-006, LV-REG-008). A sentence that uses one of these phrases and
+// also speaks of availability ("outdoor seating available for you") still counts, since D-11 would not catch it.
+const VENUE_RE = /\b(?:booking\s+notes?|(?:indoor|outdoor|terrace|covered|rooftop)\s+seating)\b/gi;
+const AVAILABILITY_RE = /\b(?:available|availability|free|for you)\b/i;
+export const hasBookingStateWords = (text: string) => {
+  const t = fold(text);
+  const rest = t.replace(VENUE_RE, " ");
+  return BOOKING_STATE_RE.test(rest) || (rest !== t && AVAILABILITY_RE.test(rest));
+};
 
 const norm = (s: string) =>
   s

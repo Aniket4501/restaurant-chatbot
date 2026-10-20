@@ -194,6 +194,8 @@ Decision:
 - **Branch phones.** When exactly one branch is not known, the fallback, manage-booking and 9+ templates list both branches' names and phones.
 - **partySize 0** (D-06) merges like null and never overwrites a draft value, and it is dropped from ambiguity candidates.
 Consequences: Widens §5.7. Adds unit, D1 and D2 cases for every item above.
+- **Amendment (2026-10-20, approved by the user, T-20):** the phrase "booking note" no longer counts as a booking-state word. It names a form field, not a booking state. In D2, correct answers about cakes (LV-FAQ-006) and outdoor seating (LV-REG-008) were replaced by the fallback only because the model wrote "Please mention it in your booking note" instead of copying the fact word for word. Every other state word keeps the word-for-word rule. The D-11 claim filter and the independent INV-04 checker are unchanged.
+- **Amendment (2026-10-20, approved by the user, T-20):** venue seating phrases ("indoor", "outdoor", "terrace", "covered" or "rooftop" seating) are not booking-state words either. After the booking-note change, LV-REG-008 still showed the fallback because "a covered terrace for outdoor seating" contains "seating". Safeguard: a sentence that uses an exempted phrase and also speaks of availability ("available", "availability", "free", "for you") still counts as booking state, so "We have outdoor seating available for you tonight" must be word for word; D-11 alone would not catch it.
 
 ## D-16 Network, admin and telemetry hardening (2026-10-19, status: approved at G2, 2026-10-19)
 Context: Security review findings S2, S3, S8, S9, S11 and S12.
@@ -205,3 +207,43 @@ Decision:
 - **`requireAdmin()`** runs at the top of every admin route handler and the admin page/layout. Admin data loads client-side through the admin API; there are no Server Actions for admin mutations.
 - **Telemetry.** `NEXT_TELEMETRY_DISABLED=1` in every npm script that runs `next`. Next.js telemetry would otherwise make an unapproved external call (§7.4).
 Consequences: Extends §5.9 and the security section.
+
+## D-17 Deterministic checks on extracted booking fields (2026-10-20, status: approved by the user, 2026-10-20)
+Context: The T-20 baseline and review found three ways the model's extraction reaches the draft unchecked:
+- a clock time the guest never gave ("make it lunch instead" came back as 12:00, then a confirm card);
+- a weekday read as the wrong date: "Monday night" as Tue 20 Oct (LV-CLAIM-001, a regression from prompt v4), "this Saturday" (tomorrow) as the Saturday after;
+- an ambiguity whose readings are mostly or all unusable, which kept the old value or gave no reason.
+
+The first version of the time check (d9fa131) accepted any digit or number word, so a party size let an invented time through (review, high).
+Decision (`lib/chat/guards.ts`, applied in `runTurn` before the merge):
+- **Time.** A model time, or a time ambiguity candidate, is kept only if the guest's latest masked message states that hour as a clock time. Clock times are "8pm", "8:30", "at 7", "around 9", "half 8", "quarter to nine", "nineish", "nineteen hundred", noon and midnight. Bare numbers ("for 2", "the 28th") don't count. Anything else is dropped (trace `ignore_field`). This implements §5.7 "values come only from the latest guest message"; no approval needed.
+- **Weekday (approved by the user, 2026-10-20).** If a booking message names exactly one plain weekday ("Monday", "this Monday", "on Monday", "this coming Monday") and no other date words, code sets the date to that weekday's first date after today, the same date the prompt's Weekdays list gives. Other date words are "next", "after", "following", "last", "every", today, tonight, tomorrow, weekend, a month name, or a day number. A model date that disagrees is replaced (trace `correct_field`). A weekday that is today's weekday is left to the model, because "this Friday" said on a Friday is ambiguous.
+- **Ambiguity.** With exactly one usable reading, the old value is cleared and the field is asked plainly. A party ambiguity with any 9+ reading gets the large-party reply. With no usable reading, the reason is chosen by priority (large party, past the horizon, inactive branch, past date, then the rest), not by candidate order. This is within §5.7 ("if one message contradicts itself, ask").
+Consequences: Unit tests for each pattern, both positive and negative. D1 cases SC-REG-006…009; D2 cases that state a meal without a clock time now expect `time: null` and no confirm card.
+
+## D-18 Guest chat and admin dashboard redesign (2026-10-20, status: approved by the user, 2026-10-20; build after T-20, before Phase 8)
+Context: The user supplied two mockups, an "Olivia Kitchen & Bar" mobile chat and a reservations dashboard, and asked for the UI to look like them. Answers on 2026-10-20:
+- copy the look only;
+- no photos;
+- all four dashboard extras;
+- finish T-20 first.
+
+Decision:
+- **Brand and data.** Keep Neem & Ember, its two branches, menu and hours (BR-01 unchanged), so seed data and every eval case stay valid. Take the mockups' layout, dark green and cream palette, serif headings, cards, slot grid and selection summary.
+- **No photos.** A botanical line illustration and colour treatment in SVG and CSS. Nothing is downloaded; icons are hand-written inline SVG and fonts are system stacks. No new packages.
+- **Guest chat:**
+  - a hero header with today's open status from the hours data;
+  - quick actions (book a table, menu, opening hours, locations);
+  - branch cards with address and today's hours;
+  - a slot grid grouped by lunch and dinner, with a date navigator;
+  - a "Your selection" summary, then details, then Confirm.
+
+  The confirmation is still built only from a 201/200 response (H6, BR-12).
+- **Admin extras (scope change):**
+  - search by name, phone or reference; sortable columns; paging; a booking detail panel;
+  - stat cards from real data (total, guests, confirmed, cancelled, vs the same day last week);
+  - staff "New reservation" for phone and walk-in guests through the same engine and write path, with a `channel` column (web, phone, walk-in) added by migration. This extends the §4.1 staff journey and AC-07, and needs the same tests as the guest path;
+  - read-only Tables, Menu and Opening hours pages. Editing stays a non-goal (§4.3).
+- **Left out, because there is no data or feature behind them:** pending, completed and no-show statuses (bookings are confirmed or cancelled); floor plan; settings; notifications; attachments; "Most popular" badges; read receipts.
+Consequences: New tasks in docs/PLAN.md before Phase 8. Every E2E and axe check is updated, and the invariants still run after every spec.
+

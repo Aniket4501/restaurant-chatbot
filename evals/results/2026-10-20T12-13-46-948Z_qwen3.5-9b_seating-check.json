@@ -1,0 +1,405 @@
+{
+ "meta": {
+  "kind": "eval-live",
+  "startedAt": "2026-10-20T12:13:46.948Z",
+  "gitSha": "d9fa131",
+  "gitDirty": true,
+  "changedDuringRun": false,
+  "promptVersion": "v4",
+  "dataset": {
+   "dir": "evals/cases",
+   "hash": "29ab1cf3ffdade87",
+   "cases": 3
+  },
+  "node": "v26.12.0",
+  "chip": "Apple M4 Pro",
+  "ramBytes": 25769803776,
+  "numCtx": 8192,
+  "temperature": 0,
+  "seed": 42,
+  "runs": 1,
+  "model": "qwen3.5:9b",
+  "ollama": {
+   "version": "0.40.5",
+   "models": [
+    {
+     "name": "qwen3.5:9b",
+     "digest": "d63f830f28d5",
+     "loaded": true,
+     "sizeBytes": 16384946896,
+     "vramBytes": 16384946896,
+     "gpuShare": 1,
+     "contextLength": 8192
+    },
+    {
+     "name": "qwen3-embedding:0.6b",
+     "digest": "ac6da0dfba84",
+     "loaded": true,
+     "sizeBytes": 1239752376,
+     "vramBytes": 1239752376,
+     "gpuShare": 1,
+     "contextLength": 4096
+    }
+   ]
+  },
+  "warmup": [
+   {
+    "ms": 8809,
+    "prompt": 3457,
+    "cached": 0
+   },
+   {
+    "ms": 300,
+    "prompt": 3457,
+    "cached": 3446
+   }
+  ],
+  "loadAverage": [
+   3.54736328125,
+   3.78564453125,
+   3.31298828125
+  ]
+ },
+ "summary": {
+  "cases": 3,
+  "passed": 3,
+  "failed": 0,
+  "invariantViolations": 0
+ },
+ "metrics": {
+  "cases": 3,
+  "runs": 1,
+  "passRate": {
+   "value": 1,
+   "n": 3
+  },
+  "byCategory": {
+   "faq": {
+    "results": 2,
+    "passed": 2
+   },
+   "menu": {
+    "results": 1,
+    "passed": 1
+   }
+  },
+  "gates": {
+   "criticalInvariantViolations": 0,
+   "duplicateBookingRate": {
+    "value": 0,
+    "n": 3
+   },
+   "availabilityAccuracy": {
+    "value": null,
+    "n": 0
+   },
+   "unsupportedClaimsShown": 0,
+   "injectionResistance": {
+    "value": null,
+    "n": 0
+   },
+   "recoverySuccess": {
+    "value": null,
+    "n": 0
+   },
+   "abstentionOnUnknown": {
+    "value": null,
+    "n": 0
+   }
+  },
+  "floors": {
+   "intentAccuracy": {
+    "value": 1,
+    "n": 4
+   },
+   "bookingFieldExtractionExact": {
+    "value": null,
+    "n": 0
+   },
+   "backendActionCorrectness": {
+    "value": null,
+    "n": 0
+   },
+   "groundedAnswerCorrectness": {
+    "value": 1,
+    "n": 8
+   },
+   "firstTrySchemaValidity": {
+    "value": 1,
+    "n": 4
+   }
+  },
+  "latency": {
+   "booking": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   },
+   "faq": {
+    "n": 4,
+    "p50": 1625,
+    "p95": 3224
+   },
+   "firstRunBooking": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   },
+   "firstRunFaq": {
+    "n": 4,
+    "p50": 1625,
+    "p95": 3224
+   }
+  },
+  "tokens": {
+   "promptMax": 4130,
+   "promptMean": 4056.5,
+   "cachedMean": 3766,
+   "outputMean": 82.75
+  },
+  "repeatability": {
+   "flaky": [],
+   "alwaysFail": []
+  },
+  "retrieval": {
+   "queries": 30,
+   "hybrid": {
+    "hitAt8": 1,
+    "recallAt8": 0.9500000000000001
+   },
+   "lexical": {
+    "hitAt8": 0.8666666666666667,
+    "recallAt8": 0.8277777777777778
+   }
+  }
+ },
+ "thresholds": [],
+ "results": [
+  {
+   "id": "LV-FAQ-006",
+   "category": "faq",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "turn 1: intent faq ∉ faq"
+    },
+    {
+     "key": "mustCiteAny",
+     "ok": true,
+     "detail": "turn 1: cited none of faq:celebration-cake (cited faq:celebration-cake)"
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "turn 1: abstained"
+    },
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "turn 2: intent faq ∉ faq"
+    },
+    {
+     "key": "mustCiteAny",
+     "ok": true,
+     "detail": "turn 2: cited none of faq:celebration-cake (cited faq:celebration-cake)"
+    },
+    {
+     "key": "mustIncludeValues",
+     "ok": true,
+     "detail": "turn 2: reply lacks "
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "turn 2: abstained"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 2,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Can we bring a birthday cake?",
+     "reply": "Yes, you can bring a celebration cake. There is a ₹300 cakeage charge per cake. Please mention it in the booking note.",
+     "blocks": [
+      "info faq:celebration-cake"
+     ],
+     "cited": [
+      "faq:celebration-cake"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 3224,
+     "modelMs": 3131,
+     "promptTokens": 4036,
+     "cachedTokens": 3490,
+     "outputTokens": 85,
+     "firstTryValid": true
+    },
+    {
+     "kind": "guest",
+     "input": "Is there a fee for that?",
+     "reply": "Yes, there is a ₹300 cakeage charge per celebration cake.",
+     "blocks": [
+      "info faq:celebration-cake"
+     ],
+     "cited": [
+      "faq:celebration-cake"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2977,
+     "modelMs": 2923,
+     "promptTokens": 4100,
+     "cachedTokens": 3490,
+     "outputTokens": 71,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-006",
+   "category": "menu",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent faq ∉ faq"
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "case: abstained"
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "case: reply does not match /Kokum Cooler/: \"The Fresh Lime Soda and Kokum Cooler are vegan. The Masala Chaas, Masala Chai, and Mango Lassi are v\""
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "case: reply does not match /Fresh Lime Soda/: \"The Fresh Lime Soda and Kokum Cooler are vegan. The Masala Chaas, Masala Chai, and Mango Lassi are v\""
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /\\b(?:Lassi|Chaas|Chai|Coffee)\\b[^.]*\\bvegan\\b/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /\\bvegan\\b[^.]*\\b(?:Lassi|Chaas|Chai|Coffee)\\b/"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Which of your drinks are vegan?",
+     "reply": "The Fresh Lime Soda and Kokum Cooler are vegan. The Masala Chaas, Masala Chai, and Mango Lassi are vegetarian but contain dairy.",
+     "blocks": [
+      "info menu:fresh-lime-soda, menu:kokum-cooler, menu-cat:drinks"
+     ],
+     "cited": [
+      "menu:fresh-lime-soda",
+      "menu:kokum-cooler",
+      "menu-cat:drinks"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1625,
+     "modelMs": 1564,
+     "promptTokens": 4130,
+     "cachedTokens": 4129,
+     "outputTokens": 100,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-008",
+   "category": "faq",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent faq ∉ faq"
+    },
+    {
+     "key": "mustCiteAny",
+     "ok": true,
+     "detail": "case: cited none of faq:outdoor-seating (cited faq:outdoor-seating)"
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "case: abstained"
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "case: reply does not match /terrace/: \"Yes, Golf Course Road has a covered terrace for outdoor seating. Please mention this in your booking\""
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "case: reply does not match /booking note/: \"Yes, Golf Course Road has a covered terrace for outdoor seating. Please mention this in your booking\""
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Is there outdoor seating at Golf Course Road?",
+     "reply": "Yes, Golf Course Road has a covered terrace for outdoor seating. Please mention this in your booking note.",
+     "blocks": [
+      "info faq:outdoor-seating"
+     ],
+     "cited": [
+      "faq:outdoor-seating"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1436,
+     "modelMs": 1400,
+     "promptTokens": 3960,
+     "cachedTokens": 3955,
+     "outputTokens": 75,
+     "firstTryValid": true
+    }
+   ]
+  }
+ ]
+}

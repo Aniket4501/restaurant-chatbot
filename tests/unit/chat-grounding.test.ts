@@ -190,4 +190,19 @@ describe("smalltalk and booking-state words (D-15)", () => {
     expect(unsupportedBookingStateSentence("Your table is held for 15 minutes.", [late])).toBe("Your table is held for 15 minutes.");
     expect(unsupportedBookingStateSentence("Parking is free.", [late])).toBeNull();
   });
+  it("does not count 'booking note' as a booking-state word (D-15 amendment, 2026-10-20; D2 LV-FAQ-006, LV-REG-008)", () => {
+    const cake = "Yes, you can bring a celebration cake. There is a ₹300 cakeage charge per cake. Mention it in the booking note.";
+    expect(unsupportedBookingStateSentence("Please mention it in the booking note.", [cake])).toBeNull();
+    expect(unsupportedBookingStateSentence("Please mention this in your booking notes.", [cake])).toBeNull();
+    // Every other state word keeps the word-for-word rule.
+    expect(unsupportedBookingStateSentence("Add it to your booking note and we'll hold your table.", [cake])).toBe("Add it to your booking note and we'll hold your table.");
+    expect(unsupportedBookingStateSentence("Mention it when booking.", [cake])).toBe("Mention it when booking.");
+  });
+  it("does not count venue seating phrases unless the sentence also speaks of availability (D-15 amendment; D2 LV-REG-008)", () => {
+    const outdoor = "Golf Course Road has a covered terrace; ask for it in the booking note and we'll try to seat you there. Hauz Khas has indoor seating only.";
+    expect(unsupportedBookingStateSentence("Yes, Golf Course Road has a covered terrace for outdoor seating.", [outdoor])).toBeNull();
+    expect(unsupportedBookingStateSentence("Hauz Khas has indoor seating, and rooftop seating is not offered.", [outdoor])).toBeNull();
+    for (const s of ["We have outdoor seating available for you tonight.", "Outdoor seating is free at 8 PM.", "We can seat you on the terrace.", "Terrace seats are available."])
+      expect(unsupportedBookingStateSentence(s, [outdoor]), s).toBe(s);
+  });
 });

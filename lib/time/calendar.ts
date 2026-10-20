@@ -28,3 +28,10 @@ export function weekdayLines(now: number, zone: string): string[] {
     .slice(1)
     .map((d) => `${WEEKDAY_NAMES[weekdayOf(d, zone)]} = ${d}`);
 }
+
+/** The first date after today with this weekday (0 = Sunday): the date the prompt's Weekdays list gives (D-17). */
+export function weekdayDate(now: number, zone: string, weekday: number): LocalDate {
+  return horizonDates(now, zone, 7)
+    .slice(1)
+    .find((d) => weekdayOf(d, zone) === weekday)!;
+}

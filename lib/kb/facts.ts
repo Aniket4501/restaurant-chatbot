@@ -16,9 +16,9 @@ export type Fact = {
   /** What the model sees and what answers are grounded against. */
   text: string;
   /**
-   * What FTS5 and the embedder index, if not `text`. Only aggregates set it: a full 35-item list ranks poorly on
-   * bm25 (length normalisation) and its vector is diluted, so they are indexed by a short description instead
-   * (T-10 measurement, see DECISIONS D-13 note).
+   * What FTS5 and the embedder index, if not `text`. Aggregates set it: a full 35-item list ranks poorly on bm25
+   * (length normalisation) and its vector is diluted, so they are indexed by a short description instead (T-10
+   * measurement, see DECISIONS D-13 note). Vegan menu items set it to their text without "vegetarian" (dietText).
    */
   indexText?: string;
 };
@@ -103,8 +103,12 @@ const categoryLabel = (c: string) => CATEGORY[c] ?? c.replace(/-/g, " ");
 /** "Hauz Khas" from "Neem & Ember, Hauz Khas" (the part after the last comma, as the probe does). */
 export const branchShortName = (name: string) => name.split(", ").pop()!;
 
-function dietText(d: string[]): string {
-  const base = d.includes("vegan") ? "Vegan" : d.includes("vegetarian") ? "Vegetarian" : "Non-vegetarian";
+function dietText(d: string[], alsoVegetarian = true): string {
+  // Vegan dishes say "vegetarian" too: prompt rule 4 lets the model call a dish vegetarian only if its fact says so,
+  // so "which are vegetarian?" would otherwise leave vegan dishes out (T-20 review). The index keeps the shorter
+  // wording (alsoVegetarian = false): with it, 14 short vegan facts outranked menu-diet:vegetarian on bm25 and the
+  // lexical aggregate hit rate fell from 10/10 to 9/10.
+  const base = d.includes("vegan") ? (alsoVegetarian ? "Vegan, vegetarian" : "Vegan") : d.includes("vegetarian") ? "Vegetarian" : "Non-vegetarian";
   const extra = [d.includes("gluten-free") && "gluten-free", d.includes("jain-available") && "Jain option available"].filter(Boolean);
   const contains = [d.includes("contains-dairy") && "dairy", d.includes("contains-nuts") && "nuts", d.includes("egg") && "egg"].filter(Boolean);
   return [base, ...extra].join(", ") + (contains.length ? `; contains ${contains.join(", ")}` : "") + ".";
@@ -214,10 +218,12 @@ export function renderKbFacts(src: FactSource): Fact[] {
   for (const m of menu) {
     const where = m.scope ? ` ${scopeText(m.scope)}.` : "";
     const avail = m.isAvailable ? "" : " Currently unavailable.";
+    const itemText = (alsoVegetarian: boolean) => `${m.name} (${categoryLabel(m.category)}), ₹${m.priceInr}. ${m.description}. ${dietText(m.dietary, alsoVegetarian)} Spice: ${SPICE[m.spiceLevel ?? 0]}.${where}${avail}`;
     facts.push({
       id: `menu:${m.slug}`,
       kind: "menu",
-      text: `${m.name} (${categoryLabel(m.category)}), ₹${m.priceInr}. ${m.description}. ${dietText(m.dietary)} Spice: ${SPICE[m.spiceLevel ?? 0]}.${where}${avail}`,
+      text: itemText(true),
+      ...(m.dietary.includes("vegan") ? { indexText: itemText(false) } : {}),
     });
   }
   for (const q of src.faq) {

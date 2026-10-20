@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
+import { historyContent, submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import type { Action, Block, TurnReply } from "@/lib/chat/types";
 import { BlockView, type BlockHandlers } from "@/components/chat/Blocks";
 import { ConfirmCard, type CardState } from "@/components/chat/ConfirmCard";
@@ -69,8 +69,9 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
 
   const history = (items: Item[]) =>
     items
-      .filter((i) => i.id !== "welcome" && i.tone !== "error" && i.text)
-      .map((i) => ({ role: i.role, content: i.text.slice(0, i.role === "guest" ? 500 : 600) }))
+      .filter((i) => i.id !== "welcome" && i.tone !== "error")
+      .map((i) => ({ role: i.role, content: (i.role === "assistant" ? historyContent(i.text, i.blocks) : i.text).slice(0, i.role === "guest" ? 500 : 600) }))
+      .filter((m) => m.content)
       .slice(-7);
 
   const send = useCallback(

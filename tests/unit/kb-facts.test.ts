@@ -24,17 +24,26 @@ const all = (now = NOW): Fact[] => {
 const byId = (facts: Fact[]) => new Map(facts.map((f) => [f.id, f.text]));
 
 describe("fact rendering is byte-compatible with the Phase 2 probe (D-13)", () => {
-  it("reproduces every probe fact exactly, apart from the D-10 exception note on weekly hours", () => {
+  it("reproduces every probe fact exactly, apart from the D-10 exception note and 'vegan, vegetarian' (T-20)", () => {
     const mine = byId(all());
     const d10: string[] = [];
+    const vegan: string[] = [];
     for (const f of [...probe.staticFacts, ...probe.kbFacts]) {
       const text = mine.get(f.id);
       if (text === f.text) continue;
+      if (f.id.startsWith("menu:")) {
+        // The only change to a menu fact: a vegan dish also says it is vegetarian.
+        expect(text, f.id).toBe(f.text.replace(". Vegan", ". Vegan, vegetarian"));
+        vegan.push(f.id);
+        continue;
+      }
       expect(f.id, `${f.id} differs`).toMatch(/^hours:/);
       expect(text).toBe(`${f.text} Except ${text!.slice(f.text.length + " Except ".length)}`);
       d10.push(f.id);
     }
     expect(d10.sort()).toEqual(["hours:gurugram:tue", "hours:hauz-khas:sat", "hours:hauz-khas:thu"]);
+    const veganItems = loadFactSource(db).menu.filter((m) => m.dietary.includes("vegan")).map((m) => `menu:${m.slug}`);
+    expect(vegan.sort()).toEqual(veganItems.sort());
   });
 
   it("adds only the restaurant fact and the aggregates (D-13)", () => {
@@ -116,8 +125,16 @@ describe("aggregate facts are complete (D-13)", () => {
   it("menu-cat entries carry each item's diet, so a list answer can't guess it (D2 LV-SMOKE-04)", () => {
     const f = byId(renderKbFacts(src()));
     expect(f.get("menu-cat:desserts")).toContain("Ember Pistachio Kulfi ₹275 (vegetarian, gluten-free; contains dairy, nuts)");
-    expect(f.get("menu-cat:desserts")).toContain("Mango Sorbet ₹245 (vegan, gluten-free)");
-    expect(f.get("menu-cat:small-plates")).toMatch(/Keema Pav Sliders ₹525 \(non-vegetarian[^)]*; Golf Course Road only\)/);
+    expect(f.get("menu-cat:desserts")).toContain("Mango Sorbet ₹245 (vegan, vegetarian, gluten-free)");
+    expect(f.get("menu-cat:desserts")).toContain("Chocolate Chilli Mousse ₹345 (vegetarian; contains dairy, egg)");
+    expect(f.get("menu-cat:small-plates")).toContain("Keema Pav Sliders ₹525 (non-vegetarian; contains dairy; Golf Course Road only)");
+  });
+
+  it("says vegan dishes are vegetarian too, so 'which are vegetarian?' keeps them (T-20 review, prompt v4 rule 4)", () => {
+    const f = byId(renderKbFacts(src()));
+    expect(f.get("menu-cat:small-plates")).toContain("Kale Pakoda ₹295 (vegan, vegetarian, gluten-free)");
+    expect(f.get("menu:kale-pakoda")).toContain("Vegan, vegetarian, gluten-free.");
+    expect(f.get("menu:yellow-dal-tadka")).toContain("Vegan, vegetarian, gluten-free, Jain option available.");
   });
 
   it("menu-diet lists every item with the tag; vegetarian includes vegan items", () => {
@@ -143,10 +160,12 @@ describe("aggregate facts are complete (D-13)", () => {
     expect(f.get("menu-diet:vegan")).toMatch(/^Vegan \(14 available\), cheapest first: Tandoori Roti \(breads and rice\) ₹75; /);
   });
 
-  it("indexes aggregates by a short description, and every other fact by its text", () => {
+  it("indexes aggregates by a short description, vegan dishes without 'vegetarian', and every other fact by its text", () => {
     const kb = renderKbFacts(src());
+    const vegan = new Set(src().menu.filter((m) => m.dietary.includes("vegan")).map((m) => `menu:${m.slug}`));
     for (const f of kb) {
       if (f.kind === "menu-cat" || f.kind === "menu-diet") expect(f.indexText, f.id).toMatch(/^.+: every.+, with prices, cheapest to most expensive\.$/);
+      else if (vegan.has(f.id)) expect(f.indexText, f.id).toBe(f.text.replace(". Vegan, vegetarian", ". Vegan"));
       else expect(f.indexText, f.id).toBeUndefined();
     }
     expect(kb.find((f) => f.id === "menu-diet:jain-available")!.indexText).toBe(

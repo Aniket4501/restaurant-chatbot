@@ -71,20 +71,29 @@ export type MergeResult = {
   changed: Field[];
 };
 
+/** Which reason to give when no ambiguity reading is usable: the most useful one first (D-17). */
+const ISSUE_RANK: FieldIssue[] = ["large_party", "past_horizon", "branch_inactive", "past_date", "bad_party", "bad_date", "bad_branch", "bad_time"];
+
 /** Merge the model's extracted booking fields into the draft. */
 export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldCtx): MergeResult {
   let ambiguity: MergeResult["ambiguity"] = null;
   let unusable: { field: Field; issue: FieldIssue } | null = null;
+  let clearAsk: Field | null = null;
   if (booking.ambiguity) {
     const field = booking.ambiguity.field as Field;
     const unique = [...new Set(booking.ambiguity.candidates)];
     const checked = unique.map((c) => validateField(field, c, ctx));
     const candidates = unique.filter((_, i) => checked[i].ok);
+    const bad = checked.flatMap((c) => (c.ok ? [] : [c.issue]));
     if (candidates.length >= 2) ambiguity = { field, candidates };
-    // No reading is usable ("30 December", past the horizon in either year): treat it like one bad value, so the guest
-    // hears why (D2 LV-INV-004). With exactly one usable reading the flow asks plainly rather than guessing.
-    const first = checked[0];
-    if (candidates.length === 0 && first && !first.ok) unusable = { field, issue: first.issue };
+    // Fewer than two usable readings (D-17): never keep the old value as if nothing was said.
+    // - any 9+ reading of the party is a large party ("8 or 9 of us");
+    // - no usable reading is treated like one bad value, with the reason ranked, not taken from the first candidate
+    //   ("30 December" in either year: past the horizon; D2 LV-INV-004);
+    // - one usable reading of branch, date or party clears that field, so the flow asks plainly.
+    else if (field === "partySize" && bad.includes("large_party")) unusable = { field, issue: "large_party" };
+    else if (candidates.length === 0 && bad.length) unusable = { field, issue: ISSUE_RANK.find((r) => bad.includes(r)) ?? bad[0] };
+    else if (candidates.length === 1 && (field === "branch" || field === "date" || field === "partySize")) clearAsk = field;
   }
   const next: Draft = { ...draft };
   const issues: MergeResult["issues"] = [];
@@ -110,18 +119,9 @@ export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldC
     else issues.push(unusable);
   }
   const rejected: Field[] = [...issues.map((i) => i.field), ...(largeParty ? (["partySize"] as Field[]) : [])];
+  if (clearAsk && booking[clearAsk] === null && !changed.includes(clearAsk)) rejected.push(clearAsk);
   return { draft: withSelection(draft, latestWins(draft, next, booking.time !== null, rejected)), issues, ambiguity, largeParty, changed };
 }
-
-// A digit, a number word, or a named time. Masked phones and emails ("[phone]") carry none.
-const CLOCK_RE = /\p{Nd}|\b(?:noon|midday|midnight|half|quarter|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/iu;
-
-/**
- * Whether a guest message states a clock time at all (§5.7: values come only from the latest message). The turn drops
- * a model time from a message without one (D2 LV-CONF-001: "make it lunch instead" came back as 12:00); a meal alone
- * then replaces the old time preference as usual.
- */
-export const statesClockTime = (text: string) => CLOCK_RE.test(text);
 
 /** A chip or form action. Unlike model extraction, an explicit null clears the field ("change date"). */
 export function applySetField(draft: Draft, field: Field, value: Value, ctx: FieldCtx): MergeResult {

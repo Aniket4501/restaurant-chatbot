@@ -108,7 +108,11 @@ interface Embedder {
     - rule 1: asking whether a table is free, or changing the booking being arranged in this chat, is `booking`; `manage_booking` is only for a confirmed booking;
     - rule 2: a weekday on its own is looked up in a new "Weekdays" list (the first date after today for each weekday); "the 28th" is the first calendar date with that day; a day and month beyond the calendar is still written out, so code can explain the 30-day limit; a time is set only from a clock time the guest gives;
     - rule 4: a dish is called vegan, vegetarian, gluten-free or free of an allergen only if the facts say so for that dish.
-- **After the model (T-20).** Two deterministic guards in `lib/chat`: a model time is dropped when the guest's latest message has no clock time in it (`statesClockTime`, trace `ignore_field`), and an ambiguity whose candidates all fail validation is asked about with the reason ("Bookings open up to 30 days ahead").
+- **After the model (D-17, `lib/chat/guards.ts`).** Before the merge, `runTurn` applies deterministic checks to the model's fields:
+  - **Time.** A time, or a time ambiguity candidate, is kept only if the latest masked message states that hour as a clock time ("8pm", "at 7", "half 8", "quarter to nine", "nineish", noon). A bare number such as a party size doesn't count. Otherwise it is dropped (trace `ignore_field`).
+  - **Weekday.** One plain weekday and no other date words sets the date to that weekday's first date after today, the same date the prompt's Weekdays list gives (trace `correct_field`). Today's weekday is left to the model.
+  - **Ambiguity** (`mergeExtracted`). One usable reading clears the old value so the field is asked about. A 9+ party reading gets the large-party reply. No usable reading gives a ranked reason ("Bookings open up to 30 days ahead").
+- **History after a booking.** The success reply has no text, so `historyContent` (`lib/chat/submit.ts`, used by the client and the eval runner) writes the confirmation into history as "Booking confirmed (reference …): date, time, party." Prompt rule 1 needs this to tell a confirmed booking from one still being arranged.
 - **Masking.** `lib/llm/redact.ts` runs before retrieval and prompting, on every message whatever its role. Emails become `[email]`. Phones that libphonenumber finds become `[phone]`, as does any other run of 8 or more digits; ISO dates and HH:MM times are kept. The prompt never sees an unmasked number.
 
 ## Fakes

@@ -11,7 +11,7 @@ import { buildPrompt, promptChars, PROMPT_VERSION, type SystemPromptInput } from
 import { maskMessages } from "@/lib/llm/redact";
 import { TURN_JSON_SCHEMA, type Intent } from "@/lib/llm/schema";
 import type { LocalDate } from "@/lib/time/tz";
-import { statesClockTime } from "@/lib/chat/draft";
+import { guardExtraction } from "@/lib/chat/guards";
 import { GateFullError, openGate, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
 import { degradedStep, handleAction, routeTurn, type FlowCtx, type Step } from "@/lib/chat/router";
 import { branchInfo } from "@/lib/chat/templates";
@@ -205,11 +205,9 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // 8. Route (or degrade).
   const r = outcome.result;
   if (!r.ok) return finish(degradedStep(draft0, ctx, r.code), null);
-  let turn = r.truncated ? { ...r.turn, answer: null } : r.turn; // still too long after the retry → fallback/greeting
-  if (turn.booking.time !== null && !statesClockTime(latest)) {
-    trace.push({ action: "ignore_field", field: "time", reason: "not_stated" });
-    turn = { ...turn, booking: { ...turn.booking, time: null } };
-  }
+  const guarded = guardExtraction(r.truncated ? { ...r.turn, answer: null } : r.turn, latest, input.now, zone); // D-17
+  trace.push(...guarded.trace);
+  const turn = guarded.turn; // a truncated answer is still too long after the retry → fallback/greeting
   const factsById = new Map<string, Fact>([...staticFacts, ...kbFacts].map((f) => [f.id, f]));
   const sentIds = new Set([...staticFacts.map((f) => f.id), ...retrieved.map((f) => f.id)]);
   const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;

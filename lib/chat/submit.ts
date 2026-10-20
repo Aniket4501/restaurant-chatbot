@@ -99,3 +99,16 @@ export function submitOutcome(
   if (status >= 500) return { ...base, text: "We couldn't confirm whether your booking went through. Tap Retry to check.", clearPending: false, unknown: true };
   return { ...base, text: err.message ?? "Something went wrong, and nothing was booked." };
 }
+
+/**
+ * The history line for an assistant reply. A confirmation card becomes "Booking confirmed (reference …): date, time,
+ * party." so the model can tell a confirmed booking from one still being arranged (prompt v4 rule 1); the success
+ * text itself is empty because booked wording may appear only inside the card (INV-04). No guest name or phone.
+ * Used by the chat client and the eval runner, so both send the same history.
+ */
+export function historyContent(text: string, blocks: Block[] | undefined): string {
+  const c = blocks?.find((b) => b.type === "confirmation");
+  if (c && c.type === "confirmation" && c.status === "confirmed") return `Booking confirmed (reference ${c.ref}): ${c.dateLabel}, ${c.timeLabel}, ${c.partySize} ${c.partySize === 1 ? "guest" : "guests"}.`;
+  return text;
+}
+

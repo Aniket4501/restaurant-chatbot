@@ -8,7 +8,7 @@ import type { ApiDeps } from "@/lib/api/deps";
 import { reservationsHandler } from "@/lib/api/reservations";
 import { createReservation } from "@/lib/booking/create";
 import { noTurnLimit, openGate } from "@/lib/chat/ratelimit";
-import { submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
+import { historyContent, submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import { branchInfo } from "@/lib/chat/templates";
 import { runTurn, systemInputFor } from "@/lib/chat/turn";
 import { emptyDraft, type Action, type Block, type ChatMessage, type Draft, type TraceEntry } from "@/lib/chat/types";
@@ -374,7 +374,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
           draft = emptyDraft();
           lastConfirm = null;
         }
-        history = [...history, { role: "assistant" as const, content: r.outcome.text }].slice(-7);
+        history = [...history, { role: "assistant" as const, content: historyContent(r.outcome.text, r.outcome.blocks) }].filter((m) => m.content).slice(-7);
       } else if ("simulate" in turn) {
         // A lost response or a reload with a pending submit: the client replays the same key and body (D-14).
         if (lastSubmit) {
@@ -508,14 +508,16 @@ async function ollamaState(baseUrl: string, names: string[]): Promise<{ version:
     }
   };
   const [version, tags, ps] = await Promise.all([get<{ version?: string }>("/api/version"), get<{ models?: Listed[] }>("/api/tags"), get<{ models?: Listed[] }>("/api/ps")]);
-  const find = (list: { models?: Listed[] } | null, name: string) => list?.models?.find((m) => m.name === name || m.model === name);
+  // "qwen3.5" and "qwen3.5:latest" are the same model (review: an untagged name reported "not loaded").
+  const norm = (n: string | undefined) => (n ? (n.includes(":") ? n : `${n}:latest`).toLowerCase() : "");
+  const find = (list: { models?: Listed[] } | null, name: string) => list?.models?.find((m) => norm(m.name) === norm(name) || norm(m.model) === norm(name));
   return {
     version: version?.version ?? null,
     models: names.map((name) => {
       const p = find(ps, name);
       return {
         name,
-        digest: find(tags, name)?.digest?.slice(0, 12) ?? null,
+        digest: (p?.digest ?? find(tags, name)?.digest)?.slice(0, 12) ?? null,
         loaded: !!p,
         sizeBytes: p?.size ?? null,
         vramBytes: p?.size_vram ?? null,
@@ -551,6 +553,17 @@ async function main(): Promise<number> {
     console.error(`eval: ${(e as Error).message}`);
     return 2;
   }
+  // Provenance is read before anything runs, so a commit or edit during a long run can't relabel it (T-20 review).
+  const provenance = () => ({
+    gitSha: sh("git", ["rev-parse", "--short", "HEAD"]),
+    // Uncommitted changes outside evals/results mean gitSha alone does not identify the code that ran.
+    gitDirty: (sh("git", ["status", "--porcelain"]) ?? "").split("\n").some((l) => l.trim() && !l.includes("evals/results/")),
+    datasetHash: createHash("sha256")
+      .update(fs.readdirSync(casesDir).filter((n) => n.endsWith(".jsonl")).sort().map((n) => fs.readFileSync(path.join(casesDir, n), "utf8")).join("\n"))
+      .digest("hex")
+      .slice(0, 16),
+  });
+  const atStart = provenance();
   cases = cases.filter((c) => c.mode === mode && (!category || c.category === category) && (!only || only.includes(c.id)));
   if (!cases.length) {
     console.error(`eval: no ${mode} cases selected`);
@@ -607,18 +620,16 @@ async function main(): Promise<number> {
     for (const l of thresholdLines) console.log(`${l.ok ? "✓" : "✗"} ${l.metric.padEnd(30)} ${fmt(l.value).padStart(7)}  (${l.want})${l.override ? `  override: ${l.override}` : ""}`);
   }
   const violations = results.reduce((n, r) => n + r.violations.length, 0);
-  const datasetHash = createHash("sha256")
-    .update(fs.readdirSync(casesDir).filter((n) => n.endsWith(".jsonl")).sort().map((n) => fs.readFileSync(path.join(casesDir, n), "utf8")).join("\n"))
-    .digest("hex")
-    .slice(0, 16);
+  const atEnd = provenance();
   const meta = {
     kind: `eval-${mode}`,
     startedAt: started.toISOString(),
-    gitSha: sh("git", ["rev-parse", "--short", "HEAD"]),
-    // Uncommitted changes outside evals/results mean gitSha alone does not identify the code that ran.
-    gitDirty: (sh("git", ["status", "--porcelain"]) ?? "").split("\n").some((l) => l.trim() && !l.includes("evals/results/")),
+    gitSha: atStart.gitSha,
+    gitDirty: atStart.gitDirty,
+    // True if the commit, the tree or the cases changed while the run was going.
+    changedDuringRun: JSON.stringify(atStart) !== JSON.stringify(atEnd),
     promptVersion: PROMPT_VERSION,
-    dataset: { dir: path.relative(ROOT, casesDir), hash: datasetHash, cases: cases.length },
+    dataset: { dir: path.relative(ROOT, casesDir), hash: atStart.datasetHash, cases: cases.length },
     node: process.version,
     chip: os.cpus()[0]?.model ?? null,
     ramBytes: os.totalmem(),
