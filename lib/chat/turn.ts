@@ -6,16 +6,19 @@ import type { DB } from "@/lib/db/client";
 import type { Embedder } from "@/lib/kb/embedder";
 import { loadFactSource, renderKbFacts, renderStaticFacts, type Fact } from "@/lib/kb/facts";
 import { retrievalQuery, retrieveFacts } from "@/lib/kb/retrieve";
-import { CORRECTIVE_MESSAGE, interpretEnvelope, ModelError, type ChatMessage as LlmMessage, type Interpreted, type ModelClient } from "@/lib/llm/client";
+import { CORRECTIVE_MESSAGE, interpretEnvelope, interpretJson, ModelError, type ChatMessage as LlmMessage, type Interpreted, type ModelClient } from "@/lib/llm/client";
+import { CHOOSER_JSON_SCHEMA, CHOOSER_VERSION, ChooserSchema } from "@/lib/llm/chooser";
 import { buildPrompt, promptChars, PROMPT_VERSION, type SystemPromptInput } from "@/lib/llm/prompt";
 import { maskMessages } from "@/lib/llm/redact";
 import { TURN_JSON_SCHEMA, type Intent } from "@/lib/llm/schema";
 import type { LocalDate } from "@/lib/time/tz";
-import { guardExtraction } from "@/lib/chat/guards";
+import { guardExtraction, largePartyStated } from "@/lib/chat/guards";
+import { menuEntries, menuStep } from "@/lib/chat/menu";
+import { recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
 import { GateFullError, openGate, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
 import { degradedStep, handleAction, routeTurn, type FlowCtx, type Step } from "@/lib/chat/router";
 import { branchInfo } from "@/lib/chat/templates";
-import { emptyDraft, type Action, type ChatMessage, type Draft, type TraceEntry, type TurnReply } from "@/lib/chat/types";
+import { emptyDraft, noPrefs, type Action, type ChatMessage, type Draft, type Prefs, type TraceEntry, type TurnContext, type TurnReply } from "@/lib/chat/types";
 
 // runTurn (§5.7, ARCHITECTURE "Chat turn pipeline"): the single entry point for POST /api/chat and the eval runner.
 // The body is validated by the caller (ChatBodySchema). Nothing here reads the clock: `now` is an input, and
@@ -27,7 +30,8 @@ export type TurnInput = {
   messages: ChatMessage[];
   draft: Draft | null;
   action?: Action;
-  context?: { lastCitedIds?: string[] };
+  /** Bounded memory from the client (D-13, D-20): cited facts to carry, food preferences, dishes suggested. */
+  context?: Partial<TurnContext>;
 };
 
 export type TurnDeps = {
@@ -61,6 +65,9 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const started = elapsed();
   const trace: TraceEntry[] = [];
   const draft0 = input.draft ?? emptyDraft();
+  // Memory out (D-20): unchanged unless this turn is about food choices.
+  let prefsOut: Prefs | null = input.context?.prefs ?? null;
+  let recommendedOut: string[] = input.context?.recommended ?? [];
   const metrics = { retrievalMode: "none" as "hybrid" | "lexical" | "none", retrievalReason: null as string | null, modelMs: null as number | null, retrievalMs: null as number | null, promptTokens: null as number | null, cachedTokens: null as number | null, outputTokens: null as number | null, promptVersion: null as string | null };
 
   const finish = (step: Step, intent: Intent | null, status: TurnReply["status"] = "ok", retryAfterMs?: number): TurnReply => {
@@ -70,7 +77,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       reply: { text: step.text, blocks: step.blocks },
       draft: step.draft,
       intent,
-      context: { lastCitedIds: (step.citedFactIds ?? []).slice(0, 8) },
+      context: { lastCitedIds: (step.citedFactIds ?? []).slice(0, 8), prefs: prefsOut, recommended: recommendedOut.slice(0, 6) },
       trace,
       meta: {
         outcome: step.outcome,
@@ -117,7 +124,13 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     },
   };
 
-  // 2. Chip and slot actions: deterministic, no model call.
+  // 2. Chip, slot and menu actions: deterministic, no model call.
+  const entries = menuEntries(src);
+  if (input.action?.type === "menu") {
+    const m = menuStep(entries, prefsOut ?? noPrefs(), input.action.course);
+    trace.push({ action: "menu", course: input.action.course, items: m.shown });
+    return finish({ text: m.text, blocks: m.blocks, draft: draft0, outcome: "menu", citedFactIds: m.cited }, null);
+  }
   if (input.action) return finish(handleAction(input.action, draft0, ctx), null);
 
   // 3. Mask every message once, whatever its role (D-15).
@@ -139,8 +152,10 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const retrieved = retrieval.hits.map((h) => kbById.get(h.factId)!);
 
   // 5. Build the prompt, within the character budget (D-15): trim history to 2 messages once, else degrade.
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const suggested = recommendedOut.filter((id) => byId.has(id)).slice(0, 3).map((id) => `${byId.get(id)!.name} (₹${byId.get(id)!.price})`).join(", ") || null;
   const promptFor = (h: typeof history) =>
-    buildPrompt({ now: input.now, zone, restaurant: src.restaurant ?? { name: "the restaurant" }, branches, staticFacts, retrieved, draft: draft0, history: h, guest: latest });
+    buildPrompt({ now: input.now, zone, restaurant: src.restaurant ?? { name: "the restaurant" }, branches, staticFacts, retrieved, draft: draft0, history: h, guest: latest, prefs: prefsOut ? JSON.stringify(prefsOut) : null, suggested });
   let usedHistory = history;
   let prompt = promptFor(usedHistory);
   if (promptChars(prompt) > PROMPT_CHAR_BUDGET) {
@@ -162,6 +177,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       trace.push({ action: "model_call", attempt, result: result.ok ? (result.truncated ? "truncated" : "ok") : result.code });
       return { result, content: env.content };
     } catch (e) {
+      if ((e as { name?: string })?.name === "ScriptExhaustedError") throw e; // a test script ran out: fail the test
       const code = e instanceof ModelError ? e.code : (e as { name?: string })?.name === "TimeoutError" || (e as { name?: string })?.name === "AbortError" ? "MODEL_TIMEOUT" : "MODEL_UNAVAILABLE";
       trace.push({ action: "model_call", attempt, result: code });
       return { result: { ok: false, code, detail: "", metrics: { prompt_eval_count: null, prompt_eval_cached_count: null, eval_count: null, total_ms: null, thinking_present: false } }, content: "" };
@@ -169,6 +185,28 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       metrics.modelMs = (metrics.modelMs ?? 0) + (elapsed() - m0);
     }
   };
+
+  const factsById = new Map<string, Fact>([...staticFacts, ...kbFacts].map((f) => [f.id, f]));
+  const sentIds = new Set([...staticFacts.map((f) => f.id), ...retrieved.map((f) => f.id)]);
+  const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;
+
+  // The recommendation chooser (D-20): the second model call of a recommend turn, in the same gate slot as the first,
+  // so another session can't take the slot in between.
+  const chooser: ChooserCall = async (attempt, messages) => {
+    const m0 = elapsed();
+    try {
+      const env = await deps.model.chat({ messages, format: CHOOSER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(deps.modelTimeoutMs ?? MODEL.chatTimeoutMs) });
+      const r = interpretJson(env, ChooserSchema);
+      return r.ok ? { choice: r.value, code: "ok", content: env.content } : { choice: null, code: r.code, content: env.content };
+    } catch (e) {
+      if ((e as { name?: string })?.name === "ScriptExhaustedError") throw e; // a test script ran out: fail the test
+      const code = e instanceof ModelError ? e.code : (e as { name?: string })?.name === "TimeoutError" || (e as { name?: string })?.name === "AbortError" ? "MODEL_TIMEOUT" : "MODEL_UNAVAILABLE";
+      return { choice: null, code, content: "" };
+    } finally {
+      metrics.modelMs = (metrics.modelMs ?? 0) + (elapsed() - m0);
+    }
+  };
+  const recommended: { result: RecommendResult | null } = { result: null }; // set inside the gate closure
 
   let outcome: { result: Interpreted; content: string };
   try {
@@ -192,6 +230,15 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
           { role: "user", content: prompt.user },
         ]);
       }
+      const t1 = first.result;
+      // A stated large party is a booking whatever the model said (D-17), so it never reaches the chooser.
+      if (t1.ok && t1.turn.intent === "recommend" && largePartyStated(latest) === null) {
+        recommended.result = await recommendTurn(
+          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000 },
+          chooser,
+        );
+        metrics.promptVersion = `${PROMPT_VERSION}+${CHOOSER_VERSION}`;
+      }
       return first;
     });
   } catch (e) {
@@ -208,10 +255,23 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const guarded = guardExtraction(r.truncated ? { ...r.turn, answer: null } : r.turn, latest, input.now, zone); // D-17
   trace.push(...guarded.trace);
   const turn = guarded.turn; // a truncated answer is still too long after the retry → fallback/greeting
-  const factsById = new Map<string, Fact>([...staticFacts, ...kbFacts].map((f) => [f.id, f]));
-  const sentIds = new Set([...staticFacts.map((f) => f.id), ...retrieved.map((f) => f.id)]);
-  const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;
-  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts });
+
+  // 9. Food turns (D-20): menu browsing from the menu table; recommendations through the chooser.
+  let prepared: { text: string; blocks: TurnReply["reply"]["blocks"]; cited: string[] } | null = null;
+  if (turn.intent === "menu") {
+    const { prefs, added } = resolvePrefs(turn.prefs, prefsOut, latest);
+    trace.push({ action: "prefs", prefs, added });
+    prefsOut = prefs;
+    const m = menuStep(entries, prefs, prefs.course);
+    trace.push({ action: "menu", course: prefs.course, items: m.shown });
+    prepared = { text: m.text, blocks: m.blocks, cited: m.cited };
+  } else if (turn.intent === "recommend" && recommended.result) {
+    const rec = recommended.result;
+    prefsOut = rec.prefs;
+    recommendedOut = rec.recommended;
+    prepared = { text: rec.text, blocks: rec.blocks, cited: rec.cited };
+  }
+  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts }, prepared);
   return finish(step, turn.intent);
 }
 

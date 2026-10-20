@@ -3,7 +3,7 @@ import type { TraceEntry } from "@/lib/chat/types";
 import { foldDigits } from "@/lib/llm/redact";
 import type { Turn } from "@/lib/llm/schema";
 import { weekdayDate } from "@/lib/time/calendar";
-import { todayLocal, weekdayOf } from "@/lib/time/tz";
+import { addLocalDays, todayLocal, weekdayOf } from "@/lib/time/tz";
 
 // Deterministic checks on the model's extracted booking fields, applied in runTurn before the merge (D-17).
 // - Time: a model time (or time ambiguity candidate) is kept only if the guest's latest message states that hour as a
@@ -82,6 +82,27 @@ export function largePartyStated(raw: string): number | null {
   return n > RULES.onlinePartyMax && BOOKING_CUE_RE.test(t) ? n : null;
 }
 
+const MONTHS = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b/;
+const ANY_DAY = /\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|today|tonight|tomorrow|next|week|weekend)\b/;
+
+/** The day number when the text names exactly one day of the month ("the 28th") and no month or weekday, else null. */
+export function plainDayOfMonth(raw: string): number | null {
+  const t = foldDigits(raw).toLowerCase();
+  const days = [...t.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)\b/g)].map((m) => Number(m[1]));
+  if (days.length !== 1 || days[0] < 1 || days[0] > 31 || MONTHS.test(t) || ANY_DAY.test(t)) return null;
+  return days[0];
+}
+
+/** The first date from today (inclusive) within the horizon with this day number: rule 2's reading of "the 28th". */
+function dayOfMonthDate(now: number, zone: string, day: number): string | null {
+  const today = todayLocal(now, zone);
+  for (let i = 0; i <= 31; i++) {
+    const d = addLocalDays(today, i, zone);
+    if (Number(d.slice(8, 10)) === day) return d;
+  }
+  return null;
+}
+
 /** Apply the D-17 checks to a model turn. Returns the corrected turn and the trace entries for what changed. */
 export function guardExtraction(turn: Turn, text: string, now: number, zone: string): { turn: Turn; trace: TraceEntry[] } {
   const trace: TraceEntry[] = [];
@@ -105,6 +126,13 @@ export function guardExtraction(turn: Turn, text: string, now: number, zone: str
     intent = "booking";
     b = { ...b, partySize: large };
     trace.push({ action: "correct_field", field: "partySize", reason: "large_party" });
+  }
+  // A day of the month on its own (rule 2): code reads it the same way every time (D-17; D2 LV-BK-007 regressed on v5).
+  const dom = intent === "booking" ? plainDayOfMonth(text) : null;
+  const domDate = dom === null ? null : dayOfMonthDate(now, zone, dom);
+  if (domDate && (b.date !== domDate || b.ambiguity?.field === "date")) {
+    b = { ...b, date: domDate, ambiguity: b.ambiguity?.field === "date" ? null : b.ambiguity };
+    trace.push({ action: "correct_field", field: "date", reason: "day_of_month" });
   }
   const wd = intent === "booking" ? plainWeekday(text) : null;
   if (wd !== null && wd !== weekdayOf(todayLocal(now, zone), zone)) {

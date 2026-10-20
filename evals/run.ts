@@ -26,6 +26,7 @@ import type { ModelClient } from "@/lib/llm/client";
 import { sequenceModel, type FakeReply } from "@/lib/llm/fake";
 import { buildSystemPrompt, PROMPT_VERSION } from "@/lib/llm/prompt";
 import { plantSnapshot } from "@/lib/llm/ollama";
+import { buildChooserSystem, CHOOSER_JSON_SCHEMA, CHOOSER_VERSION } from "@/lib/llm/chooser";
 import { TURN_JSON_SCHEMA } from "@/lib/llm/schema";
 import { maskText } from "@/lib/llm/redact";
 import { modelFor, OLLAMA_CHAT_READY } from "@/lib/llm/provider";
@@ -103,11 +104,30 @@ function hasValue(text: string, v: string): boolean {
 }
 
 /** One result per expectation key (the §6.5 metrics are computed from these). */
-function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs: () => string[]; refOfTurn: (i: number) => string | null }): Check[] {
+type MenuView = Extract<Block, { type: "recommendation" }>["items"][number];
+const leadOf = (blocks: Block[] | undefined): MenuView | null => {
+  const b = blocks?.find((x) => x.type === "recommendation");
+  return b && b.type === "recommendation" && b.lead ? (b.items[0] ?? null) : null;
+};
+/** Why a shown dish fails a case's constraints, from the card's own data (which comes from the menu table). */
+function unmetShown(i: MenuView, s: NonNullable<NonNullable<Expectation["recommend"]>["satisfies"]>): string | null {
+  const label = { vegetarian: ["Vegetarian", "Vegan"], vegan: ["Vegan"], "gluten-free": ["Gluten-free"], jain: ["Jain option"] } as const;
+  for (const d of s.diet ?? []) if (!label[d].some((l) => i.labels.includes(l))) return `is not ${d}`;
+  for (const a of s.avoid ?? []) if (i.contains.includes(a)) return `contains ${a}`;
+  if (s.maxPrice !== undefined && i.price > s.maxPrice) return `costs ₹${i.price} > ₹${s.maxPrice}`;
+  if (s.course !== undefined && i.course !== s.course) return `is ${i.course}, not ${s.course}`;
+  if (s.mild && (i.spice === null || i.spice > 1)) return "is not mild";
+  return null;
+}
+
+function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs: () => string[]; refOfTurn: (i: number) => string | null; leadOfTurn?: (i: number) => MenuView | null }): Check[] {
   if (!e) return [];
   const out: Check[] = [];
-  const text = t.shown?.text ?? "";
   const blocks = t.shown?.blocks ?? [];
+  // What the guest reads: the reply plus the dishes shown in cards and lists (D-20 answers list questions with a list
+  // from the menu table), so "must show Mango Sorbet" and "must not show Kulfi" judge what is on screen.
+  const dishes = blocks.flatMap((b) => (b.type === "recommendation" ? b.items : b.type === "menu_list" ? b.groups.flatMap((g) => g.items) : []));
+  const text = [t.shown?.text ?? "", ...dishes.map((d) => `${d.name} ₹${d.price}`)].join("\n");
   const slots = blocks.find((b) => b.type === "slots") as Extract<Block, { type: "slots" }> | undefined;
   const check = (key: string, ok: boolean, detail: string) => out.push({ key, ok, detail: `turn ${t.index + 1}: ${detail}` });
   if (e.intent !== undefined) {
@@ -152,6 +172,31 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
   if (e.modelCalls !== undefined) check("modelCalls", t.modelCalls === e.modelCalls, `model calls ${t.modelCalls} ≠ ${e.modelCalls}`);
   if (e.submitStatus !== undefined) check("submitStatus", t.submit?.status === e.submitStatus, `submit status ${t.submit?.status} ≠ ${e.submitStatus}`);
   if (e.submitCode !== undefined) check("submitCode", (t.submit?.code ?? null) === e.submitCode, `submit code ${t.submit?.code} ≠ ${e.submitCode}`);
+  if (e.recommend) {
+    const r = e.recommend;
+    const b = t.shown?.blocks.find((x) => x.type === "recommendation");
+    const items = b && b.type === "recommendation" ? b.items : [];
+    const lead = leadOf(t.shown?.blocks);
+    if (r.shown !== undefined) check("recommend", (lead !== null) === r.shown, r.shown ? "no recommendation shown" : `a recommendation was shown (${lead?.id})`);
+    if (r.satisfies) {
+      if (!items.length) check("recommend", false, "no dish shown to check");
+      for (const i of items) {
+        const why = unmetShown(i, r.satisfies);
+        check("recommend", !why, `${i.id} ${why}`);
+      }
+    }
+    if (r.anyOf) check("recommend", !!lead && r.anyOf.includes(lead.id), `lead dish ${lead?.id ?? "none"} not in ${r.anyOf.join(", ")}`);
+    if (r.notIds) check("recommend", !items.some((i) => r.notIds!.includes(i.id)), `shows one of ${r.notIds.join(", ")}`);
+    if (r.cheaperThanTurn !== undefined) {
+      const prev = ctx.leadOfTurn?.(r.cheaperThanTurn - 1) ?? null;
+      check("recommend", !!lead && !!prev && lead.price < prev.price, `lead ${lead?.id ?? "none"} (₹${lead?.price}) is not cheaper than turn ${r.cheaperThanTurn}'s ${prev?.id ?? "none"} (₹${prev?.price})`);
+    }
+    if (r.differentFromTurn !== undefined) {
+      const prev = ctx.leadOfTurn?.(r.differentFromTurn - 1) ?? null;
+      check("recommend", !!lead && !!prev && lead.id !== prev.id, `lead ${lead?.id ?? "none"} repeats turn ${r.differentFromTurn}'s ${prev?.id ?? "none"}`);
+    }
+  }
+  if (e.menuShown !== undefined) check("menuShown", (t.shown?.blocks.some((x) => x.type === "menu_list") ?? false) === e.menuShown, e.menuShown ? "no menu list shown" : "a menu list was shown");
   if (e.sameRefAsTurn !== undefined) check("sameRefAsTurn", !!t.submit?.ref && t.submit.ref === ctx.refOfTurn(e.sameRefAsTurn - 1), `ref ${t.submit?.ref} ≠ turn ${e.sameRefAsTurn}'s ${ctx.refOfTurn(e.sameRefAsTurn - 1)}`);
   return out;
 }
@@ -167,6 +212,10 @@ function blockLine(b: Block): string {
       return `confirmation ${b.ref}`;
     case "notice":
       return `notice: ${b.text}`;
+    case "recommendation":
+      return `${b.lead ? "recommend" : "options"} ${b.items.map((i) => `${i.id} ₹${i.price}`).join(", ")}`;
+    case "menu_list":
+      return `menu ${b.groups.map((g) => `${g.course}: ${g.items.map((i) => i.id).join(" ")}`).join(" | ")}`;
     case "info":
       return `info ${b.factIds.join(", ")}`;
     case "field_request":
@@ -412,19 +461,19 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         draft,
         retrievalMode,
         submit,
-        modelCalls: trace.filter((x) => x.action === "model_call").length,
+        modelCalls: trace.filter((x) => x.action === "model_call" || x.action === "recommend").length, // the chooser is a model call too (D-20)
       };
       records.push(rec);
       result.modelCalls += rec.modelCalls;
       result.offered.total += rec.offered.length;
       result.offered.open += rec.offered.filter((o) => o.open).length;
-      const turnChecks = checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null });
+      const turnChecks = checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks) });
       result.checks.push(...turnChecks);
       failures.push(...turnChecks.filter((x) => !x.ok).map((x) => x.detail));
     }
 
     const last = records.at(-1)!;
-    const caseChecks = checkExpect(c.expect, last, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null }).map((x) => ({ ...x, detail: x.detail.replace(/^turn \d+:/, "case:") }));
+    const caseChecks = checkExpect(c.expect, last, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks) }).map((x) => ({ ...x, detail: x.detail.replace(/^turn \d+:/, "case:") }));
     result.checks.push(...caseChecks);
     failures.push(...caseChecks.filter((x) => !x.ok).map((x) => x.detail));
     for (const fb of c.forbidden ?? []) {
@@ -442,6 +491,9 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
       logs,
     };
     result.violations = checkCase(db, rec);
+    // The other forbidden outcomes are the invariants' business; a case that names them gets a named failure too.
+    for (const [fb, inv] of [["booking_claim_text", "INV-04"], ["slot_not_in_engine_output", "INV-03"]] as const)
+      if (c.forbidden?.includes(fb) && result.violations.some((v) => v.inv === inv)) failures.push(`forbidden: ${fb}`);
   } catch (e) {
     failures.push(`error: ${(e as Error).message}`);
   } finally {
@@ -588,9 +640,15 @@ async function main(): Promise<number> {
     // load separately). All live cases share one `now`; another date would pay one cold prefill.
     const cfg = loadConfig({ ...process.env, LLM_PROVIDER: "ollama", EMBED_PROVIDER: "ollama", E2E_TEST_MODE: undefined });
     const tdb = openDb(template);
-    const system = buildSystemPrompt(systemInputFor(tdb, Date.parse(cases[0].now)));
+    const sysIn = systemInputFor(tdb, Date.parse(cases[0].now));
+    const system = buildSystemPrompt(sysIn);
+    const restaurantName = sysIn.restaurant.name;
     tdb.close();
-    warmup = await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system, format: TURN_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs });
+    warmup = [
+      ...(await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system, format: TURN_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs })),
+      // The recommendation chooser's own static prefix (D-20).
+      ...(await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system: buildChooserSystem(restaurantName), format: CHOOSER_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs })),
+    ];
     console.log(`warm-up (not scored): ${JSON.stringify(warmup)}`);
   }
   for (let run = 1; run <= runs; run++)
@@ -611,6 +669,8 @@ async function main(): Promise<number> {
   const fmt = (v: number | null) => (v === null ? "n/a" : Number.isInteger(v) ? String(v) : v.toFixed(3));
   if (mode === "live") {
     console.log(`latency booking p50/p95 ${fmt(metrics.latency.booking.p50)}/${fmt(metrics.latency.booking.p95)} ms (run 1: ${fmt(metrics.latency.firstRunBooking.p50)}/${fmt(metrics.latency.firstRunBooking.p95)}), faq ${fmt(metrics.latency.faq.p50)}/${fmt(metrics.latency.faq.p95)} ms (run 1: ${fmt(metrics.latency.firstRunFaq.p50)}/${fmt(metrics.latency.firstRunFaq.p95)}); prompt max ${fmt(metrics.tokens.promptMax)} tokens`);
+    if (metrics.latency.recommend.n || metrics.recommendationValidity.n)
+      console.log(`recommendations (report only): p50/p95 ${fmt(metrics.latency.recommend.p50)}/${fmt(metrics.latency.recommend.p95)} ms over ${metrics.latency.recommend.n} turns; checks passed ${fmt(metrics.recommendationValidity.value)} (n ${metrics.recommendationValidity.n})`);
     if (retrieval) console.log(`retrieval (${retrieval.queries} labelled queries): hybrid hit@8 ${fmt(retrieval.hybrid?.hitAt8 ?? null)} recall@8 ${fmt(retrieval.hybrid?.recallAt8 ?? null)}; lexical hit@8 ${fmt(retrieval.lexical.hitAt8)} recall@8 ${fmt(retrieval.lexical.recallAt8)}`);
     if (ollamaMeta)
       console.log(
@@ -629,6 +689,7 @@ async function main(): Promise<number> {
     // True if the commit, the tree or the cases changed while the run was going.
     changedDuringRun: JSON.stringify(atStart) !== JSON.stringify(atEnd),
     promptVersion: PROMPT_VERSION,
+    chooserVersion: CHOOSER_VERSION,
     dataset: { dir: path.relative(ROOT, casesDir), hash: atStart.datasetHash, cases: cases.length },
     node: process.version,
     chip: os.cpus()[0]?.model ?? null,

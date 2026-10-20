@@ -34,6 +34,8 @@ The app listens on 127.0.0.1 only. Staff pages stay disabled until both admin va
 
 **Guests** (`/`):
 - Ask a question, for example "Do you have parking at Hauz Khas?" or "How much is the butter chicken?". Unknown or unrelated questions get a short fallback with the branch phone number.
+- Ask for a suggestion in your own words: "the best vegetarian dish under ₹400", "something light", "surprise me". Then refine it: "anything cheaper?", "another option", "actually, a dessert instead". Preferences carry over until you change them.
+- Browse the menu by section, or ask for "the vegan dishes".
 - Tap **Book a table**, then choose a branch, date, party size and one of the open times. Enter your name and mobile number, then tap Confirm.
 - You can also type a request, for example "table for 2 tomorrow at 8pm at Golf Course Road".
 
@@ -45,12 +47,28 @@ The booking reference appears only after the booking has been saved. Full times,
 
 ```
 guest message ──► mask phone and email ──► retrieve facts (SQLite FTS5 + embeddings)
-              ──► one model call returning JSON: intent, booking fields, FAQ answer with cited fact IDs
+              ──► model call 1, JSON: intent, booking fields, food preferences, FAQ answer with cited fact IDs
               ──► code checks everything ──► reply
+
+recommendation ──► code filters the menu by the stated constraints ──► model call 2 picks a dish and says why
+               ──► code validates the pick (one retry, then options) ──► dish card from the menu table
 
 booking fields ──► validate ──► availability engine ──► open times ──► confirm card ──► POST /api/reservations
 ```
 
+- **Recommendations: the model chooses, code checks.**
+  - The first model call understands the request and your active preferences (diet, budget, course, spice, allergies, "cheaper", "another").
+  - Code narrows the menu to the dishes that meet those constraints, using only verified data. It filters; it never ranks.
+  - A second model call compares those dishes, picks one, with up to two alternatives, and says why.
+  - Code checks the pick before showing it:
+    - it is a real, available dish that meets every stated constraint;
+    - each price is the dish's own;
+    - there are no invented "popular" claims or allergen promises;
+    - there is no booking talk.
+
+    On failure the model gets one retry, then you see a few dishes that fit, presented as options.
+  - If nothing fits ("a vegan main under ₹200"), you're told so, with no model call and no substitute.
+  - The dish card shows the menu's own name, price, labels, allergens and description, never model text.
 - **The model never books and never decides availability.**
   - It classifies the message, extracts booking fields and drafts FAQ answers.
   - Code validates every field and computes open times from the opening hours, date exceptions and table sizes: 30-minute slots, 90- or 120-minute sittings, at least 60 minutes ahead, up to 30 days out.
@@ -75,7 +93,7 @@ Design decisions are recorded in `docs/DECISIONS.md`, and the model interface in
 
 ## Model choice
 
-**Chat model: `qwen3.5:9b` on Ollama.**
+**Chat model: `qwen3.5:9b` on Ollama**, for both calls: understanding each message, and choosing among the dishes that fit for a recommendation.
 - **Settings:** thinking off, temperature 0, output constrained to a JSON schema, 8k context.
 - **Why 9b:** it was picked over `qwen3.5:4b` in a measured comparison (`docs/MODEL_SELECTION.md`). The 4b model made unsupported availability claims and missed more booking fields. The 9b model fits comfortably in 24 GB on Apple silicon.
 - **Speed:** about 2–3 s per turn once warm.
@@ -104,6 +122,10 @@ npm run verify:release   # also checks the model and runs the live evals 3 times
   - A claim inside a hedged sentence ("we'd have a table if you came at 9") is not caught.
   - Grounding checks that a price exists in the cited facts, not which dish it belongs to.
 - **"next Friday"** is read as the coming Friday rather than asked about. The date is always shown back before booking.
+- **Recommendations take two model calls**, so they are slower than other replies.
+- **Menu data limits.**
+  - The seed labels the Chocolate Chilli Mousse both vegetarian and containing egg; it appears for "vegetarian" with "Contains egg" on its card.
+  - Allergen labels cover only dairy, nuts and egg, so every answer involving an allergy carries a "tell your server" note.
 - **Speed.** Warm replies take about 2–4 s on an M4 Pro, but were slower than 4 s when the machine was heavily loaded. The first reply after the model loads can take 8–14 s; `npm run model:warm` avoids that.
 - **Out of scope:**
   - guests can't change or cancel a booking themselves: the chat gives the branch phone, and staff cancel in admin;

@@ -7,7 +7,7 @@ import { TURN_JSON_SCHEMA } from "@/lib/llm/schema";
 const BASE = "http://127.0.0.1:11434";
 const req = (signal?: AbortSignal): ModelRequest => ({ messages: [{ role: "system", content: "sys" }, { role: "user", content: "<guest_message>hi</guest_message>" }], format: TURN_JSON_SCHEMA, attempt: 1, signal });
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-const turn = { intent: "smalltalk", booking: { branch: null, date: null, time: null, timeWindow: null, partySize: null, ambiguity: null }, answer: "Hello!", citedFactIds: [], answerable: true };
+const turn = { intent: "smalltalk", booking: { branch: null, date: null, time: null, timeWindow: null, partySize: null, ambiguity: null }, prefs: null, answer: "Hello!", citedFactIds: [], answerable: true };
 const code = async (p: Promise<unknown>) => p.then(() => "resolved", (e) => (e instanceof ModelError ? e.code : String(e)));
 
 describe("ollamaModel (stubbed fetch)", () => {

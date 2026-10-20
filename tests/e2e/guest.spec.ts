@@ -21,7 +21,7 @@ async function axe(page: Page, state: string) {
 }
 
 async function chipsToConfirm(page: Page, o: { branch?: string; date?: string; party?: string; time?: string } = {}) {
-  await page.getByRole("button", { name: "Book a table" }).click();
+  await page.getByRole("button", { name: "Find a table" }).click();
   await page.getByRole("button", { name: o.branch ?? "Hauz Khas", exact: true }).click();
   await page.getByRole("button", { name: o.date ?? "Tomorrow, Sat 17 Oct" }).click();
   await page.getByRole("button", { name: o.party ?? "4 guests", exact: true }).click();
@@ -44,9 +44,9 @@ const say = async (page: Page, text: string) => {
 test("J3 chips only: branch, date, party, time and details give a confirmation from the saved row @cat:booking_success", async ({ page, server, observed }) => {
   observed.pii.push("Asha Rao", "98765 43210");
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Book a table" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Find a table" })).toBeVisible();
   await axe(page, "welcome");
-  await page.getByRole("button", { name: "Book a table" }).click();
+  await page.getByRole("button", { name: "Find a table" }).click();
   await page.getByRole("button", { name: "Hauz Khas", exact: true }).click();
   await page.getByRole("button", { name: "Tomorrow, Sat 17 Oct" }).click();
   await page.getByRole("button", { name: "4 guests", exact: true }).click();
@@ -107,7 +107,7 @@ test("J6 a lost response locks the card; Retry with the same key shows the same 
   await form.getByRole("button", { name: "Confirm" }).click();
   await expect(form.getByRole("alert")).toContainText("We couldn't reach the restaurant to confirm your booking");
   await expect(form.getByLabel("Name")).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Book a table" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Find a table" })).toBeDisabled();
   await expect(page.getByLabel("Your message")).toBeDisabled(); // nothing can strand the locked card (review UI-1)
   await axe(page, "pending submit");
   await form.getByRole("button", { name: "Retry" }).click();
@@ -175,11 +175,11 @@ test("a failed chat request says so and can be retried @cat:backend_failure", as
   await expect(alert).toHaveCount(0);
 });
 
-test("J12 an answer from stored facts comes with the fact it used, and the conversation survives a reload @cat:faq", async ({ page }) => {
+test("J12 an answer from stored facts is shown once, with no card repeating it, and survives a reload @cat:faq", async ({ page }) => {
   await page.goto("/");
   await say(page, "can I bring my dog?");
-  await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: "Q: Can I bring my dog?" })).toBeVisible();
+  await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.", { exact: true })).toHaveCount(1);
+  await expect(page.getByText(/^Q: /)).toHaveCount(0); // D-20: the raw fact card duplicated every answer
   await axe(page, "faq answer");
   await page.reload();
   await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.", { exact: true })).toBeVisible();
@@ -191,7 +191,7 @@ test("on a phone the chat is the page and the hours fold away", async ({ page })
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Neem & Ember");
   await expect(page.getByText("Hours and locations")).toBeVisible();
-  for (const name of ["Menu", "Opening hours", "Book a table"]) await expect(page.getByRole("button", { name })).toBeVisible();
+  for (const name of ["Help me find a dish", "Show me the menu", "Find a table", "Recommend something vegetarian"]) await expect(page.getByRole("button", { name })).toBeVisible();
   await axe(page, "phone");
 });
 
@@ -205,3 +205,42 @@ test("focus stays visible on the dark identity panel (WCAG 1.4.11, review UI-4)"
   const ring = await link.evaluate((el) => ({ visible: el.matches(":focus-visible"), color: getComputedStyle(el).outlineColor, style: getComputedStyle(el).outlineStyle }));
   expect(ring).toEqual({ visible: true, color: "rgb(245, 241, 232)", style: "solid" }); // --smoke-ink
 });
+
+test("the welcome offers four starting points; the menu opens without the model and lists real dishes @cat:menu", async ({ page }) => {
+  await page.goto("/");
+  for (const name of ["Help me find a dish", "Show me the menu", "Find a table", "Recommend something vegetarian"]) await expect(page.getByRole("button", { name })).toBeVisible();
+  await page.getByRole("button", { name: "Show me the menu" }).click();
+  await expect(page.getByText("Which part of the menu would you like to see?")).toBeVisible();
+  await page.getByRole("button", { name: "Desserts", exact: true }).click();
+  const desserts = page.getByRole("region", { name: "Desserts" });
+  await expect(desserts.getByText("Mango Sorbet", { exact: true })).toBeVisible();
+  await expect(desserts.getByText("₹245", { exact: true })).toBeVisible();
+  await expect(page.getByText(/cheapest first|available\)/)).toHaveCount(0);
+  await axe(page, "menu section");
+});
+
+test("a recommendation is a card built from the menu table, with follow-ups @cat:recommendation", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Recommend something vegetarian" }).click();
+  await expect(page.getByText(/^I'd suggest the Dal Ember at ₹445/)).toBeVisible();
+  const card = page.getByRole("article", { name: "Dal Ember, ₹445" });
+  await expect(card).toBeVisible();
+  await expect(card.getByText("Vegetarian", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Also worth a look" }).getByText("Chana Pindi", { exact: true })).toBeVisible();
+  for (const name of ["Something cheaper", "Another option", "Find a table"]) await expect(page.getByRole("button", { name }).last()).toBeEnabled();
+  await axe(page, "recommendation");
+});
+
+test("one guest action sends one chat request, even when tapped twice (D-20) @cat:duplicate", async ({ page }) => {
+  let requests = 0;
+  await page.route("**/api/chat", async (route) => {
+    requests += 1;
+    await route.continue();
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Recommend something vegetarian" }).dblclick();
+  await expect(page.getByText(/^I'd suggest the Dal Ember/)).toHaveCount(1);
+  await expect(page.getByText("Recommend something vegetarian", { exact: true }).locator("xpath=self::p")).toHaveCount(1); // one guest bubble
+  expect(requests).toBe(1);
+});
+

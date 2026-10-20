@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { chatHandler } from "@/lib/api/chat";
+import { chatHandler, requestDeduper } from "@/lib/api/chat";
 import type { ApiDeps } from "@/lib/api/deps";
 import { healthHandler } from "@/lib/api/health";
 import { createModelGate, noTurnLimit, turnLimiter } from "@/lib/chat/ratelimit";
@@ -16,7 +16,7 @@ import { fakeEmbedder } from "@/lib/kb/embedder";
 import { loadFactSource, renderKbFacts } from "@/lib/kb/facts";
 import { indexKb } from "@/lib/kb/index";
 import type { ModelClient } from "@/lib/llm/client";
-import { fakeModel, nullBooking, type FakeScript } from "@/lib/llm/fake";
+import { fakeModel, nullBooking, sequenceModel, type FakeScript } from "@/lib/llm/fake";
 import type { Turn } from "@/lib/llm/schema";
 import { toInstant } from "@/lib/time/tz";
 import { testChatDeps } from "../helpers/chat-deps";
@@ -34,9 +34,9 @@ beforeEach(async () => {
 });
 afterEach(() => t.cleanup());
 
-const booking = (b: Partial<Turn["booking"]>): Turn => ({ intent: "booking", booking: { ...nullBooking(), ...b }, answer: null, citedFactIds: [], answerable: true });
-const faq = (answer: string | null, cited: string[], answerable = true): Turn => ({ intent: "faq", booking: nullBooking(), answer, citedFactIds: cited, answerable });
-const simple = (intent: Turn["intent"], answer: string | null = null): Turn => ({ intent, booking: nullBooking(), answer, citedFactIds: [], answerable: true });
+const booking = (b: Partial<Turn["booking"]>): Turn => ({ intent: "booking", booking: { ...nullBooking(), ...b }, prefs: null, answer: null, citedFactIds: [], answerable: true });
+const faq = (answer: string | null, cited: string[], answerable = true): Turn => ({ intent: "faq", booking: nullBooking(), prefs: null, answer, citedFactIds: cited, answerable });
+const simple = (intent: Turn["intent"], answer: string | null = null): Turn => ({ intent, booking: nullBooking(), prefs: null, answer, citedFactIds: [], answerable: true });
 
 const SID = "8c2f6f1e-6b61-4d5b-9d8e-1f2a3b4c5d6e";
 function deps(o: { script?: FakeScript; model?: ModelClient; embedder?: TurnDeps["embedder"]; limiter?: TurnDeps["limiter"]; gate?: TurnDeps["gate"]; prompts?: { system: string; user: string }[] } = {}): TurnDeps {
@@ -66,9 +66,12 @@ describe("booking flow (J3, J5; AC-01 logic)", () => {
   it("chips only: branch → date → party → slots → slot gives the confirm card, with no model call", async () => {
     const model: ModelClient = { provider: "fake", model: "never", chat: () => Promise.reject(new Error("no model call expected")) };
     let r = await runTurn(say("hi"), deps({ script: { hi: simple("smalltalk", "Hello!") } }));
-    const startChip = block(r, "quick_replies")!.chips.find((c) => c.label === "Book at Hauz Khas")!;
+    // D-20: the quick replies start a booking with "Find a table", which asks for the branch with no model call.
+    const startChip = block(r, "quick_replies")!.chips.find((c) => c.label === "Find a table")!;
     expect("action" in startChip).toBe(true);
     r = await runTurn(act((startChip as { action: TurnInput["action"] }).action, r.draft), deps({ model }));
+    expect(block(r, "field_request")).toMatchObject({ field: "branch" });
+    r = await runTurn(act({ type: "set_field", field: "branch", value: "hauz-khas" }, r.draft), deps({ model }));
     expect(block(r, "field_request")).toMatchObject({ field: "date" });
     const tomorrow = block(r, "field_request")!.chips[1] as { label: string; action: TurnInput["action"] };
     expect(tomorrow.label).toBe("Tomorrow, Sat 17 Oct");
@@ -152,12 +155,13 @@ describe("booking flow (J3, J5; AC-01 logic)", () => {
 });
 
 describe("FAQ routing (J1, J2, J8, J12; D-10, D-15)", () => {
-  it("shows a grounded answer with an info card and carries its citations", async () => {
+  it("shows a grounded answer, with no card repeating its facts, and carries its citations (D-20)", async () => {
     const script = { "can I bring my dog": faq("Well-behaved dogs are welcome on the Golf Course Road terrace.", ["faq:pets"]) };
     const r = await runTurn(say("can I bring my dog"), deps({ script }));
     expect(r.meta.outcome).toBe("faq_answer");
     expect(r.reply.text).toBe("Well-behaved dogs are welcome on the Golf Course Road terrace.");
-    expect(block(r, "info")).toMatchObject({ factIds: ["faq:pets"] });
+    expect(r.reply.blocks).toEqual([]);
+    expect(r.meta.citedFactIds).toEqual(["faq:pets"]);
     expect(r.context.lastCitedIds).toEqual(["faq:pets"]);
     expect(r.meta.retrievalMode).toBe("hybrid");
   });
@@ -188,7 +192,7 @@ describe("FAQ routing (J1, J2, J8, J12; D-10, D-15)", () => {
   it("keeps a booking in progress and repeats its pending question after an answer", async () => {
     const d = { ...emptyDraft(), branch: "hauz-khas", date: "2026-10-17" };
     const r = await runTurn(say("can I bring my dog", { draft: d }), deps({ script: { "can I bring my dog": faq("Well-behaved dogs are welcome on the Golf Course Road terrace.", ["faq:pets"]) } }));
-    expect(r.reply.blocks.map((b) => b.type)).toEqual(["info", "field_request"]);
+    expect(r.reply.blocks.map((b) => b.type)).toEqual(["field_request"]);
     expect(block(r, "field_request")!.field).toBe("partySize");
     expect(r.draft).toEqual(d);
   });
@@ -292,7 +296,7 @@ describe("privacy and metrics", () => {
     expect(prompts[0].user).not.toMatch(/98765|a@b\.com/);
     const rows = t.db.prepare("SELECT * FROM chat_turns").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ session_id: SID, intent: "booking", outcome: "ask_field", retrieval_mode: "hybrid", prompt_version: "v4", created_at: NOW });
+    expect(rows[0]).toMatchObject({ session_id: SID, intent: "booking", outcome: "ask_field", retrieval_mode: "hybrid", prompt_version: "v5", created_at: NOW });
     expect(JSON.stringify(rows)).not.toMatch(/98765|a@b|number/);
   });
   it("writes one row per turn, including actions and rate-limited turns", async () => {
@@ -327,6 +331,24 @@ describe("POST /api/chat handler (D-15 caps, 429)", () => {
     chatHandler(api)(new Request("http://127.0.0.1:3100/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: raw ? (body as string) : JSON.stringify(body) }));
   const ok = { sessionId: randomUUID(), messages: [{ role: "guest", content: "hi" }], draft: null };
 
+  it("gives a repeated request id the same reply with one model call, and a new id a new turn (D-20)", async () => {
+    let calls = 0;
+    const inner = fakeModel({ script: { hi: simple("smalltalk", "Hello there!") } });
+    const counting: ModelClient = { ...inner, chat: (req) => ((calls += 1), inner.chat(req)) };
+    make({ chat: { ...testChatDeps(), model: () => counting } });
+    const handler = chatHandler(api, requestDeduper());
+    const send = (body: unknown) => handler(new Request("http://127.0.0.1:3100/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+    const body = { ...ok, requestId: randomUUID() };
+    const [a, b] = await Promise.all([send(body), send(body)]); // a double submit, in flight together
+    const c = await send(body); // a retry after a lost response
+    const [ja, jb, jc] = await Promise.all([a.json(), b.json(), c.json()]);
+    expect(calls).toBe(1);
+    expect(jb).toEqual(ja);
+    expect(jc).toEqual(ja);
+    expect((t.db.prepare("SELECT COUNT(*) AS n FROM chat_turns").get() as { n: number }).n).toBe(1);
+    await send({ ...ok, requestId: randomUUID() });
+    expect(calls).toBe(2);
+  });
   it("answers a turn without the trace outside test mode", async () => {
     make();
     const res = await post(ok);
@@ -384,5 +406,19 @@ describe("POST /api/chat handler (D-15 caps, 429)", () => {
     expect(j.kb).toEqual({ facts: 86, lexicalIndexed: true, embedded: 86, retrievalMode: "hybrid", embedError: null });
     t.db.prepare("DELETE FROM fact_embeddings WHERE fact_id = 'faq:pets'").run();
     expect((await (await healthHandler(api)()).json()).kb).toMatchObject({ embedded: 85, retrievalMode: "lexical" });
+  });
+});
+
+describe("chat_turns accepts the D-20 intents and outcomes (migration 002)", () => {
+  it("writes a metrics row for a menu action and a recommend turn, with no metrics_write_failed", async () => {
+    const r1 = await runTurn(act({ type: "menu", course: "desserts" }, emptyDraft()), deps({}));
+    expect(r1.meta.outcome).toBe("menu");
+    const turn: Turn = { intent: "recommend", booking: nullBooking(), prefs: { diet: [], avoid: [], maxPrice: null, course: "desserts", mild: false, allergy: false, relation: null }, answer: null, citedFactIds: [], answerable: true };
+    const model = sequenceModel([turn, { pick: "menu:mango-sorbet", alternatives: [], reply: "Try the Mango Sorbet at ₹245, light and fruity." }]);
+    const r2 = await runTurn(say("suggest a dessert"), deps({ model }));
+    expect(r2.meta.outcome).toBe("recommend");
+    for (const r of [r1, r2]) expect(r.trace.some((t) => t.action === "metrics_write_failed")).toBe(false);
+    const rows = t.db.prepare("SELECT intent, outcome FROM chat_turns ORDER BY rowid").all();
+    expect(rows).toEqual([{ intent: null, outcome: "menu" }, { intent: "recommend", outcome: "recommend" }]);
   });
 });

@@ -6,7 +6,7 @@ import { addLocalDays, dayLabel, dayLabelLong, isoInZone, localDateOf, localTime
 import { smalltalkShowable } from "@/lib/chat/claims";
 import { applySetField, bookingInProgress, mergeExtracted, type FieldCtx, type FieldIssue, type MergeResult } from "@/lib/chat/draft";
 import { checkGrounding, type GroundingContext } from "@/lib/chat/grounding";
-import { guestHoursText, isHoursOnly, renderHoursAnswer } from "@/lib/chat/hours";
+import { isHoursOnly, renderHoursAnswer } from "@/lib/chat/hours";
 import { T, type BranchInfo } from "@/lib/chat/templates";
 import type { Action, Block, Chip, Draft, Field, Outcome, SlotChip, TraceEntry } from "@/lib/chat/types";
 
@@ -204,7 +204,8 @@ function availabilityStep(draft: Draft, ctx: FlowCtx, lead?: string): Step {
 }
 
 /** A chip or slot tap (§5.7 step 2): no model call. */
-export function handleAction(action: Action, draft: Draft, ctx: FlowCtx): Step {
+/** Booking actions: chips and slot taps (menu browsing is handled in runTurn, which has the menu). */
+export function handleAction(action: Exclude<Action, { type: "menu" }>, draft: Draft, ctx: FlowCtx): Step {
   if (action.type === "set_field") return nextStep(applySetField(draft, action.field, action.value, ctx), ctx);
   if (draft.partySize === null) return ask("partySize", draft, ctx);
   const bundle = loadBundle(ctx, [localDateOf(action.startsAt, ctx.zone)]);
@@ -231,22 +232,22 @@ export function handleAction(action: Action, draft: Draft, ctx: FlowCtx): Step {
 
 export type FactCtx = GroundingContext & { staticFacts: Fact[] };
 
-const QUICK_REPLIES = (ctx: FieldCtx): Block => ({
+// The same starting points as the welcome (D-20). "Find a table" asks for the branch with no model call.
+const QUICK_REPLIES = (): Block => ({
   type: "quick_replies",
   chips: [
-    ...ctx.branches.map((b) => ({ label: `Book at ${b.short}`, action: { type: "set_field", field: "branch", value: b.slug } as Action })),
+    { label: "Help me find a dish", text: "Help me find a dish" },
+    { label: "Show me the menu", action: { type: "menu", course: null } as Action },
+    { label: "Find a table", action: { type: "set_field", field: "branch", value: null } as Action },
     { label: "Opening hours", text: "What are your opening hours?" },
-    { label: "Menu", text: "What's on the menu?" },
   ],
 });
 
-function infoBlock(ids: string[], facts: Map<string, Fact>): Block {
-  const items = ids.filter((id) => facts.has(id)).map((id) => ({ id, text: guestHoursText(facts.get(id)!) }));
-  return { type: "info", factIds: items.map((i) => i.id), items };
-}
+/** A recommend or menu turn worked out in runTurn (it needs the menu and, for recommendations, a second model call). */
+export type Prepared = { text: string; blocks: Block[]; cited: string[] };
 
 /** Route a validated model turn by intent (§5.7 step 5, D-10, D-15). */
-export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx): Step {
+export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx, prepared: Prepared | null = null): Step {
   const known = (draft.branch ?? turn.booking.branch) as string | null;
   if (turn.intent === "booking") return nextStep(mergeExtracted(draft, turn.booking, ctx), ctx); // templates only; prose dropped
 
@@ -282,7 +283,9 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       if (!unknown && isHoursOnly(cited)) {
         const r = renderHoursAnswer(cited, facts.factsById, facts.zoneOf);
         ctx.trace.push({ action: "answer_faq", ids: r.factIds, rendered: true });
-        return reply(prose(r.text), "hours_answer", { lead: [infoBlock(r.factIds, facts.factsById)], cited: r.factIds });
+        // No card repeating the cited facts under the answer (D-20: it duplicated every answer and showed internal
+        // list wording); the cited IDs stay in the reply's metadata for the invariants.
+        return reply(prose(r.text), "hours_answer", { cited: r.factIds });
       }
       const g = unknown ? ({ ok: false, reason: unknown, detail: "" } as const) : checkGrounding(turn.answer ?? "", cited, facts);
       if (!g.ok || !turn.answer?.trim()) {
@@ -290,23 +293,29 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
         return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback");
       }
       ctx.trace.push({ action: "answer_faq", ids: g.citedIds, rendered: false });
-      return reply(prose(turn.answer.trim()), "faq_answer", { lead: [infoBlock(g.citedIds, facts.factsById)], cited: g.citedIds });
+      return reply(prose(turn.answer.trim()), "faq_answer", { cited: g.citedIds });
+    }
+    case "recommend":
+    case "menu": {
+      // Worked out in runTurn (D-20); a booking in progress is kept and its pending question repeated, as for FAQs.
+      const p = prepared ?? { text: T.clarify, blocks: [QUICK_REPLIES()], cited: [] };
+      return reply(prose(p.text), turn.intent, { lead: p.blocks, cited: p.cited });
     }
     case "manage_booking":
       ctx.trace.push({ action: "redirect", kind: "manage_booking" });
       return reply(T.manageBooking(phoneBranches(ctx, known)), "manage_redirect");
     case "off_topic":
       ctx.trace.push({ action: "redirect", kind: "off_topic" });
-      return reply(T.offTopic, "redirect", { idle: [QUICK_REPLIES(ctx)] });
+      return reply(T.offTopic, "redirect", { idle: [QUICK_REPLIES()] });
     case "smalltalk": {
       if (confirmShown) return reply(prose(""), "smalltalk");
       const shown = !!turn.answer && smalltalkShowable(turn.answer);
       ctx.trace.push({ action: "smalltalk", shown });
-      return reply(shown ? turn.answer!.trim() : T.greeting, "smalltalk", { idle: [QUICK_REPLIES(ctx)] });
+      return reply(shown ? turn.answer!.trim() : T.greeting, "smalltalk", { idle: [QUICK_REPLIES()] });
     }
     case "unclear":
       ctx.trace.push({ action: "clarify" });
-      return reply(T.clarify, "clarify", { idle: [QUICK_REPLIES(ctx)] });
+      return reply(T.clarify, "clarify", { idle: [QUICK_REPLIES()] });
   }
 }
 

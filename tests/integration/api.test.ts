@@ -138,7 +138,7 @@ describe("GET /api/health", () => {
     const res = await healthHandler(deps)();
     expect(res.status).toBe(200);
     const j = await res.json();
-    expect(j).toMatchObject({ ok: true, db: { ok: true, schema: ["001_init"] }, model: { reachable: true, digests: { "qwen3.5:9b": "d63f830f" } } });
+    expect(j).toMatchObject({ ok: true, db: { ok: true, schema: ["001_init", "002_chat_turns_food"] }, model: { reachable: true, digests: { "qwen3.5:9b": "d63f830f" } } });
     expect(JSON.stringify(j)).not.toMatch(/ADMIN|SECRET|PASSWORD/i);
   });
   it("returns 503 when Ollama is unreachable", async () => {

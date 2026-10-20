@@ -20,7 +20,9 @@ export type Metrics = {
     abstentionOnUnknown: Rate;
   };
   floors: { intentAccuracy: Rate; bookingFieldExtractionExact: Rate; backendActionCorrectness: Rate; groundedAnswerCorrectness: Rate; firstTrySchemaValidity: Rate };
-  latency: { booking: Latency; faq: Latency; firstRunBooking: Latency; firstRunFaq: Latency };
+  latency: { booking: Latency; faq: Latency; recommend: Latency; firstRunBooking: Latency; firstRunFaq: Latency };
+  /** D-20, report-only (no threshold yet: adding one needs the user's approval): recommendation checks passed. */
+  recommendationValidity: Rate;
   tokens: { promptMax: number | null; promptMean: number | null; cachedMean: number | null; outputMean: number | null };
   repeatability: { flaky: string[]; alwaysFail: string[] };
   retrieval: RetrievalMetrics | null;
@@ -83,7 +85,8 @@ export function computeMetrics(results: CaseResult[], retrieval: RetrievalMetric
       groundedAnswerCorrectness: checksRate(results, GROUNDED_KEYS),
       firstTrySchemaValidity: rate(modelTurns.filter((t) => t.firstTryValid).length, modelTurns.length),
     },
-    latency: { booking: lat(timed("booking", false)), faq: lat(timed("faq", false)), firstRunBooking: lat(timed("booking", true)), firstRunFaq: lat(timed("faq", true)) },
+    latency: { booking: lat(timed("booking", false)), faq: lat(timed("faq", false)), recommend: lat(timed("recommend", false)), firstRunBooking: lat(timed("booking", true)), firstRunFaq: lat(timed("faq", true)) },
+    recommendationValidity: checksRate(results, new Set(["recommend"])),
     tokens: {
       promptMax: modelTurns.length ? Math.max(...modelTurns.map((t) => t.promptTokens ?? 0)) : null,
       promptMean: mean(modelTurns.flatMap((t) => (t.promptTokens === null ? [] : [t.promptTokens]))),

@@ -25,7 +25,7 @@ beforeEach(async () => {
 });
 afterEach(() => t.cleanup());
 
-const smalltalk = (answer: string): Turn => ({ intent: "smalltalk", booking: nullBooking(), answer, citedFactIds: [], answerable: true });
+const smalltalk = (answer: string): Turn => ({ intent: "smalltalk", booking: nullBooking(), prefs: null, answer, citedFactIds: [], answerable: true });
 const turn = (text: string, draft: Draft, reply: Turn) =>
   runTurn({ now: NOW, sessionId: "8c2f6f1e-6b61-4d5b-9d8e-1f2a3b4c5d6e", messages: [{ role: "guest", content: text }], draft }, { db: t.db, model: fakeModel({ script: { [text]: reply } }), embedder: fakeEmbedder(), limiter: noTurnLimit });
 const SAT_8PM = toInstant("2026-10-17", "20:00", "Asia/Kolkata");

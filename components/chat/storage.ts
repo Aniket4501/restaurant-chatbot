@@ -1,4 +1,4 @@
-import type { Block, Draft } from "@/lib/chat/types";
+import type { Action, Block, Draft, TurnContext } from "@/lib/chat/types";
 
 // Conversation state kept in sessionStorage across reloads (§5.10), including a pending submit (D-14): { key, body }
 // is written before the POST, so a reload can replay it with the same Idempotency-Key. Storage may be unavailable
@@ -7,7 +7,9 @@ import type { Block, Draft } from "@/lib/chat/types";
 export type Item = { id: string; role: "guest" | "assistant"; text: string; blocks?: Block[]; tone?: "error" };
 export type CreateBody = { branch: string; startsAt: number; partySize: number; name: string; phone: string; email: string | null; note: string | null };
 export type Pending = { key: string; body: CreateBody; unknown: boolean };
-export type Saved = { sessionId: string; items: Item[]; draft: Draft | null; context: { lastCitedIds: string[] }; pending: Pending | null; selected: number | null };
+/** A chat request sent but not yet answered, kept so a reload can offer "Try again" with the same request id (D-20). */
+export type ChatPending = { messages: { role: "guest" | "assistant"; content: string }[]; action?: Action; requestId: string };
+export type Saved = { sessionId: string; items: Item[]; draft: Draft | null; context: TurnContext; pending: Pending | null; selected: number | null; chatPending?: ChatPending | null };
 
 const KEY = "neem-ember-chat-v1";
 

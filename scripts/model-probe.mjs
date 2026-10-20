@@ -72,7 +72,7 @@ const readJson = (p) => JSON.parse(readFileSync(path.join(ROOT, p), 'utf8'));
 const FIX = readJson('evals/fixtures/base.json');
 const PROBE = readJson('evals/fixtures/probe-messages.json');
 // base = canonical fixture (0–999 since D-06 was approved at G2); narrow = the 1–99 grammar used by runs before 2026-10-19T15:17Z.
-const SCHEMAS = { base: readJson('evals/fixtures/turn.schema.json'), wide: readJson('evals/fixtures/experiments/turn.schema.partySize-0-999.json'), narrow: readJson('evals/fixtures/experiments/turn.schema.partySize-1-99.json') };
+const SCHEMAS = { base: readJson('evals/fixtures/turn.schema.v1.json'), wide: readJson('evals/fixtures/experiments/turn.schema.partySize-0-999.json'), narrow: readJson('evals/fixtures/experiments/turn.schema.partySize-1-99.json') };
 const NOW_MS = Date.parse(PROBE.now);
 const TZ = 'Asia/Kolkata';
 

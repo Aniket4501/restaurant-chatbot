@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { historyContent, submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import type { Action, Block, TurnReply } from "@/lib/chat/types";
 import { BlockView, type BlockHandlers, type BranchCard } from "@/components/chat/Blocks";
@@ -23,8 +23,12 @@ type Props = {
   branchCards?: BranchCard[];
   today?: string;
   horizonDays?: number;
+  /** Called once mounted, before paint, so the wrapper can drop its server-rendered placeholder. */
+  onReady?: () => void;
 };
-type ChatRequest = { messages: { role: "guest" | "assistant"; content: string }[]; action?: Action };
+// One request id per guest action (D-20): "Try again" resends the same id, so a reply that was lost in transit comes
+// back from the server's dedupe instead of a second model call.
+type ChatRequest = { messages: { role: "guest" | "assistant"; content: string }[]; action?: Action; requestId: string };
 
 const uid = () => crypto.randomUUID();
 
@@ -32,15 +36,17 @@ function welcome(name: string): Item {
   return {
     id: "welcome",
     role: "assistant",
-    text: `Welcome to ${name}. Ask me about the menu or opening hours, or book a table in a few taps.`,
+    text: `Welcome to ${name}. I can help you choose a dish, show you the menu, or find you a table.`,
     blocks: [
       {
         type: "quick_replies",
+        // Starting points, not limits (D-20). Menu and table need no model call: a menu action lists the sections,
+        // and an empty set_field asks for the first missing booking field, the branch (§5.7 step 2).
         chips: [
-          { label: "Menu", text: "What's on the menu?" },
-          { label: "Opening hours", text: "What are your opening hours?" },
-          // No model call: an empty set_field asks for the first missing field, the branch (§5.7 step 2).
-          { label: "Book a table", action: { type: "set_field", field: "branch", value: null } as Action },
+          { label: "Help me find a dish", text: "Help me find a dish" },
+          { label: "Show me the menu", action: { type: "menu", course: null } },
+          { label: "Find a table", action: { type: "set_field", field: "branch", value: null } as Action },
+          { label: "Recommend something vegetarian", text: "Recommend something vegetarian" },
         ],
       },
     ],
@@ -54,7 +60,7 @@ function fresh(name: string): Saved {
 const NO_CARD: CardState = { submitting: false, locked: false, fieldErrors: null, done: false, message: null };
 
 /** Rendered in the browser only (ChatPanelClient), so the saved conversation is read synchronously, without a hydration pass. */
-export function ChatPanel({ branches, restaurantName, scripted, header, branchCards = [], today, horizonDays = 30 }: Props) {
+export function ChatPanel({ branches, restaurantName, scripted, header, branchCards = [], today, horizonDays = 30, onReady }: Props) {
   const [initial] = useState<Saved>(() => load() ?? fresh(restaurantName));
   const [s, setS] = useState<Saved>(initial);
   const [busy, setBusy] = useState(false);
@@ -62,8 +68,13 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
   const [card, setCard] = useState<CardState>(() => (initial.pending ? { ...NO_CARD, locked: initial.pending.unknown } : NO_CARD));
   const [text, setText] = useState("");
   const ref = useRef(initial);
+  const inFlight = useRef(false);
+  const posting = useRef(false); // a reservation POST in flight: chat turns wait (D-20 audit)
+  const generation = useRef(0); // bumped by "New conversation" and "Start over", so late replies are dropped
   const listEnd = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
+
+  useLayoutEffect(() => onReady?.(), [onReady]);
 
   const update = useCallback((f: (prev: Saved) => Saved) => {
     const next = f(ref.current);
@@ -87,36 +98,43 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
 
   const send = useCallback(
     async (req: ChatRequest) => {
+      // Synchronous guards (D-20): one chat turn at a time, and never while a booking is being submitted, so a late
+      // chat reply can't rewrite the card or bring back a draft the booking just cleared.
+      if (inFlight.current || posting.current) return;
+      inFlight.current = true;
+      const gen = generation.current;
       setBusy(true);
       setFailed(null);
+      update((p) => ({ ...p, chatPending: req }));
       const cur = ref.current;
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sessionId: cur.sessionId, messages: req.messages, draft: cur.draft, context: cur.context, ...(req.action ? { action: req.action } : {}) }),
+          body: JSON.stringify({ sessionId: cur.sessionId, requestId: req.requestId, messages: req.messages, draft: cur.draft, context: cur.context, ...(req.action ? { action: req.action } : {}) }),
         });
         const j = await res.json().catch(() => null);
+        if (gen !== generation.current) return; // the guest started over while this was in flight: drop the stale reply
         if (res.status === 429) {
-          update((p) => ({ ...p, items: [...p.items, { id: uid(), role: "assistant", text: j?.error?.message ?? "You're sending messages quickly. Please wait a moment.", tone: "error" }] }));
+          update((p) => ({ ...p, chatPending: null, items: [...p.items, { id: uid(), role: "assistant", text: j?.error?.message ?? "You're sending messages quickly. Please wait a moment.", tone: "error" }] }));
           return;
         }
         if (!res.ok || !j?.reply) throw new Error(`chat ${res.status}`);
         const r = j as Omit<TurnReply, "status" | "trace">;
         const newCard = r.reply.blocks.some((b) => b.type === "confirm");
-        if (newCard && !ref.current.pending?.unknown) setCard(NO_CARD); // a locked card stays locked
+        if (newCard && !ref.current.pending) setCard(NO_CARD); // a pending or locked submit keeps its card state
         update((p) => ({
           ...p,
           items: [...p.items, { id: uid(), role: "assistant", text: r.reply.text, blocks: r.reply.blocks }],
           draft: r.draft,
           context: r.context,
           selected: r.draft.selected?.startsAt ?? (newCard ? p.selected : null),
-          // A new confirm card means the slot or party changed: forget any settled pending entry (D-14).
-          pending: newCard && p.pending && !p.pending.unknown ? null : p.pending,
+          chatPending: null,
         }));
       } catch {
-        setFailed(req);
+        if (gen === generation.current) setFailed(req);
       } finally {
+        inFlight.current = false;
         setBusy(false);
       }
     },
@@ -125,18 +143,18 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
 
   const sendText = (raw: string) => {
     const t = raw.trim().slice(0, 500);
-    if (!t || busy || ref.current.pending?.unknown) return;
+    if (!t || inFlight.current || ref.current.pending?.unknown) return;
     setText("");
     const prev = ref.current.items;
     update((p) => ({ ...p, items: [...p.items, { id: uid(), role: "guest", text: t }] }));
-    void send({ messages: [...history(prev), { role: "guest", content: t }] });
+    void send({ messages: [...history(prev), { role: "guest", content: t }], requestId: uid() });
   };
 
   const sendAction = (action: Action, label: string) => {
-    if (busy || ref.current.pending?.unknown) return;
+    if (inFlight.current || ref.current.pending?.unknown) return;
     const prev = ref.current.items;
     update((p) => ({ ...p, items: [...p.items, { id: uid(), role: "guest", text: label }], selected: action.type === "select_slot" ? action.startsAt : p.selected }));
-    void send({ messages: [...history(prev), { role: "guest", content: label }], action });
+    void send({ messages: [...history(prev), { role: "guest", content: label }], action, requestId: uid() });
   };
 
   // ---------- submit (D-14) ----------
@@ -149,7 +167,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     return null;
   };
 
-  const post = useCallback(
+  const postOnce = useCallback(
     async (pending: Pending) => {
       const c = confirmBlock();
       const branch = branches.find((b) => b.slug === pending.body.branch) ?? branches[0];
@@ -163,6 +181,14 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
       }
       const o = submitOutcome(res, { branch, branches, date: c?.date ?? "", partySize: pending.body.partySize });
       const status = "status" in res ? res.status : 0;
+      // Replaying a submit whose outcome is unknown: a 429, 503 or network error still doesn't say whether the first
+      // POST booked, so the card stays locked on Retry instead of treating it as "nothing was booked" (D-14, D-20 audit).
+      if (pending.unknown && (o.unknown || status === 429 || status === 503)) {
+        setCard({ submitting: false, locked: true, fieldErrors: null, done: false, message: "We still couldn't confirm whether your booking went through. Tap Retry in a moment." });
+        update((p) => ({ ...p, pending: { ...pending, unknown: true } }));
+        return;
+      }
+      if (o.clearDraft) generation.current += 1; // booked: any chat reply still on its way is now stale
       const inCard = o.unknown || o.fields !== null || status === 503 || status === 429;
       setCard({ submitting: false, locked: o.unknown, fieldErrors: o.fields, done: o.clearDraft || (!inCard && !o.unknown), message: inCard ? o.text : null });
       update((p) => ({
@@ -177,8 +203,21 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     [branches, update],
   );
 
+  const post = useCallback(
+    async (pending: Pending) => {
+      if (posting.current) return; // one POST at a time; a retry reuses the key anyway
+      posting.current = true;
+      try {
+        await postOnce(pending);
+      } finally {
+        posting.current = false;
+      }
+    },
+    [postOnce],
+  );
+
   const submit = (body: CreateBody) => {
-    if (card.submitting) return; // a double tap sends once; a retry reuses the key anyway
+    if (card.submitting || posting.current || inFlight.current) return; // a double tap sends once; never during a chat turn
     const prev = ref.current.pending;
     // A new key whenever any field changes; the same key only to retry an identical body (§5.9).
     const key = prev && JSON.stringify(prev.body) === JSON.stringify(body) ? prev.key : uid();
@@ -197,10 +236,11 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     if (p) {
       // Learn the outcome first (D-14): booked → show it; still unknown → stay locked, since a new key could book twice.
       await post(p);
-      if (ref.current.pending?.unknown) return;
-      if (!ref.current.pending && ref.current.draft === null) return;
+      // Known now (booked, refused or still unknown): the outcome message is the answer to this tap.
+      if (ref.current.pending?.unknown || !ref.current.pending) return;
     }
     setCard(NO_CARD);
+    generation.current += 1;
     update((prev) => ({ ...prev, pending: null, draft: null, selected: null, context: { lastCitedIds: [] }, items: [...prev.items, { ...welcome(restaurantName), id: uid(), text: "Let's start again. What would you like to do?" }] }));
   };
 
@@ -210,9 +250,12 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     restored.current = true;
     save(ref.current);
     if (ref.current.pending) void post(ref.current.pending);
+    // A chat turn interrupted by a reload: offer Try again with the same request id (the server may already have it).
+    else if (ref.current.chatPending) setFailed(ref.current.chatPending);
   }, [post]);
 
   const newConversation = () => {
+    generation.current += 1;
     clear();
     const next = fresh(restaurantName);
     ref.current = next;
@@ -263,7 +306,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
                           block={b}
                           state={item === lastAssistant || item === pendingCardItem ? card : { ...NO_CARD, done: true }}
                           initial={s.pending?.body.startsAt === b.startsAtMs ? s.pending.body : null}
-                          active={item === lastAssistant || item === pendingCardItem}
+                          active={(item === lastAssistant || item === pendingCardItem) && !busy}
                           onSubmit={submit}
                           onRetry={retry}
                           onStartOver={startOver}
@@ -325,7 +368,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
             </button>
           </div>
           <div className="mt-1.5 flex items-center justify-between text-sm text-muted">
-            <button type="button" onClick={newConversation} disabled={locked || card.submitting} className="min-h-11 underline decoration-line underline-offset-4 hover:text-neem disabled:opacity-50">
+            <button type="button" onClick={newConversation} disabled={locked || card.submitting || busy} className="min-h-11 underline decoration-line underline-offset-4 hover:text-neem disabled:opacity-50">
               New conversation
             </button>
             {scripted && <span className="rounded-full border border-line px-2.5 py-0.5">Scripted model (test)</span>}

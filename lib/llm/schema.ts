@@ -2,9 +2,10 @@ import { z } from "zod";
 
 // The model's output contract (§5.7). partySize is 0–999 (D-06): the grammar must not coerce "150 people" into a
 // smaller valid number; code decides what 0, 1–8 and 9+ mean. `z.toJSONSchema(TurnSchema)` is sent to Ollama as
-// `format` and must equal evals/fixtures/turn.schema.json (the grammar the Phase 2 probe validated).
+// `format` and must equal evals/fixtures/turn.schema.json (v2 since D-20: the "menu" and "recommend" intents and
+// `prefs`; the Phase 2 probe validated v1, kept as turn.schema.v1.json).
 
-export const INTENTS = ["faq", "booking", "manage_booking", "off_topic", "smalltalk", "unclear"] as const;
+export const INTENTS = ["faq", "menu", "recommend", "booking", "manage_booking", "off_topic", "smalltalk", "unclear"] as const;
 export type Intent = (typeof INTENTS)[number];
 
 export const ANSWER_MAX = 600;
@@ -24,6 +25,18 @@ export const TurnSchema = z.object({
       })
       .nullable(),
   }),
+  // D-20: the guest's active food preferences for "recommend" and "menu" turns, else null. Code validates them.
+  prefs: z
+    .object({
+      diet: z.array(z.enum(["vegetarian", "vegan", "gluten-free", "jain"])).max(4),
+      avoid: z.array(z.enum(["dairy", "nuts", "egg"])).max(3),
+      maxPrice: z.number().int().min(0).max(100000).nullable(),
+      course: z.enum(["small-plates", "tandoor", "mains", "breads-rice", "desserts", "drinks"]).nullable(),
+      mild: z.boolean(),
+      allergy: z.boolean(),
+      relation: z.enum(["cheaper", "another"]).nullable(),
+    })
+    .nullable(),
   answer: z.string().max(ANSWER_MAX).nullable(), // faq and smalltalk only
   citedFactIds: z.array(z.string()).max(8),
   answerable: z.boolean(),

@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactElement } from "react";
-import type { Action, Block, Chip, SlotChip } from "@/lib/chat/types";
-import { CalendarIcon, CheckIcon, ChevronIcon, ClockIcon, LeafMark, MenuBookIcon, PinIcon } from "@/components/ui/icons";
+import type { Action, Block, Chip, MenuItemView, SlotChip } from "@/lib/chat/types";
+import { CalendarIcon, CheckIcon, ChevronIcon, ClockIcon, DishIcon, LeafMark, MenuBookIcon, PinIcon } from "@/components/ui/icons";
 
 // Renderers for the blocks /api/chat returns (§5.9, §5.10). Chips and times are real buttons with 44 px targets.
 // Only the latest reply is interactive; earlier ones stay visible but disabled, so an old chip can't act on a draft
@@ -83,8 +83,13 @@ function BranchCards({ chips, h, label }: { chips: Chip[]; h: BlockHandlers; lab
 const chipClass =
   "inline-flex min-h-11 items-center rounded-full border border-line bg-paper px-4 text-[15px] text-ink transition-colors hover:border-neem hover:bg-neem-tint hover:text-neem-dark disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-paper disabled:hover:text-ink";
 
-// The welcome's quick actions render as icon tiles; any other quick replies stay chips.
-const TILE_ICONS: Record<string, (p: { className?: string }) => ReactElement> = { Menu: MenuBookIcon, "Opening hours": ClockIcon, "Book a table": CalendarIcon };
+// The welcome's starting points render as icon tiles; any other quick replies stay chips.
+const TILE_ICONS: Record<string, (p: { className?: string }) => ReactElement> = {
+  "Help me find a dish": DishIcon,
+  "Show me the menu": MenuBookIcon,
+  "Find a table": CalendarIcon,
+  "Recommend something vegetarian": LeafMark,
+};
 
 function ChipButton({ chip, h }: { chip: Chip; h: BlockHandlers }) {
   return (
@@ -97,7 +102,7 @@ function ChipButton({ chip, h }: { chip: Chip; h: BlockHandlers }) {
 function Chips({ chips, h, label }: { chips: Chip[]; h: BlockHandlers; label: string }) {
   if (chips.length > 1 && chips.every((c) => TILE_ICONS[c.label]))
     return (
-      <div role="group" aria-label={label} className="grid grid-cols-3 gap-2">
+      <div role="group" aria-label={label} className="grid grid-cols-2 gap-2">
         {chips.map((c) => {
           const Icon = TILE_ICONS[c.label];
           return (
@@ -106,9 +111,9 @@ function Chips({ chips, h, label }: { chips: Chip[]; h: BlockHandlers; label: st
               type="button"
               disabled={!h.active}
               onClick={() => ("action" in c ? h.onAction(c.action, c.label) : h.onText(c.text))}
-              className="flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-xl border border-line bg-paper px-2 py-3 text-[14px] leading-tight text-ink transition-colors hover:border-neem hover:bg-neem-tint disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-paper"
+              className="flex min-h-[4.25rem] items-center gap-2.5 rounded-xl border border-line bg-paper px-3 py-2.5 text-left text-[14px] leading-snug text-ink transition-colors hover:border-neem hover:bg-neem-tint disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-paper"
             >
-              <Icon className="h-6 w-6 text-neem" />
+              <Icon className="h-6 w-6 shrink-0 text-neem" />
               {c.label}
             </button>
           );
@@ -236,6 +241,98 @@ export function Confirmation({ block }: { block: Extract<Block, { type: "confirm
   );
 }
 
+const SPICE = ["Not spicy", "Mild", "Medium spicy", "Hot"];
+
+function Labels({ item }: { item: MenuItemView }) {
+  if (!item.labels.length) return null;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {item.labels.map((l) => (
+        <span key={l} className="rounded-full bg-neem-tint px-2 py-0.5 text-[12px] text-neem-dark">
+          {l}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+const price = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+
+/** A suggested dish (D-20): every word here comes from the menu table, never from the model. */
+function DishCard({ item }: { item: MenuItemView }) {
+  const facts = [item.spice === null ? null : (SPICE[item.spice] ?? "Hot"), item.contains.length ? `Contains ${item.contains.join(", ")}` : null, item.scope].filter(Boolean).join(" · ");
+  return (
+    <article aria-label={`${item.name}, ${price(item.price)}`} className="rounded-2xl border border-line bg-paper p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="font-display text-[19px] leading-tight text-ink">{item.name}</h3>
+        <span className="shrink-0 text-[16px] font-medium text-neem tabular-nums">{price(item.price)}</span>
+      </div>
+      <p className="mt-0.5 text-[13px] text-muted">{item.courseLabel}</p>
+      <p className="mt-2 text-[15px] leading-relaxed text-ink">{item.description}</p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <Labels item={item} />
+        <span className="text-[13px] text-muted">{facts}</span>
+      </div>
+    </article>
+  );
+}
+
+function DishRow({ item }: { item: MenuItemView }) {
+  return (
+    <li className="py-2.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[15px] font-medium text-ink">{item.name}</span>
+        <span className="shrink-0 text-[15px] text-neem tabular-nums">{price(item.price)}</span>
+      </div>
+      <p className="mt-0.5 line-clamp-2 text-[13px] text-muted">{item.description}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Labels item={item} />
+        {(item.contains.length > 0 || item.scope) && <span className="text-[12px] text-muted">{[item.contains.length ? `Contains ${item.contains.join(", ")}` : null, item.scope].filter(Boolean).join(" · ")}</span>}
+      </div>
+    </li>
+  );
+}
+
+function Recommendation({ block }: { block: Extract<Block, { type: "recommendation" }> }) {
+  const [lead, ...rest] = block.items;
+  const rows = block.lead ? rest : block.items;
+  return (
+    <div className="space-y-2">
+      {block.lead && lead && <DishCard item={lead} />}
+      {rows.length > 0 && (
+        <section aria-label={block.lead ? "Also worth a look" : "Dishes that fit"} className="rounded-2xl border border-line bg-paper px-4 py-1.5">
+          {block.lead && <h4 className="pt-2 text-[13px] text-muted">Also worth a look</h4>}
+          <ul className="divide-y divide-line">
+            {rows.map((i) => (
+              <DishRow key={i.id} item={i} />
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function MenuList({ block }: { block: Extract<Block, { type: "menu_list" }> }) {
+  return (
+    <div className="space-y-2">
+      {block.groups.map((g) => (
+        <section key={g.course} aria-label={g.label} className="rounded-2xl border border-line bg-paper px-4 py-1.5">
+          <h3 className="flex items-center gap-2 pt-2 font-display text-[18px] text-ink">
+            <MenuBookIcon className="h-5 w-5 text-neem" />
+            {g.label}
+          </h3>
+          <ul className="divide-y divide-line">
+            {g.items.map((i) => (
+              <DishRow key={i.id} item={i} />
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function BlockView({ block, h }: { block: Block; h: BlockHandlers }) {
   switch (block.type) {
     case "quick_replies":
@@ -260,6 +357,10 @@ export function BlockView({ block, h }: { block: Block; h: BlockHandlers }) {
       );
     case "confirmation":
       return <Confirmation block={block} />;
+    case "recommendation":
+      return <Recommendation block={block} />;
+    case "menu_list":
+      return <MenuList block={block} />;
     case "confirm":
       return null; // rendered by ChatPanel, which owns the submit state
   }

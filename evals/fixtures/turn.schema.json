@@ -6,6 +6,8 @@
       "type": "string",
       "enum": [
         "faq",
+        "menu",
+        "recommend",
         "booking",
         "manage_booking",
         "off_topic",
@@ -105,6 +107,103 @@
       ],
       "additionalProperties": false
     },
+    "prefs": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "diet": {
+              "maxItems": 4,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "vegetarian",
+                  "vegan",
+                  "gluten-free",
+                  "jain"
+                ]
+              }
+            },
+            "avoid": {
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "dairy",
+                  "nuts",
+                  "egg"
+                ]
+              }
+            },
+            "maxPrice": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "course": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "small-plates",
+                    "tandoor",
+                    "mains",
+                    "breads-rice",
+                    "desserts",
+                    "drinks"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mild": {
+              "type": "boolean"
+            },
+            "allergy": {
+              "type": "boolean"
+            },
+            "relation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "cheaper",
+                    "another"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "diet",
+            "avoid",
+            "maxPrice",
+            "course",
+            "mild",
+            "allergy",
+            "relation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "answer": {
       "anyOf": [
         {
@@ -130,6 +229,7 @@
   "required": [
     "intent",
     "booking",
+    "prefs",
     "answer",
     "citedFactIds",
     "answerable"

@@ -24,10 +24,43 @@ export const emptyDraft = (): Draft => ({ branch: null, date: null, time: null, 
 export const FIELDS = ["branch", "date", "time", "timeWindow", "partySize"] as const;
 export type Field = (typeof FIELDS)[number];
 
+/** Menu sections, as in the seed (D-20). */
+export const COURSES = ["small-plates", "tandoor", "mains", "breads-rice", "desserts", "drinks"] as const;
+export type Course = (typeof COURSES)[number];
+/** Verified dietary tags a guest can ask for, and the allergens the menu labels (contains-*). */
+export const DIETS = ["vegetarian", "vegan", "gluten-free", "jain"] as const;
+export const AVOIDS = ["dairy", "nuts", "egg"] as const;
+
 export const ActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_field"), field: z.enum(FIELDS), value: z.union([z.string().max(64), z.number().int().min(0).max(999), z.null()]) }),
   z.strictObject({ type: z.literal("select_slot"), branch: slug, startsAt: z.number().int() }),
+  /** Browse the menu: no section gives the list of sections (D-20). No model call. */
+  z.strictObject({ type: z.literal("menu"), course: z.enum(COURSES).nullable() }),
 ]);
+
+/**
+ * The guest's active food preferences, carried between turns (D-20). The model proposes them each turn; code adds
+ * any it can read for certain in the guest's own words and validates every recommendation against them.
+ */
+export const PrefsSchema = z.strictObject({
+  diet: z.array(z.enum(DIETS)).max(4),
+  avoid: z.array(z.enum(AVOIDS)).max(3),
+  maxPrice: z.number().int().min(1).max(100_000).nullable(),
+  course: z.enum(COURSES).nullable(),
+  mild: z.boolean(),
+  allergy: z.boolean(),
+});
+export type Prefs = z.infer<typeof PrefsSchema>;
+export const noPrefs = (): Prefs => ({ diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false });
+
+/** Bounded conversation memory the client sends back (D-13, D-20). Item IDs are re-checked against the menu. */
+export const ContextSchema = z.strictObject({
+  lastCitedIds: z.array(z.string().max(100)).max(8),
+  prefs: PrefsSchema.nullable().optional(),
+  /** Dishes suggested so far in this conversation, most recent first ("another", "cheaper"). */
+  recommended: z.array(z.string().max(100)).max(6).optional(),
+});
+export type TurnContext = z.infer<typeof ContextSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 
 export const MessageSchema = z.strictObject({ role: z.enum(["guest", "assistant"]), content: z.string() });
@@ -40,7 +73,9 @@ export const ChatBodySchema = z
     messages: z.array(MessageSchema).max(8),
     draft: DraftSchema.nullable(),
     action: ActionSchema.optional(),
-    context: z.strictObject({ lastCitedIds: z.array(z.string().max(100)).max(8) }).optional(),
+    context: ContextSchema.optional(),
+    /** One id per guest action; a repeat of the same id gets the same reply, with no second model call (D-20). */
+    requestId: z.uuid().optional(),
   })
   .superRefine((b, ctx) => {
     b.messages.forEach((m, i) => {
@@ -99,6 +134,10 @@ export type Block =
       sittingMinutes: number;
     }
   | { type: "info"; factIds: string[]; items: { id: string; text: string }[] }
+  /** Dishes from the menu table (D-20): `lead` means items[0] is the suggestion and the rest are alternatives. */
+  | { type: "recommendation"; lead: boolean; items: MenuItemView[] }
+  /** A menu section, or dishes matching the guest's preferences, grouped by course (D-20). */
+  | { type: "menu_list"; groups: { course: Course; label: string; items: MenuItemView[] }[] }
   | { type: "notice"; tone: "info" | "warning"; text: string }
   /** Added by the client, and only from a 201/200 reservation response (BR-12, §5.7). Never sent by /api/chat. */
   | {
@@ -114,8 +153,28 @@ export type Block =
       guestName: string;
     };
 
+/** A dish as the guest sees it, built only from the menu table (never from model text). */
+export type MenuItemView = {
+  id: string;
+  name: string;
+  course: Course;
+  courseLabel: string;
+  price: number;
+  description: string;
+  /** Verified labels: "Vegan", "Vegetarian", "Gluten-free", "Jain option". */
+  labels: string[];
+  /** Labelled allergens: "dairy", "nuts", "egg". */
+  contains: string[];
+  /** 0 not spicy … 3 hot; null when the menu doesn't say (never shown as "not spicy"). */
+  spice: number | null;
+  /** "Golf Course Road only", or null when served at every branch. */
+  scope: string | null;
+};
+
 export type Outcome =
   | "faq_answer"
+  | "recommend"
+  | "menu"
   | "hours_answer"
   | "faq_fallback"
   | "ask_field"
@@ -138,7 +197,14 @@ export type TraceEntry =
   /** A model value the guest's latest message doesn't state, dropped before the merge (§5.7). */
   | { action: "ignore_field"; field: Field; reason: "not_stated" }
   /** A model value replaced by a deterministic reading of the guest's message (D-17). */
-  | { action: "correct_field"; field: Field; reason: "weekday" | "large_party" }
+  | { action: "correct_field"; field: Field; reason: "weekday" | "day_of_month" | "large_party" }
+  /** Food preferences in force after this turn (D-20); `added` lists what code read from the guest's own words. */
+  | { action: "prefs"; prefs: Prefs; added: string[] }
+  /** The menu filtered by the preferences (D-20): how many dishes fit, and why none did. */
+  | { action: "eligible"; count: number; none: string | null }
+  /** One chooser call: the dish ids it proposed, and why code rejected the proposal (empty when valid). */
+  | { action: "recommend"; attempt: 1 | 2; result: "ok" | string; pick: string | null; alternatives: string[]; rejected: string[] }
+  | { action: "menu"; course: Course | null; items: number }
   | { action: "confirm"; branch: string; startsAt: number }
   | { action: "answer_faq"; ids: string[]; rendered: boolean }
   | { action: "fallback_unknown"; reason: string }
@@ -159,7 +225,7 @@ export type TurnReply = {
   reply: { text: string; blocks: Block[] };
   draft: Draft;
   intent: Intent | null;
-  context: { lastCitedIds: string[] };
+  context: TurnContext;
   trace: TraceEntry[];
   meta: {
     outcome: Outcome;

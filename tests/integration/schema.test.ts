@@ -1,7 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { openDb, type DB } from "@/lib/db/client";
-import { migrate } from "@/lib/db/migrate";
+import { migrate, MIGRATIONS_DIR } from "@/lib/db/migrate";
 import { immediate } from "@/lib/db/tx";
 import { sqlError, tempDb } from "./helpers/db";
 
@@ -49,9 +52,23 @@ describe("connection settings (D-08)", () => {
 });
 
 describe("migrations", () => {
-  it("records 001_init and is idempotent", () => {
-    expect((db.prepare("SELECT version FROM schema_migrations").all() as { version: string }[]).map((r) => r.version)).toEqual(["001_init"]);
+  it("records each migration once and is idempotent", () => {
+    expect((db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as { version: string }[]).map((r) => r.version)).toEqual(["001_init", "002_chat_turns_food"]);
     expect(migrate(db, 1)).toEqual([]);
+  });
+  it("002 keeps existing chat_turns rows and accepts the menu and recommend intents (D-20)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mig-"));
+    fs.copyFileSync(path.join(MIGRATIONS_DIR, "001_init.sql"), path.join(dir, "001_init.sql"));
+    const old = openDb(":memory:");
+    migrate(old, 1, dir);
+    old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('a', 's', 'faq', 'faq_answer', 1)").run();
+    expect(() => old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('b', 's', 'recommend', 'recommend', 2)").run()).toThrow(/CHECK/);
+    expect(migrate(old, 2)).toEqual(["002_chat_turns_food"]);
+    old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('b', 's', 'recommend', 'recommend', 2)").run();
+    old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('c', 's', 'menu', 'menu', 3)").run();
+    expect(old.prepare("SELECT id, intent FROM chat_turns ORDER BY created_at").all()).toEqual([{ id: "a", intent: "faq" }, { id: "b", intent: "recommend" }, { id: "c", intent: "menu" }]);
+    old.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
   it("creates the twelve tables and the FTS5 index", () => {
     const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'kb_fts_%' ORDER BY name").all() as { name: string }[]).map((r) => r.name);

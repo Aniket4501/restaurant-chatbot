@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guardExtraction, largePartyStated, plainWeekday, timeStated } from "@/lib/chat/guards";
+import { guardExtraction, largePartyStated, plainDayOfMonth, plainWeekday, timeStated } from "@/lib/chat/guards";
 import { nullBooking } from "@/lib/llm/fake";
 import type { Turn } from "@/lib/llm/schema";
 import { weekdayDate } from "@/lib/time/calendar";
@@ -7,7 +7,7 @@ import { weekdayDate } from "@/lib/time/calendar";
 // D-17: deterministic checks on the model's extracted booking fields, applied before the merge.
 const NOW = Date.parse("2026-10-16T14:00:00+05:30"); // Fri 16 Oct 2026, 2:00 PM IST
 const ZONE = "Asia/Kolkata";
-const booking = (o: Partial<Turn["booking"]>, intent: Turn["intent"] = "booking"): Turn => ({ intent, booking: { ...nullBooking(), ...o }, answer: null, citedFactIds: [], answerable: true });
+const booking = (o: Partial<Turn["booking"]>, intent: Turn["intent"] = "booking"): Turn => ({ intent, booking: { ...nullBooking(), ...o }, prefs: null, answer: null, citedFactIds: [], answerable: true });
 
 describe("timeStated: the model's hour must be a clock time in the guest's message", () => {
   it.each([
@@ -119,7 +119,7 @@ describe("large parties (BR-07, enforced in code; live walkthrough 2026-10-20)",
   it.each(["table for 8 people", "Can you seat a large group?", "we have 20 people in our office", "for 2 people at 8", "Book for 4 guests on the 20th"])("%s → null", (text) => expect(largePartyStated(text)).toBeNull());
 
   it("turns an FAQ answer to 'book for 20 people' into the large-party booking path", () => {
-    const faq: Turn = { intent: "faq", booking: nullBooking(), answer: "For groups of 9 or more guests, please call the branch directly.", citedFactIds: ["faq:large-groups"], answerable: true };
+    const faq: Turn = { intent: "faq", booking: nullBooking(), prefs: null, answer: "For groups of 9 or more guests, please call the branch directly.", citedFactIds: ["faq:large-groups"], answerable: true };
     const r = guardExtraction(faq, "Can I book a table for 20 people tomorrow?", NOW, ZONE);
     expect(r.turn).toMatchObject({ intent: "booking", answer: null, citedFactIds: [], booking: { partySize: 20 } });
     expect(r.trace).toContainEqual({ action: "correct_field", field: "partySize", reason: "large_party" });
@@ -129,3 +129,20 @@ describe("large parties (BR-07, enforced in code; live walkthrough 2026-10-20)",
     expect(guardExtraction(booking({ partySize: 12 }), "table for 12 people at Hauz Khas", NOW, ZONE).trace).toEqual([]);
   });
 });
+
+describe("plain day of the month (D-17: rule 2, 'the 28th' is the first calendar date with that day)", () => {
+  it.each([
+    ["I'd like to book for 7 on the 28th at 7", 28],
+    ["dinner for 2 on the 3rd at Hauz Khas", 3],
+    ["table on the 1st please", 1],
+  ])("%s → %i", (text, d) => expect(plainDayOfMonth(text)).toBe(d));
+  it.each(["on 28th October", "Wednesday the 28th", "the 28th or the 29th", "between the 3rd and 5th", "28 people", "next week on the 28th"])("%s → null", (text) => expect(plainDayOfMonth(text)).toBeNull());
+  it("corrects a misread day of the month, counting today, and leaves a right one alone", () => {
+    const r = guardExtraction(booking({ date: "2026-11-04", partySize: 7 }), "I'd like to book for 7 on the 28th at 7", NOW, ZONE);
+    expect(r.turn.booking.date).toBe("2026-10-28");
+    expect(r.trace).toContainEqual({ action: "correct_field", field: "date", reason: "day_of_month" });
+    expect(guardExtraction(booking({ date: "2026-11-03" }), "dinner for 2 on the 3rd", NOW, ZONE).trace).toEqual([]);
+    expect(guardExtraction(booking({ date: null }), "lunch on the 16th", NOW, ZONE).turn.booking.date).toBe("2026-10-16");
+  });
+});
+

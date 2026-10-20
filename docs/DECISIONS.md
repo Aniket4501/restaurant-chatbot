@@ -265,3 +265,53 @@ Decision:
   - The staff dashboard stays a responsive page.
 Consequences: E2E specs follow the new entry point ("Book a table", then the branch). The README is written now, ahead of the rest of Phase 9. Phase 8's independent review has not been run on the restyle.
 
+## D-20 LLM-chosen recommendations, conversation memory, menu browsing and one reply per action (2026-10-20, status: requested by the user, 2026-10-20)
+Context: The user asked for a host-like chatbot. It should understand natural requests, let the model choose and explain dishes, remember preferences across messages, browse the menu cleanly, and stop showing duplicate or internal-sounding content. It must also keep facts, safety, availability and bookings under deterministic control, with no hardcoded ranking. An inspection of the app, by me and a read-only audit workflow, found these problems:
+- the info card under every FAQ and hours answer repeated the answer verbatim ("Q: … A: …"), and for menu lists showed internal wording ("(9 available), cheapest first");
+- there was no recommendation path: "something light" went through FAQ grounding;
+- the only memory was cited fact IDs;
+- the server had no request id or dedupe;
+- the confirm card could be submitted while a chat reply was in flight, and the late reply restored the cleared draft and wiped the record of a pending submit;
+- after "New conversation" a late reply landed in the new conversation;
+- a replay of an uncertain submit treated 429 or 503 as final;
+- chat_turns' CHECK constraints would have rejected new intents silently.
+
+Decision:
+- **Two model calls for a recommendation** (lib/chat/recommend.ts, lib/llm/chooser.ts).
+  - Call 1 (prompt v5) classifies the message. It gains the "menu" and "recommend" intents and a `prefs` object: diet, avoid, budget, course, mild, allergy, and "cheaper"/"another" relative to the last suggestion.
+  - Code then filters the menu to the dishes that meet those constraints using verified labels, allergens, price, course, spice and availability (lib/chat/menu.ts). It filters only; nothing is scored or ranked.
+  - Call 2 (the chooser, a separate static prompt with its own cached prefix) compares those dishes, picks one plus up to two alternatives, and writes one or two sentences.
+  - Code validates the choice:
+    - the dish is on the filtered list;
+    - the reply names it, and each price sits next to its own dish;
+    - grounding passes;
+    - there are no booking words;
+    - there are no popularity or "signature" claims;
+    - no allergen safety is promised;
+    - no diet word is unsupported by a dish shown.
+
+    On failure the model gets one retry with the reasons, then an honest fallback: its valid pick with a plain line, or a few dishes that fit, presented as options.
+  - If nothing fits, code says so without calling the model, and offers the menu.
+  - Both calls run in one model-gate slot. The retry is skipped if the turn has already taken 18 s.
+- **Preferences.** The model proposes the active preferences each turn. Code adds any the guest's own words state for certain: a budget, a diet word not preceded by "non", "not spicy", an allergy and its allergen. A dropped constraint is therefore never lost, and a missing label is treated as unknown.
+- **Allergy.** Whenever an allergy or allergen is in play, code shows a fixed note that labels don't guarantee a dish is free of traces.
+- **Memory.** The client-held context (validated, bounded) now carries `prefs` and the last six suggested dish IDs as well as cited facts. The first call sees them as "Current food preferences" and "Last suggested dishes". After a booking, history carries "Booking confirmed (reference …)".
+- **Menu browsing** comes from the menu table with no model text: sections as chips, a section's available dishes, or the dishes matching a diet grouped by course. "Show me the menu" and the section chips make no model call.
+- **No duplicate fact card.** FAQ and hours answers no longer carry the info card; the cited IDs stay in the reply metadata for the invariants. This changes the §5.7 routing table entry "Model answer + info card".
+- **One reply per action.**
+  - Each guest action has a request id. The server keeps a bounded, in-memory dedupe keyed by session, request id and body hash; concurrent duplicates await the same result.
+  - The client has synchronous in-flight guards, and chat turns and booking submits exclude each other.
+  - A generation counter drops stale replies after New conversation, Start over or a completed booking.
+  - A replayed uncertain submit stays locked on 429, 503 or a network error.
+  - A reload during a chat turn offers Try again with the same request id.
+- **Observability.** One JSON log line per chat turn, outside tests: request id, short session id, duplicate flag, intent, outcome, latency, model time, retrieval mode and cited IDs. Never guest text. Trace entries `prefs`, `eligible`, `recommend` (proposed IDs and rejection reasons) and `menu`. Migration 002 rebuilds chat_turns with the new intents and outcomes, keeping its rows.
+- **UI.** The welcome offers four starting points (Help me find a dish, Show me the menu, Find a table, Recommend something vegetarian). A recommendation is a card built only from the menu table: name, price, course, verified labels, allergens, spice and description, with alternatives as rows and follow-up chips (Something cheaper, Another option, Find a table). The header shows while the client loads.
+- **Evals.**
+  - Case category 22 is `recommendation`, with the new keys `recommend` (shown / satisfies / anyOf / notIds / cheaperThanTurn / differentFromTurn) and `menuShown`.
+  - Text checks read the dishes shown in cards and lists as well as the reply.
+  - `recommendationValidity` and recommendation latency are report-only: a threshold would change thresholds.json and needs the user's approval.
+Consequences:
+- **Schema.** TurnSchema grammar v2 (evals/fixtures/turn.schema.json; v1 kept for the probe); prompt v5; chooser c1.
+- **Latency.** Recommendation turns take two model calls.
+- **Data.** The seed labels "Chocolate Chilli Mousse" vegetarian and egg; the card shows "Contains egg", but a vegetarian filter includes it as labelled. Allergen labels cover only dairy, nuts and egg, so the allergy note always shows.
+- **New cases.** D1 SC-REC-001…013 and SC-MENU-001…002; D2 LV-REC-001…013 and LV-MENU-008…009; seven food-question cases accept the new intents.

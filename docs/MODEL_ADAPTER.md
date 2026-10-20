@@ -1,10 +1,10 @@
 # Model adapter
 
-How the app talks to language models, and how to change or test that without touching the booking engine. Status: T-11, T-18 and T-20 (prompt v4, 2026-10-20).
+How the app talks to language models, and how to change or test that without touching the booking engine. Status: T-11, T-18, T-20 and D-20 (prompt v5 and the recommendation chooser, 2026-10-20).
 
 ## The boundary
 
-The model never decides anything about a booking. It reads one guest message and returns a `Turn`: an intent, any booking fields the guest stated, and for FAQ or smalltalk a short answer citing fact IDs. Code then validates every field, runs availability, checks grounding, and decides what the guest sees (§5.2, §5.7). The booking engine (`lib/booking/*`) imports nothing from `lib/llm` or `lib/kb`.
+The model never decides anything about a booking. It reads one guest message and returns a `Turn`: an intent, any booking fields the guest stated, the guest's active food preferences for menu and recommendation turns, and for FAQ or smalltalk a short answer citing fact IDs. For a recommendation, a second call (the chooser, D-20) picks a dish from the ones code has already found to fit, and code validates that choice before anything is shown. Code then validates every field, runs availability, checks grounding, and decides what the guest sees (§5.2, §5.7). The booking engine (`lib/booking/*`) imports nothing from `lib/llm` or `lib/kb`.
 
 There are two model interfaces, each with exactly two implementations:
 
@@ -43,7 +43,7 @@ type RawEnvelope = {
 
 A client rejects, with `ModelError`, only when there is no HTTP response: connection refused gives `MODEL_UNAVAILABLE`, and an abort or timeout gives `MODEL_TIMEOUT`.
 
-**Interpretation.** `interpretEnvelope(env, numCtx)` is the only place that decides whether a reply is usable. Both clients go through it, so tests of the fake exercise the production checks. The checks run in this order:
+**Interpretation.** `interpretJson(env, schema, numCtx)` holds the envelope checks for any JSON contract; `interpretEnvelope(env, numCtx)` applies them with `TurnSchema`, and the chooser uses them with `ChooserSchema`. It is the only place that decides whether a reply is usable. Both clients go through it, so tests of the fake exercise the production checks. The checks run in this order:
 
 | Check | Result |
 | --- | --- |
@@ -78,6 +78,13 @@ The messages name the fix ("Is `ollama serve` running?", "`ollama pull qwen3.5:9
 
 **`npm run model:warm`** plants a prefix-cache snapshot at the static-prompt boundary for today (`plantSnapshot`: two requests that share the system prompt and diverge at the first user token, OL-22/23), then warms the embedder. The live eval runner does the same for its cases' date before the first scored turn.
 
+## The recommendation chooser (D-20)
+
+`lib/llm/chooser.ts` defines the second call of a "recommend" turn:
+- **Contract:** `ChooserSchema = { pick: string | null, alternatives: string[] (≤ 2), reply: string (≤ 400) }`, sent as `format` like the turn schema. Version `CHOOSER_VERSION` ("c1"); a recommend turn's `promptVersion` is "v5+c1".
+- **Prompt:** a fully static system message (rules: choose only listed IDs, judge fit from the guest's request, one or two sentences naming the dish and its price, no invented popularity or labels, no booking talk, a question when too vague). The user message holds the active preferences, any "cheaper than" or "different from" line, the last four messages and the dishes that fit, one line each (ID, name, course, price, labels, spice, description). `model:warm` and the live eval plant its prefix too.
+- **Validation and retry** live in `lib/chat/recommend.ts` (`validateChoice`, `recommendTurn`): one retry with the reasons (`chooserCorrection`), then a fallback in code. The chooser runs in the same model-gate slot as the first call.
+
 ## Embedder
 
 ```ts
@@ -97,9 +104,9 @@ interface Embedder {
 
 `buildPrompt(input)` in `lib/llm/prompt.ts` is pure and returns `{ system, user, version: "v4" }`.
 
-- **`system`** is static for the branch-local day: rules, the schema, the branch list, restaurant, branch, hours and exception facts, 8 examples, a 7-line weekday list and the 31-day calendar. A test asserts it is byte-identical for any guest, draft, history, retrieved facts or minute on the same day, so Ollama can reuse the cached prefix (D-05).
-- **`user`** holds everything per turn: the current time, the retrieved facts, the draft (booking fields only, never name, phone, email or note), the last 8 messages as one JSON `<history>` block, then `<guest_message>`.
-- **v4 vs the probe's v2.** A test diffs v4 against `evals/fixtures/probe-prompt.v2.json` (written by `node scripts/model-probe.mjs --dump-prompt`). The only differences:
+- **`system`** is static for the branch-local day: rules (rule 8 defines `prefs`), the schema, the branch list, restaurant, branch, hours and exception facts, 8 examples (one recommendation and one menu request among them), a 7-line weekday list and the 31-day calendar. A test asserts it is byte-identical for any guest, draft, history, retrieved facts or minute on the same day, so Ollama can reuse the cached prefix (D-05).
+- **`user`** holds everything per turn: the current time, the retrieved facts, the draft (booking fields only, never name, phone, email or note), the current food preferences and the last suggested dishes (D-20 memory), the last 8 messages as one JSON `<history>` block, then `<guest_message>`.
+- **v5 vs the probe's v2.** A test diffs v4 against `evals/fixtures/probe-prompt.v2.json` (written by `node scripts/model-probe.mjs --dump-prompt`). The only differences:
   - the role line comes from the restaurant row (D-13), and `restaurant:about` leads the facts;
   - weekly hours facts name their exceptions (D-10);
   - rule 6 also covers `<history>`, and history is one JSON block (D-15);
@@ -107,7 +114,8 @@ interface Embedder {
   - v4 (Phase 7, each from a D2 failure; `docs/EVAL_REPORT.md`):
     - rule 1: asking whether a table is free, or changing the booking being arranged in this chat, is `booking`; `manage_booking` is only for a confirmed booking;
     - rule 2: a weekday on its own is looked up in a new "Weekdays" list (the first date after today for each weekday); "the 28th" is the first calendar date with that day; a day and month beyond the calendar is still written out, so code can explain the 30-day limit; a time is set only from a clock time the guest gives;
-    - rule 4: a dish is called vegan, vegetarian, gluten-free or free of an allergen only if the facts say so for that dish.
+    - rule 4: a dish is called vegan, vegetarian, gluten-free or free of an allergen only if the facts say so for that dish;
+  - v5 (D-20): rule 1 adds the "menu" and "recommend" intents; rule 8 defines `prefs`; two examples (the weather and a greeting) are replaced by a recommendation and a menu request; the user message carries the food preferences and the last suggestions; the schema line is grammar v2.
 - **After the model (D-17, `lib/chat/guards.ts`).** Before the merge, `runTurn` applies deterministic checks to the model's fields:
   - **Time.** A time, or a time ambiguity candidate, is kept only if the latest masked message states that hour as a clock time ("8pm", "at 7", "half 8", "quarter to nine", "nineish", noon). A bare number such as a party size doesn't count. Otherwise it is dropped (trace `ignore_field`).
   - **Weekday.** One plain weekday and no other date words sets the date to that weekday's first date after today, the same date the prompt's Weekdays list gives (trace `correct_field`). Today's weekday is left to the model.
@@ -123,7 +131,7 @@ interface Embedder {
 - a directive string;
 - an array of the above, one per attempt.
 
-Unknown text gets an `unclear` turn. With `E2E_TEST_MODE=1`, `FAKE_SCRIPT` names a JSON script file. These directives also work inline in the guest text:
+Unknown text gets an `unclear` turn. The chooser's call is looked up under `"chooser:<guest text>"` (its prompt repeats the guest's message). Scripts written before D-20 may leave out `prefs`; the double fills in `null`, while the real model must always send it. In D1 cases, `modelScript` replies (turns or chooser choices) are served in call order, and a script that runs out fails the case (`ScriptExhaustedError`) instead of posing as "model down". With `E2E_TEST_MODE=1`, `FAKE_SCRIPT` names a JSON script file. These directives also work inline in the guest text:
 
 | Directive | Simulates |
 | --- | --- |

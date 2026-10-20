@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ActionSchema, DraftSchema, MessageSchema } from "@/lib/chat/types";
+import { ActionSchema, AVOIDS, COURSES, DIETS, DraftSchema, MessageSchema } from "@/lib/chat/types";
+import { ChooserSchema } from "@/lib/llm/chooser";
 import { TurnSchema } from "@/lib/llm/schema";
 
 // Eval case format (MASTER_PROMPT §6.3, D-12). One JSON object per line in evals/cases/*.jsonl. Unknown categories,
 // keys and turn kinds are errors, so a typo can never silently skip a check.
 
-/** §6.2 categories, plus 21 `retrieval` (D-02). */
+/** §6.2 categories, plus 21 `retrieval` (D-02) and 22 `recommendation` (D-20). */
 export const CATEGORIES = [
   "faq",
   "menu",
@@ -30,6 +31,7 @@ export const CATEGORIES = [
   "retry_after_timeout",
   "context_loss",
   "retrieval",
+  "recommendation",
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
 
@@ -43,7 +45,9 @@ const SetupOp = z.discriminatedUnion("op", [
 ]);
 
 /** A scripted model reply: a turn, an envelope, a fake directive, or the §6.3 tokens. */
-const ScriptReply = z.union([TurnSchema, z.strictObject({ raw: z.record(z.string(), z.unknown()) }), z.enum(["<<INVALID_JSON>>", "<<TIMEOUT>>", "<<DOWN>>"]), z.string().regex(/^#fake:[a-z_]+$/)]);
+/** A scripted turn; cases written before D-20 may leave out prefs (null). */
+const ScriptTurn = TurnSchema.extend({ prefs: TurnSchema.shape.prefs.default(null) });
+const ScriptReply = z.union([ScriptTurn, ChooserSchema, z.strictObject({ raw: z.record(z.string(), z.unknown()) }), z.enum(["<<INVALID_JSON>>", "<<TIMEOUT>>", "<<DOWN>>"]), z.string().regex(/^#fake:[a-z_]+$/)]);
 
 const Expect = z.strictObject({
   /** One intent, or a list of acceptable ones (e.g. an injection may be off_topic or unclear). */
@@ -71,6 +75,23 @@ const Expect = z.strictObject({
   submitStatus: z.number().int().optional(),
   submitCode: z.string().nullable().optional(),
   sameRefAsTurn: z.number().int().optional(),
+  /**
+   * D-20: the recommendation card this turn shows (it comes from the menu table, so these check facts, not wording).
+   * Any defensible dish passes: `satisfies` checks every dish shown against the stated constraints, `anyOf` lists the
+   * acceptable lead dishes when only a few are.
+   */
+  recommend: z
+    .strictObject({
+      shown: z.boolean().optional(),
+      satisfies: z.strictObject({ maxPrice: z.number().int().optional(), diet: z.array(z.enum(DIETS)).optional(), course: z.enum(COURSES).optional(), avoid: z.array(z.enum(AVOIDS)).optional(), mild: z.boolean().optional() }).optional(),
+      anyOf: z.array(z.string()).min(1).optional(),
+      notIds: z.array(z.string()).optional(),
+      cheaperThanTurn: z.number().int().min(1).optional(),
+      differentFromTurn: z.number().int().min(1).optional(),
+    })
+    .optional(),
+  /** D-20: a menu list (section or dietary list) is shown. */
+  menuShown: z.boolean().optional(),
 });
 export type Expectation = z.infer<typeof Expect>;
 

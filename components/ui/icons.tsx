@@ -67,3 +67,10 @@ export const CheckIcon = (p: P) => (
     <path d="m8.5 12.2 2.4 2.4 4.6-5" />
   </svg>
 );
+/** A covered dish (cloche), for "Help me find a dish". */
+export const DishIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M4 17h16M5.5 17a6.5 6.5 0 0 1 13 0" />
+    <path d="M12 8.5V7M10.5 7h3M3 20h18" />
+  </svg>
+);
