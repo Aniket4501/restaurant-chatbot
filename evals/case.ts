@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ActionSchema } from "@/lib/chat/types";
+import { ActionSchema, DraftSchema, MessageSchema } from "@/lib/chat/types";
 import { TurnSchema } from "@/lib/llm/schema";
 
 // Eval case format (MASTER_PROMPT §6.3, D-12). One JSON object per line in evals/cases/*.jsonl. Unknown categories,
@@ -46,7 +46,8 @@ const SetupOp = z.discriminatedUnion("op", [
 const ScriptReply = z.union([TurnSchema, z.strictObject({ raw: z.record(z.string(), z.unknown()) }), z.enum(["<<INVALID_JSON>>", "<<TIMEOUT>>", "<<DOWN>>"]), z.string().regex(/^#fake:[a-z_]+$/)]);
 
 const Expect = z.strictObject({
-  intent: z.string().nullable().optional(),
+  /** One intent, or a list of acceptable ones (e.g. an injection may be off_topic or unclear). */
+  intent: z.union([z.string().nullable(), z.array(z.string()).min(1)]).optional(),
   outcome: z.string().optional(),
   actions: z.array(z.strictObject({ name: z.string(), args: z.record(z.string(), z.unknown()).optional() })).optional(),
   noActions: z.array(z.string()).optional(),
@@ -57,7 +58,10 @@ const Expect = z.strictObject({
   slotsExclude: z.array(z.string()).optional(),
   alternativesMin: z.number().int().optional(),
   mustCite: z.array(z.string()).optional(),
+  mustCiteAny: z.array(z.string()).min(1).optional(),
   mustIncludeValues: z.array(z.string()).optional(),
+  /** Canonical values that must NOT appear (times "19:00", prices "₹645", phones "+91…"). */
+  mustNotIncludeValues: z.array(z.string()).optional(),
   mustAbstain: z.boolean().optional(),
   reservationsCreated: z.number().int().optional(),
   replyMustMatch: z.array(z.string()).optional(),
@@ -92,6 +96,9 @@ export const CaseSchema = z.strictObject({
   now: z.string().regex(/[+-]\d\d:\d\d$|Z$/, "ISO instant with an offset"),
   fixture: z.literal("base"),
   embedder: z.enum(["down", "timeout"]).optional(),
+  /** Client state before turn 1, as a (possibly forged) client would send it (D-15 forged history and draft cases). */
+  history: z.array(MessageSchema).max(7).optional(),
+  draft: DraftSchema.optional(),
   setup: z.array(SetupOp).optional(),
   modelScript: z.array(ScriptReply).optional(),
   turns: z.array(Turn).min(1),

@@ -21,6 +21,7 @@ import { phonesIn, pricesIn, timesIn } from "@/lib/kb/canonical";
 import { EmbedError, embedderFor, fakeEmbedder, type Embedder } from "@/lib/kb/embedder";
 import { loadFactSource, renderKbFacts, renderStaticFacts } from "@/lib/kb/facts";
 import { indexKb } from "@/lib/kb/index";
+import { retrieveFacts } from "@/lib/kb/retrieve";
 import type { ModelClient } from "@/lib/llm/client";
 import { sequenceModel, type FakeReply } from "@/lib/llm/fake";
 import { buildSystemPrompt, PROMPT_VERSION } from "@/lib/llm/prompt";
@@ -31,6 +32,7 @@ import { modelFor, OLLAMA_CHAT_READY } from "@/lib/llm/provider";
 import { toInstant } from "@/lib/time/tz";
 import { CATEGORIES, loadCases, type EvalCase, type Expectation } from "@/evals/case";
 import { checkCase, offeredStarts, snapshotRows, type CaseRecord, type TurnRecord, type Violation } from "@/evals/invariants";
+import { checkThresholds, computeMetrics, type RetrievalMetrics, type Thresholds } from "@/evals/metrics";
 
 // Eval runner (MASTER_PROMPT §6, D-12): `npm run eval:scripted` (D1, fake model) and `npm run eval` (D2, Ollama).
 // Every case runs on a fresh temp database loaded from evals/fixtures/base.json, with the case's `now`. Chat turns go
@@ -48,6 +50,10 @@ export type CaseResult = {
   passed: boolean;
   failures: string[];
   violations: Violation[];
+  /** Every expectation result, for the §6.5 metrics. */
+  checks: Check[];
+  /** INV-03 denominator: offered starts and how many the engine had open. */
+  offered: { total: number; open: number };
   modelCalls: number;
   turns: {
     kind: string;
@@ -87,46 +93,67 @@ function deepMatch(actual: unknown, want: unknown): boolean {
 
 type TurnView = TurnRecord & { intent: string | null; draft: Draft; retrievalMode: string | null; submit: { status: number; code: string | null; ref: string | null } | null; modelCalls: number };
 
-function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs: () => string[]; refOfTurn: (i: number) => string | null }): string[] {
+export type Check = { key: string; ok: boolean; detail: string };
+
+function hasValue(text: string, v: string): boolean {
+  if (/^\d{2}:\d{2}$/.test(v)) return timesIn(text).has(Number(v.slice(0, 2)) * 60 + Number(v.slice(3)));
+  if (v.startsWith("₹")) return pricesIn(text).has(Number(v.slice(1)));
+  if (v.startsWith("+")) return phonesIn(text).has(v);
+  return text.includes(v);
+}
+
+/** One result per expectation key (the §6.5 metrics are computed from these). */
+function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs: () => string[]; refOfTurn: (i: number) => string | null }): Check[] {
   if (!e) return [];
-  const f: string[] = [];
+  const out: Check[] = [];
   const text = t.shown?.text ?? "";
   const blocks = t.shown?.blocks ?? [];
   const slots = blocks.find((b) => b.type === "slots") as Extract<Block, { type: "slots" }> | undefined;
-  const fail = (s: string) => f.push(`turn ${t.index + 1}: ${s}`);
-  if (e.intent !== undefined && t.intent !== e.intent) fail(`intent ${t.intent} ≠ ${e.intent}`);
-  if (e.outcome !== undefined && t.outcome !== e.outcome) fail(`outcome ${t.outcome} ≠ ${e.outcome}`);
+  const check = (key: string, ok: boolean, detail: string) => out.push({ key, ok, detail: `turn ${t.index + 1}: ${detail}` });
+  if (e.intent !== undefined) {
+    const want = Array.isArray(e.intent) ? e.intent : [e.intent];
+    check("intent", want.includes(t.intent as string), `intent ${t.intent} ∉ ${want.join("|")}`);
+  }
+  if (e.outcome !== undefined) check("outcome", t.outcome === e.outcome, `outcome ${t.outcome} ≠ ${e.outcome}`);
   if (e.actions) {
     let i = 0;
+    const missing: string[] = [];
     for (const want of e.actions) {
       while (i < t.trace.length && !(t.trace[i].action === want.name && (!want.args || deepMatch((t.trace[i] as { args?: unknown }).args, want.args)))) i++;
-      if (i >= t.trace.length) fail(`missing action ${want.name}${want.args ? ` ${JSON.stringify(want.args)}` : ""} (trace: ${t.trace.map((x) => x.action).join(", ")})`);
+      if (i >= t.trace.length) missing.push(`${want.name}${want.args ? ` ${JSON.stringify(want.args)}` : ""}`);
       else i++;
     }
+    check("actions", missing.length === 0, `missing action ${missing.join("; ")} (trace: ${t.trace.map((x) => x.action).join(", ")})`);
   }
-  for (const n of e.noActions ?? []) if (t.trace.some((x) => x.action === n)) fail(`unexpected action ${n}`);
-  if (e.draft && !deepMatch(t.draft, e.draft)) fail(`draft ${JSON.stringify(t.draft)} does not match ${JSON.stringify(e.draft)}`);
-  for (const b of e.blocks ?? []) if (!blocks.some((x) => x.type === b)) fail(`no ${b} block (got ${blocks.map((x) => x.type).join(", ") || "none"})`);
-  if (e.fieldRequest && !blocks.some((x) => x.type === "field_request" && x.field === e.fieldRequest)) fail(`no field_request for ${e.fieldRequest}`);
+  if (e.noActions) {
+    const bad = e.noActions.filter((n) => t.trace.some((x) => x.action === n));
+    check("noActions", bad.length === 0, `unexpected action ${bad.join(", ")}`);
+  }
+  if (e.draft) check("draft", deepMatch(t.draft, e.draft), `draft ${JSON.stringify(t.draft)} does not match ${JSON.stringify(e.draft)}`);
+  if (e.blocks) {
+    const miss = e.blocks.filter((b) => !blocks.some((x) => x.type === b));
+    check("blocks", miss.length === 0, `no ${miss.join(", ")} block (got ${blocks.map((x) => x.type).join(", ") || "none"})`);
+  }
+  if (e.fieldRequest) check("fieldRequest", blocks.some((x) => x.type === "field_request" && x.field === e.fieldRequest), `no field_request for ${e.fieldRequest}`);
   const offered = slots?.groups.flatMap((g) => g.slots.map((s) => s.time)) ?? [];
-  for (const time of e.slotsInclude ?? []) if (!offered.includes(time)) fail(`slot ${time} not offered (${offered.join(" ")})`);
-  for (const time of e.slotsExclude ?? []) if (offered.includes(time)) fail(`slot ${time} offered`);
-  if (e.alternativesMin !== undefined && (slots?.alternatives.length ?? 0) < e.alternativesMin) fail(`alternatives ${slots?.alternatives.length ?? 0} < ${e.alternativesMin}`);
-  for (const id of e.mustCite ?? []) if (!t.citedFactIds.includes(id)) fail(`did not cite ${id} (cited ${t.citedFactIds.join(", ") || "none"})`);
-  for (const v of e.mustIncludeValues ?? []) {
-    const ok = /^\d{2}:\d{2}$/.test(v) ? timesIn(text).has(Number(v.slice(0, 2)) * 60 + Number(v.slice(3))) : v.startsWith("₹") ? pricesIn(text).has(Number(v.slice(1))) : v.startsWith("+") ? phonesIn(text).has(v) : text.includes(v);
-    if (!ok) fail(`reply lacks ${v}`);
-  }
-  if (e.mustAbstain !== undefined && (t.outcome === "faq_fallback") !== e.mustAbstain) fail(e.mustAbstain ? `did not abstain (outcome ${t.outcome})` : "abstained");
-  if (e.reservationsCreated !== undefined && ctx.createdRefs().length !== e.reservationsCreated) fail(`reservations created ${ctx.createdRefs().length} ≠ ${e.reservationsCreated}`);
-  for (const re of e.replyMustMatch ?? []) if (!new RegExp(re, "i").test(text)) fail(`reply does not match /${re}/: "${text.slice(0, 100)}"`);
-  for (const re of e.replyMustNotMatch ?? []) if (new RegExp(re, "i").test(text)) fail(`reply matches /${re}/`);
-  if (e.retrievalMode !== undefined && t.retrievalMode !== e.retrievalMode) fail(`retrieval ${t.retrievalMode} ≠ ${e.retrievalMode}`);
-  if (e.modelCalls !== undefined && t.modelCalls !== e.modelCalls) fail(`model calls ${t.modelCalls} ≠ ${e.modelCalls}`);
-  if (e.submitStatus !== undefined && t.submit?.status !== e.submitStatus) fail(`submit status ${t.submit?.status} ≠ ${e.submitStatus}`);
-  if (e.submitCode !== undefined && (t.submit?.code ?? null) !== e.submitCode) fail(`submit code ${t.submit?.code} ≠ ${e.submitCode}`);
-  if (e.sameRefAsTurn !== undefined && (!t.submit?.ref || t.submit.ref !== ctx.refOfTurn(e.sameRefAsTurn - 1))) fail(`ref ${t.submit?.ref} ≠ turn ${e.sameRefAsTurn}'s ${ctx.refOfTurn(e.sameRefAsTurn - 1)}`);
-  return f;
+  if (e.slotsInclude) check("slotsInclude", e.slotsInclude.every((x) => offered.includes(x)), `slots ${e.slotsInclude.filter((x) => !offered.includes(x)).join(" ")} not offered (${offered.join(" ")})`);
+  if (e.slotsExclude) check("slotsExclude", !e.slotsExclude.some((x) => offered.includes(x)), `slot ${e.slotsExclude.filter((x) => offered.includes(x)).join(" ")} offered`);
+  if (e.alternativesMin !== undefined) check("alternativesMin", (slots?.alternatives.length ?? 0) >= e.alternativesMin, `alternatives ${slots?.alternatives.length ?? 0} < ${e.alternativesMin}`);
+  if (e.mustCite) check("mustCite", e.mustCite.every((id) => t.citedFactIds.includes(id)), `did not cite ${e.mustCite.filter((id) => !t.citedFactIds.includes(id)).join(", ")} (cited ${t.citedFactIds.join(", ") || "none"})`);
+  if (e.mustCiteAny) check("mustCiteAny", e.mustCiteAny.some((id) => t.citedFactIds.includes(id)), `cited none of ${e.mustCiteAny.join(", ")} (cited ${t.citedFactIds.join(", ") || "none"})`);
+  if (e.mustIncludeValues) check("mustIncludeValues", e.mustIncludeValues.every((v) => hasValue(text, v)), `reply lacks ${e.mustIncludeValues.filter((v) => !hasValue(text, v)).join(", ")}`);
+  if (e.mustNotIncludeValues) check("mustNotIncludeValues", !e.mustNotIncludeValues.some((v) => hasValue(text, v)), `reply includes ${e.mustNotIncludeValues.filter((v) => hasValue(text, v)).join(", ")}`);
+  // "abstain" (an unknown fact must get the fallback) and "answer" (a known one must not) are scored separately.
+  if (e.mustAbstain !== undefined) check(e.mustAbstain ? "abstain" : "answer", (t.outcome === "faq_fallback") === e.mustAbstain, e.mustAbstain ? `did not abstain (outcome ${t.outcome})` : "abstained");
+  if (e.reservationsCreated !== undefined) check("reservationsCreated", ctx.createdRefs().length === e.reservationsCreated, `reservations created ${ctx.createdRefs().length} ≠ ${e.reservationsCreated}`);
+  for (const re of e.replyMustMatch ?? []) check("replyMustMatch", new RegExp(re, "i").test(text), `reply does not match /${re}/: "${text.slice(0, 100)}"`);
+  for (const re of e.replyMustNotMatch ?? []) check("replyMustNotMatch", !new RegExp(re, "i").test(text), `reply matches /${re}/`);
+  if (e.retrievalMode !== undefined) check("retrievalMode", t.retrievalMode === e.retrievalMode, `retrieval ${t.retrievalMode} ≠ ${e.retrievalMode}`);
+  if (e.modelCalls !== undefined) check("modelCalls", t.modelCalls === e.modelCalls, `model calls ${t.modelCalls} ≠ ${e.modelCalls}`);
+  if (e.submitStatus !== undefined) check("submitStatus", t.submit?.status === e.submitStatus, `submit status ${t.submit?.status} ≠ ${e.submitStatus}`);
+  if (e.submitCode !== undefined) check("submitCode", (t.submit?.code ?? null) === e.submitCode, `submit code ${t.submit?.code} ≠ ${e.submitCode}`);
+  if (e.sameRefAsTurn !== undefined) check("sameRefAsTurn", !!t.submit?.ref && t.submit.ref === ctx.refOfTurn(e.sameRefAsTurn - 1), `ref ${t.submit?.ref} ≠ turn ${e.sameRefAsTurn}'s ${ctx.refOfTurn(e.sameRefAsTurn - 1)}`);
+  return out;
 }
 
 /** One block as a transcript line: its type plus what the guest saw (times, the card, the ref, the notice). */
@@ -173,7 +200,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
   const saved = { log: console.log, warn: console.warn, error: console.error, info: console.info };
   const capture = (...a: unknown[]) => void logs.push(a.map(String).join(" "));
   let db: DB | null = null;
-  const result: CaseResult = { id: c.id, category: c.category, severity: c.severity, run: opts.run ?? 1, passed: false, failures, violations: [], modelCalls: 0, turns: [] };
+  const result: CaseResult = { id: c.id, category: c.category, severity: c.severity, run: opts.run ?? 1, passed: false, failures, violations: [], checks: [], offered: { total: 0, open: 0 }, modelCalls: 0, turns: [] };
   try {
     console.log = console.warn = console.error = console.info = capture;
     const now = Date.parse(c.now);
@@ -232,9 +259,9 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
     });
 
     // Client state, as the browser keeps it.
-    let draft: Draft = emptyDraft();
+    let draft: Draft = c.draft ?? emptyDraft();
     let context: { lastCitedIds: string[] } = { lastCitedIds: [] };
-    let history: ChatMessage[] = [];
+    let history: ChatMessage[] = c.history ? [...c.history] : [];
     let lastConfirm: Extract<Block, { type: "confirm" }> | null = null;
     let lastSubmit: { key: string; body: Record<string, unknown>; card: Extract<Block, { type: "confirm" }> } | null = null;
     const records: TurnView[] = [];
@@ -389,11 +416,17 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
       };
       records.push(rec);
       result.modelCalls += rec.modelCalls;
-      failures.push(...checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null }));
+      result.offered.total += rec.offered.length;
+      result.offered.open += rec.offered.filter((o) => o.open).length;
+      const turnChecks = checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null });
+      result.checks.push(...turnChecks);
+      failures.push(...turnChecks.filter((x) => !x.ok).map((x) => x.detail));
     }
 
     const last = records.at(-1)!;
-    failures.push(...checkExpect(c.expect, last, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null }).map((s) => s.replace(/^turn \d+:/, "case:")));
+    const caseChecks = checkExpect(c.expect, last, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null }).map((x) => ({ ...x, detail: x.detail.replace(/^turn \d+:/, "case:") }));
+    result.checks.push(...caseChecks);
+    failures.push(...caseChecks.filter((x) => !x.ok).map((x) => x.detail));
     for (const fb of c.forbidden ?? []) {
       if (fb === "reservation_created" && createdRefs().length) failures.push(`forbidden: reservation_created (${createdRefs().length})`);
     }
@@ -418,6 +451,34 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
   }
   result.passed = failures.length === 0 && result.violations.length === 0;
   return result;
+}
+
+/**
+ * AC-15 (D-13), live: hit@8 and recall@8 over the 30 labelled probe queries (R01–R30) with the run's embedder (hybrid)
+ * and with none (lexical), on the run's template database.
+ */
+export async function measureRetrieval(template: string, embedder: Embedder | null): Promise<RetrievalMetrics> {
+  const queries = (JSON.parse(fs.readFileSync(path.join(ROOT, "evals/fixtures/probe-messages.json"), "utf8")) as { retrieval: { query: string; relevant: string[] }[] }).retrieval;
+  const db = openDb(template);
+  const facts = renderKbFacts(loadFactSource(db));
+  const score = async (e: Embedder | null) => {
+    let hit = 0;
+    let recall = 0;
+    let hybrid = true;
+    for (const q of queries) {
+      const r = await retrieveFacts(q.query, {}, { db, facts, embedder: e, timeoutMs: 30_000 });
+      if (r.mode !== "hybrid") hybrid = false;
+      const top = r.hits.map((h) => h.factId);
+      const found = q.relevant.filter((id) => top.includes(id)).length;
+      if (found) hit++;
+      recall += found / Math.min(q.relevant.length, 8);
+    }
+    return { hitAt8: hit / queries.length, recallAt8: recall / queries.length, hybrid };
+  };
+  const h = embedder ? await score(embedder) : null;
+  const l = await score(null);
+  db.close();
+  return { queries: queries.length, hybrid: h && h.hybrid ? { hitAt8: h.hitAt8, recallAt8: h.recallAt8 } : null, lexical: { hitAt8: l.hitAt8, recallAt8: l.recallAt8 } };
 }
 
 function arg(name: string): string | undefined {
@@ -493,8 +554,19 @@ async function main(): Promise<number> {
       const why = [...r.failures, ...r.violations.map((v) => `${v.inv}${v.turn !== null ? ` turn ${v.turn + 1}` : ""}: ${v.detail}`)];
       console.log(`${r.passed ? "PASS" : "FAIL"} ${c.id} ${c.category}${runs > 1 ? ` run ${run}` : ""}${why.length ? `\n     ${why.join("\n     ")}` : ""}`);
     }
+  const retrieval = mode === "live" ? await measureRetrieval(template, embedder) : null;
   fs.rmSync(path.dirname(template), { recursive: true, force: true });
   const passed = results.filter((r) => r.passed).length;
+  const metrics = computeMetrics(results, retrieval);
+  const subset = !!(only || category);
+  const thresholdLines = mode === "live" && !subset ? checkThresholds(metrics, JSON.parse(fs.readFileSync(path.join(ROOT, "evals/thresholds.json"), "utf8")) as Thresholds) : [];
+  const fmt = (v: number | null) => (v === null ? "n/a" : Number.isInteger(v) ? String(v) : v.toFixed(3));
+  if (mode === "live") {
+    console.log(`latency booking p50/p95 ${fmt(metrics.latency.booking.p50)}/${fmt(metrics.latency.booking.p95)} ms (run 1: ${fmt(metrics.latency.firstRunBooking.p50)}/${fmt(metrics.latency.firstRunBooking.p95)}), faq ${fmt(metrics.latency.faq.p50)}/${fmt(metrics.latency.faq.p95)} ms (run 1: ${fmt(metrics.latency.firstRunFaq.p50)}/${fmt(metrics.latency.firstRunFaq.p95)}); prompt max ${fmt(metrics.tokens.promptMax)} tokens`);
+    if (retrieval) console.log(`retrieval (${retrieval.queries} labelled queries): hybrid hit@8 ${fmt(retrieval.hybrid?.hitAt8 ?? null)} recall@8 ${fmt(retrieval.hybrid?.recallAt8 ?? null)}; lexical hit@8 ${fmt(retrieval.lexical.hitAt8)} recall@8 ${fmt(retrieval.lexical.recallAt8)}`);
+    if (subset) console.log("subset run (--case/--category): thresholds not applied");
+    for (const l of thresholdLines) console.log(`${l.ok ? "✓" : "✗"} ${l.metric.padEnd(30)} ${fmt(l.value).padStart(7)}  (${l.want})${l.override ? `  override: ${l.override}` : ""}`);
+  }
   const violations = results.reduce((n, r) => n + r.violations.length, 0);
   const datasetHash = createHash("sha256")
     .update(fs.readdirSync(casesDir).filter((n) => n.endsWith(".jsonl")).sort().map((n) => fs.readFileSync(path.join(casesDir, n), "utf8")).join("\n"))
@@ -520,8 +592,10 @@ async function main(): Promise<number> {
   const label = arg("label") ? `_${arg("label")!.replace(/[^a-z0-9-]+/gi, "-")}` : "";
   const out = path.resolve(arg("out") ?? (mode === "live" ? path.join(ROOT, "evals/results", `${started.toISOString().replace(/[:.]/g, "-")}_${(model?.model ?? "model").replace(/[^a-z0-9.]+/gi, "-")}${label}.json`) : path.join(ROOT, "test-results/evals/scripted-latest.json")));
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, `${JSON.stringify({ meta, summary: { cases: results.length, passed, failed: results.length - passed, invariantViolations: violations }, results }, null, 1)}\n`);
+  fs.writeFileSync(out, `${JSON.stringify({ meta, summary: { cases: results.length, passed, failed: results.length - passed, invariantViolations: violations }, metrics, thresholds: thresholdLines, results }, null, 1)}\n`);
   console.log(`eval:${mode} ${passed}/${results.length} passed, ${violations} invariant violations → ${path.relative(ROOT, out)}`);
+  // Scripted (D1) gates on 100% and no violations; a full live run gates on evals/thresholds.json (§6.5).
+  if (mode === "live") return subset ? (violations === 0 ? 0 : 1) : thresholdLines.every((l) => l.ok) ? 0 : 1;
   return passed === results.length && violations === 0 ? 0 : 1;
 }
 

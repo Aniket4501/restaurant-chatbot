@@ -101,6 +101,51 @@ Retrieval is recommended for two reasons: it is what was approved at G1 (D-02), 
 - **Hours answers:** wrong for exception dates and closed services on both models (HF4, F04). D-10 renders hours answers from facts instead of model prose.
 - **Latency target:** p95 ≤ 4 s is met under light-to-moderate load, not under heavy background load. AC-12 treats it as a target, and Phase 6 re-measures under demo conditions.
 
+## Phase 6 live baseline (D2, 2026-10-20)
+
+**Command:** `npm run eval -- --runs 3 --label baseline`.
+- **Results:** `evals/results/2026-10-20T09-18-11-078Z_qwen3.5-9b_baseline.json`.
+- **Setup:** 81 live cases (`evals/cases/live-d2.jsonl` plus `live-smoke.jsonl`) × 3 runs. Production code: prompt v3, hybrid retrieval, D-05 settings.
+- **Fixture:** `base.json` at Fri 16 Oct 2026, 2:00 PM IST.
+- **Conditions:** the machine was shared (load average 14–25 during the day, about 22 GB swap in use). The prefix was warmed for the cases' date before scoring.
+
+At temperature 0 the 3 runs measure repeatability, not robustness to rephrasing. Robustness comes from the varied phrasings across cases. A finite suite is evidence, not proof.
+
+| Metric (§6.5) | Result | Threshold |
+| --- | --- | --- |
+| Case-runs passed | 225 / 243 (92.6%); the same 6 cases fail in every run, 0 flaky | — |
+| Invariant violations (INV-01…07) | 0 | 0 |
+| Duplicate bookings, unsupported claims shown | 0, 0 | 0, 0 |
+| Availability accuracy (offered times open in the engine) | 1.0 | 1.0 |
+| Injection resistance; recovery; abstention on unknown facts | 1.0; 1.0; 1.0 | 1.0 each |
+| Intent accuracy | 0.984 | ≥ 0.90 |
+| Booking field extraction, all fields exact | 0.889 | ≥ 0.85 |
+| Backend action correctness | 0.944 | ≥ 0.90 |
+| Grounded answer correctness | 0.909 | ≥ 0.85 |
+| First-try schema validity | 1.0 | ≥ 0.95 |
+| Retrieval, 30 labelled queries, live embedder | hybrid hit@8 1.0, recall@8 0.950; lexical hit@8 0.867 | 1.0 / 0.90 / 0.85 |
+| Max prompt tokens | 4,275 | < 7,680 |
+| Warm latency p50 / p95, booking turns | 2,716 / 4,430 ms (run 1: 2,571 / 3,626) | target p95 ≤ 4 s (AC-12, a target) |
+| Warm latency p50 / p95, FAQ turns | 3,331 / 4,908 ms (run 1: 3,266 / 4,991) | target p95 ≤ 4 s |
+
+All §6.5 gates and floors are met, so there is no G3 item. The latency target is missed under this load. Runs 2–3 reuse prefix-cache snapshots from run 1's identical prompts, which is why run 1 is reported separately.
+
+**Known limitations: the 6 cases that fail in every run, for Phase 7.**
+
+| Case | What happens | Kind |
+| --- | --- | --- |
+| LV-SMOKE-04 "Which desserts are vegan…" | Lists Ember Pistachio Kulfi as vegan; it contains dairy and nuts | Model, non-numeric claim. Grounding passes it because every price is real (§5.7 known limit) |
+| LV-BK-007 "book for 7 on the 28th at 7" | Date extracted as 2026-11-04 instead of 2026-10-28 | Model extraction (probe H05 was a known miss) |
+| LV-CONF-001 "actually make it lunch instead" after an 8 PM card | Re-extracts dinner and 20:00 from the history, so the 8 PM card is offered again | Model: extracts from history despite rule 2 |
+| LV-CONF-002 "actually make that 4 people" | Classified manage_booking, so the party size is not changed | Model intent (probe B08) |
+| LV-INV-004 "on 30 December" | Model leaves the date null (it isn't in the 31-day calendar), so the guest hears "Which date would you like?" with no reason | Prompt and app design: an out-of-horizon date is never seen by code |
+| LV-FAQ-006 "Can we bring a birthday cake?" | The correct answer ("…Please mention it in the booking note.") is replaced by the fallback | App rule: D-15 shows a sentence with booking words only if it is verbatim in the fact. Its precision cost, measured |
+
+**Notes for Phase 7.**
+- The kulfi answer was the only wrong fact shown in 243 runs. Every other answer that cited facts passed grounding and the stricter INV-05.
+- Booking flows never showed model prose.
+- The D2 smoke run recorded the first cold prefill after a date change at 15 s. The live runner and `model:warm` now plant the prefix first.
+
 ## Reproduce
 
 Runs before 15:17 used the 1–99 grammar. To reproduce them exactly, copy `evals/fixtures/experiments/turn.schema.partySize-1-99.json` over `evals/fixtures/turn.schema.json` first.
