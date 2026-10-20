@@ -10,7 +10,7 @@ export type SlotWire = { branch: string; date: string; time: string; service: "l
 type ReservationWire = {
   ref: string;
   status: "confirmed" | "cancelled";
-  branch: { slug: string; name: string; address: string; phone: string };
+  branch: { slug: string; name: string; address: string; phone: string; phoneLabel?: string };
   dateLabel: string;
   timeLabel: string;
   partySize: number;
@@ -60,13 +60,14 @@ export function submitOutcome(
       status: r.status,
       branchName: r.branch.name,
       address: r.branch.address,
-      phone: r.branch.phone,
+      phone: r.branch.phoneLabel ?? r.branch.phone,
       dateLabel: r.dateLabel,
       timeLabel: r.timeLabel,
       partySize: r.partySize,
       guestName: r.guestName,
     };
-    return { ...base, text: `You're booked. Your reference is ${r.ref}.`, blocks: [confirmation], ref: r.ref, clearDraft: true };
+    // No text outside the card: the booked wording lives inside it, the only place claim text may appear (D-12 INV-04).
+    return { ...base, text: "", blocks: [confirmation], ref: r.ref, clearDraft: true };
   }
   const err = (body as ErrorWire)?.error ?? {};
   const slots = (alts: SlotWire[] | undefined): Block[] =>

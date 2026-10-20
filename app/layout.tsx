@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-// Fonts are chosen in T-16; next/font/google is avoided because it needs the network at build time.
+// System font stacks only (app/globals.css): next/font/google would need the network at build time (§7.4).
 export const metadata: Metadata = {
   title: "Neem & Ember",
   description: "Book a table and ask about Neem & Ember's branches, hours and menu.",
@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className="antialiased">
+      <body>{children}</body>
     </html>
   );
 }

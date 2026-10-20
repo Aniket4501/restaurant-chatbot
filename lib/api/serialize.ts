@@ -1,6 +1,7 @@
 import type { Slot } from "@/lib/booking/availability";
 import type { ReservationView } from "@/lib/booking/view";
 import { RULES } from "@/lib/config";
+import { formatPhone } from "@/lib/phone";
 import { dayLabel, isoInZone } from "@/lib/time/tz";
 
 /** A slot on the wire: ISO time with the branch offset plus labels (§5.9). */
@@ -11,5 +12,5 @@ export type SlotJson = ReturnType<typeof slotJson>;
 
 /** A saved reservation as the confirmation card and admin list receive it. The guest's phone and email are never echoed. */
 export function reservationJson(v: ReservationView, zone: string = RULES.timezone) {
-  return { ...v, startsAtIso: isoInZone(v.startsAt, zone), endsAtIso: isoInZone(v.endsAt, zone) };
+  return { ...v, branch: { ...v.branch, phoneLabel: formatPhone(v.branch.phone) }, startsAtIso: isoInZone(v.startsAt, zone), endsAtIso: isoInZone(v.endsAt, zone) };
 }
