@@ -10,7 +10,7 @@ import { createReservation } from "@/lib/booking/create";
 import { noTurnLimit, openGate } from "@/lib/chat/ratelimit";
 import { submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import { branchInfo } from "@/lib/chat/templates";
-import { runTurn } from "@/lib/chat/turn";
+import { runTurn, systemInputFor } from "@/lib/chat/turn";
 import { emptyDraft, type Action, type Block, type ChatMessage, type Draft, type TraceEntry } from "@/lib/chat/types";
 import { loadConfig, MODEL } from "@/lib/config";
 import { openDb, type DB } from "@/lib/db/client";
@@ -23,7 +23,10 @@ import { loadFactSource, renderKbFacts, renderStaticFacts } from "@/lib/kb/facts
 import { indexKb } from "@/lib/kb/index";
 import type { ModelClient } from "@/lib/llm/client";
 import { sequenceModel, type FakeReply } from "@/lib/llm/fake";
-import { PROMPT_VERSION } from "@/lib/llm/prompt";
+import { buildSystemPrompt, PROMPT_VERSION } from "@/lib/llm/prompt";
+import { plantSnapshot } from "@/lib/llm/ollama";
+import { TURN_JSON_SCHEMA } from "@/lib/llm/schema";
+import { maskText } from "@/lib/llm/redact";
 import { modelFor, OLLAMA_CHAT_READY } from "@/lib/llm/provider";
 import { toInstant } from "@/lib/time/tz";
 import { CATEGORIES, loadCases, type EvalCase, type Expectation } from "@/evals/case";
@@ -46,7 +49,23 @@ export type CaseResult = {
   failures: string[];
   violations: Violation[];
   modelCalls: number;
-  turns: { kind: string; outcome: string | null; intent: string | null; retrievalMode: string | null; latencyMs: number | null; promptTokens: number | null; cachedTokens: number | null; outputTokens: number | null; firstTryValid: boolean | null }[];
+  turns: {
+    kind: string;
+    /** Masked guest text, the action, or "submit" (the transcript, §6.7). */
+    input: string;
+    reply: string;
+    blocks: string[];
+    cited: string[];
+    outcome: string | null;
+    intent: string | null;
+    retrievalMode: string | null;
+    latencyMs: number | null;
+    modelMs: number | null;
+    promptTokens: number | null;
+    cachedTokens: number | null;
+    outputTokens: number | null;
+    firstTryValid: boolean | null;
+  }[];
 };
 
 const SCRIPT_TOKENS: Record<string, FakeReply> = { "<<INVALID_JSON>>": "#fake:invalid", "<<TIMEOUT>>": "#fake:timeout", "<<DOWN>>": "#fake:down" };
@@ -110,7 +129,43 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
   return f;
 }
 
-export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; run?: number; model?: ModelClient; embedder?: Embedder | null } = { mode: "scripted" }): Promise<CaseResult> {
+/** One block as a transcript line: its type plus what the guest saw (times, the card, the ref, the notice). */
+function blockLine(b: Block): string {
+  switch (b.type) {
+    case "slots":
+      return `slots ${b.heading}: ${b.groups.flatMap((g) => g.slots.map((x) => x.time)).join(" ")}${b.alternatives.length ? ` | other: ${b.alternatives.map((a) => a.label).join(", ")}` : ""}`;
+    case "confirm":
+      return `confirm ${b.branch} ${b.date} ${b.time} x${b.partySize}`;
+    case "confirmation":
+      return `confirmation ${b.ref}`;
+    case "notice":
+      return `notice: ${b.text}`;
+    case "info":
+      return `info ${b.factIds.join(", ")}`;
+    case "field_request":
+      return `ask ${b.field}: ${b.chips.map((c) => c.label).join(" / ")}`;
+    case "quick_replies":
+      return `chips: ${b.chips.map((c) => c.label).join(" / ")}`;
+  }
+}
+
+/**
+ * A seeded, retrieval-indexed fixture database to copy for each case, so the live embedder indexes the 86 facts once
+ * per run instead of once per case. Returns its path; the caller removes the directory.
+ */
+export async function prepareTemplate(embedder: Embedder | null, now: number): Promise<string> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-eval-template-"));
+  const file = path.join(dir, "template.db");
+  const db = openDb(file);
+  migrate(db, now);
+  applySeed(db, parseSeed(JSON.parse(fs.readFileSync(path.join(ROOT, "evals/fixtures/base.json"), "utf8"))), { now });
+  if (embedder) await indexKb(db, renderKbFacts(loadFactSource(db)), embedder, now, { signal: AbortSignal.timeout(300_000) });
+  db.pragma("wal_checkpoint(TRUNCATE)");
+  db.close();
+  return file;
+}
+
+export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; run?: number; model?: ModelClient; embedder?: Embedder | null; template?: string } = { mode: "scripted" }): Promise<CaseResult> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-eval-"));
   const file = path.join(dir, "app.db");
   const failures: string[] = [];
@@ -122,11 +177,16 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
   try {
     console.log = console.warn = console.error = console.info = capture;
     const now = Date.parse(c.now);
-    db = openDb(file);
-    migrate(db, now);
-    applySeed(db, parseSeed(JSON.parse(fs.readFileSync(path.join(ROOT, "evals/fixtures/base.json"), "utf8"))), { now });
     const baseEmbedder = opts.mode === "live" ? (opts.embedder ?? null) : fakeEmbedder();
-    if (baseEmbedder) await indexKb(db, renderKbFacts(loadFactSource(db)), baseEmbedder, now, { signal: AbortSignal.timeout(300_000) });
+    if (opts.template) {
+      fs.copyFileSync(opts.template, file);
+      db = openDb(file);
+    } else {
+      db = openDb(file);
+      migrate(db, now);
+      applySeed(db, parseSeed(JSON.parse(fs.readFileSync(path.join(ROOT, "evals/fixtures/base.json"), "utf8"))), { now });
+      if (baseEmbedder) await indexKb(db, renderKbFacts(loadFactSource(db)), baseEmbedder, now, { signal: AbortSignal.timeout(300_000) });
+    }
     const embedder = c.embedder ? failingEmbedder(c.embedder) : baseEmbedder;
 
     // Setup.
@@ -236,7 +296,23 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         const confirm = r.reply.blocks.find((b) => b.type === "confirm") as Extract<Block, { type: "confirm" }> | undefined;
         if (confirm) lastConfirm = confirm;
         else if (!r.draft.selected) lastConfirm = null;
-        result.turns.push({ kind, outcome, intent, retrievalMode, latencyMs: r.meta.latencyMs, promptTokens: r.meta.promptTokens, cachedTokens: r.meta.cachedTokens, outputTokens: r.meta.outputTokens, firstTryValid: r.trace.some((x) => x.action === "model_call") ? (r.trace.find((x) => x.action === "model_call") as { result: string }).result === "ok" : null });
+        const last = input.messages.at(-1);
+        result.turns.push({
+          kind,
+          input: input.action ? JSON.stringify(input.action) : maskText(last?.content ?? ""),
+          reply: r.reply.text,
+          blocks: r.reply.blocks.map(blockLine),
+          cited: r.meta.citedFactIds,
+          outcome,
+          intent,
+          retrievalMode,
+          latencyMs: r.meta.latencyMs,
+          modelMs: r.meta.modelMs,
+          promptTokens: r.meta.promptTokens,
+          cachedTokens: r.meta.cachedTokens,
+          outputTokens: r.meta.outputTokens,
+          firstTryValid: r.trace.some((x) => x.action === "model_call") ? (r.trace.find((x) => x.action === "model_call") as { result: string }).result === "ok" : null,
+        });
         return r;
       };
 
@@ -266,6 +342,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         shown = { text: r.outcome.text, blocks: r.outcome.blocks };
         outcome = "submit";
         lastSubmit = { key, body, card }; // remembered so a lost response or reload can replay it
+        result.turns.push({ kind, input: `submit (HTTP ${r.status})`, reply: r.outcome.text, blocks: r.outcome.blocks.map(blockLine), cited: [], outcome: "submit", intent: null, retrievalMode: null, latencyMs: null, modelMs: null, promptTokens: null, cachedTokens: null, outputTokens: null, firstTryValid: null });
         if (r.outcome.clearDraft) {
           draft = emptyDraft();
           lastConfirm = null;
@@ -396,14 +473,27 @@ async function main(): Promise<number> {
   const results: CaseResult[] = [];
   const started = new Date();
   const partial = mode === "live" ? path.join(ROOT, "evals/results", `${started.toISOString().replace(/[:.]/g, "-")}_${mode}.partial.jsonl`) : null;
+  const template = await prepareTemplate(mode === "live" ? embedder : fakeEmbedder(), Date.parse(cases[0].now));
+  let warmup: unknown = null;
+  if (mode === "live") {
+    // Warm the prefix for the cases' own date, so the first measured turn isn't a cold prefill (§6.5 reports cold
+    // load separately). All live cases share one `now`; another date would pay one cold prefill.
+    const cfg = loadConfig({ ...process.env, LLM_PROVIDER: "ollama", EMBED_PROVIDER: "ollama", E2E_TEST_MODE: undefined });
+    const tdb = openDb(template);
+    const system = buildSystemPrompt(systemInputFor(tdb, Date.parse(cases[0].now)));
+    tdb.close();
+    warmup = await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system, format: TURN_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs });
+    console.log(`warm-up (not scored): ${JSON.stringify(warmup)}`);
+  }
   for (let run = 1; run <= runs; run++)
     for (const c of cases) {
-      const r = await runCase(c, { mode, run, model, embedder });
+      const r = await runCase(c, { mode, run, model, embedder, template });
       results.push(r);
       if (partial) fs.appendFileSync(partial, `${JSON.stringify(r)}\n`);
       const why = [...r.failures, ...r.violations.map((v) => `${v.inv}${v.turn !== null ? ` turn ${v.turn + 1}` : ""}: ${v.detail}`)];
       console.log(`${r.passed ? "PASS" : "FAIL"} ${c.id} ${c.category}${runs > 1 ? ` run ${run}` : ""}${why.length ? `\n     ${why.join("\n     ")}` : ""}`);
     }
+  fs.rmSync(path.dirname(template), { recursive: true, force: true });
   const passed = results.filter((r) => r.passed).length;
   const violations = results.reduce((n, r) => n + r.violations.length, 0);
   const datasetHash = createHash("sha256")
@@ -424,8 +514,11 @@ async function main(): Promise<number> {
     seed: MODEL.seed,
     runs,
     model: model?.model ?? "fake-sequence",
+    warmup,
+    loadAverage: os.loadavg(),
   };
-  const out = path.resolve(arg("out") ?? (mode === "live" ? path.join(ROOT, "evals/results", `${started.toISOString().replace(/[:.]/g, "-")}_${(model?.model ?? "model").replace(/[^a-z0-9.]+/gi, "-")}.json`) : path.join(ROOT, "test-results/evals/scripted-latest.json")));
+  const label = arg("label") ? `_${arg("label")!.replace(/[^a-z0-9-]+/gi, "-")}` : "";
+  const out = path.resolve(arg("out") ?? (mode === "live" ? path.join(ROOT, "evals/results", `${started.toISOString().replace(/[:.]/g, "-")}_${(model?.model ?? "model").replace(/[^a-z0-9.]+/gi, "-")}${label}.json`) : path.join(ROOT, "test-results/evals/scripted-latest.json")));
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, `${JSON.stringify({ meta, summary: { cases: results.length, passed, failed: results.length - passed, invariantViolations: violations }, results }, null, 1)}\n`);
   console.log(`eval:${mode} ${passed}/${results.length} passed, ${violations} invariant violations → ${path.relative(ROOT, out)}`);

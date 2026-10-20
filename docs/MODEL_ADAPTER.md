@@ -1,6 +1,6 @@
 # Model adapter
 
-How the app talks to language models, and how to change or test that without touching the booking engine. Status: T-11 (2026-10-20). The Ollama chat client is T-18.
+How the app talks to language models, and how to change or test that without touching the booking engine. Status: T-11 and T-18 (2026-10-20).
 
 ## The boundary
 
@@ -10,7 +10,7 @@ There are two model interfaces, each with exactly two implementations:
 
 | Interface | File | Implementations | Used for |
 | --- | --- | --- | --- |
-| `ModelClient` | `lib/llm/client.ts` | `lib/llm/ollama.ts` (local Ollama, T-18), `lib/llm/fake.ts` | one chat call per attempt |
+| `ModelClient` | `lib/llm/client.ts` | `ollamaModel` (`lib/llm/ollama.ts`), `fakeModel` (`lib/llm/fake.ts`) | one chat call per attempt |
 | `Embedder` | `lib/kb/embedder.ts` | `ollamaEmbedder`, `fakeEmbedder` | retrieval vectors (D-02) |
 
 No hosted provider exists, and none can be configured. `lib/config.ts` accepts only `http://` URLs on 127.0.0.1, localhost or ::1, and rejects model names ending in `cloud`. The project has no hosted-model SDK dependency (H1, H2).
@@ -65,7 +65,18 @@ The messages name the fix ("Is `ollama serve` running?", "`ollama pull qwen3.5:9
 
 **Timeouts** (`MODEL` in `lib/config.ts`): 15 s per chat call, so at most 30 s with the retry. The warm-up call gets 120 s. The caller passes `AbortSignal.timeout(MODEL.chatTimeoutMs)`.
 
-**Ollama request (T-18, D-05).** `POST /api/chat` with `{ model, messages, stream: false, format, think: false, truncate: false, keep_alive: "30m", options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: 400 } }`. The Modelfile sampling parameters are kept. Layer A tests stub `fetch` for ECONNREFUSED, HTTP 404 and HTTP 400 (D-12). `npm run model:check` verifies the endpoints for real.
+**Ollama request (`lib/llm/ollama.ts`, D-05).** `POST /api/chat` with `{ model, messages, stream: false, format, think: false, truncate: false, keep_alive: "30m", options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: 400 } }`. The Modelfile sampling parameters are kept. Thinking is detected in `message.thinking` or inline `<think>` tags. Layer A tests (`tests/unit/llm-ollama.test.ts`) stub `fetch` for the body, ECONNREFUSED, a timeout, HTTP 404, 400 and 500, thinking and a non-JSON body (D-12).
+
+**`npm run model:check`** prints one line per check and exits 1 on a failure. It covers:
+- the Ollama version;
+- both models pulled and local (no `remote*` fields in `/api/tags` or `/api/show`);
+- chat capabilities, thinking control (`thinking.values` must include `false`), runner and model context;
+- a schema round-trip with the production prompt, twice (first and warm), with tokens and latency;
+- the loaded context (soft on MLX);
+- the embedder's dimension and norm;
+- retrieval index coverage for the configured database (D-13). Incomplete coverage is a warning, because retrieval falls back to lexical.
+
+**`npm run model:warm`** plants a prefix-cache snapshot at the static-prompt boundary for today (`plantSnapshot`: two requests that share the system prompt and diverge at the first user token, OL-22/23), then warms the embedder. The live eval runner does the same for its cases' date before the first scored turn.
 
 ## Embedder
 

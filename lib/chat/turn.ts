@@ -7,7 +7,7 @@ import type { Embedder } from "@/lib/kb/embedder";
 import { loadFactSource, renderKbFacts, renderStaticFacts, type Fact } from "@/lib/kb/facts";
 import { retrievalQuery, retrieveFacts } from "@/lib/kb/retrieve";
 import { CORRECTIVE_MESSAGE, interpretEnvelope, ModelError, type ChatMessage as LlmMessage, type Interpreted, type ModelClient } from "@/lib/llm/client";
-import { buildPrompt, promptChars, PROMPT_VERSION } from "@/lib/llm/prompt";
+import { buildPrompt, promptChars, PROMPT_VERSION, type SystemPromptInput } from "@/lib/llm/prompt";
 import { maskMessages } from "@/lib/llm/redact";
 import { TURN_JSON_SCHEMA, type Intent } from "@/lib/llm/schema";
 import type { LocalDate } from "@/lib/time/tz";
@@ -42,6 +42,13 @@ export type TurnDeps = {
   /** Availability reads; the eval runner injects a failing one for backend-failure cases (§6.2 #16). */
   loadBundle?: (db: DB, dates: LocalDate[]) => AvailabilityBundle;
 };
+
+/** Today's static prompt inputs from the database (shared with model:check and model:warm, which plant the same prefix). */
+export function systemInputFor(db: DB, now: number): SystemPromptInput {
+  const src = loadFactSource(db);
+  const branches = src.branches.filter((b) => b.isActive).map(branchInfo);
+  return { now, zone: branches[0]?.timezone ?? RULES.timezone, restaurant: src.restaurant ?? { name: "the restaurant" }, branches, staticFacts: renderStaticFacts(src, now) };
+}
 
 /** Pre-call prompt budget in characters (D-15): the token budget at the ≈2.9 characters per token the probe measured. */
 export const PROMPT_CHAR_BUDGET = Math.floor(MODEL.promptBudgetTokens * 2.9);

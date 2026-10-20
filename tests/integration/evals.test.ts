@@ -60,10 +60,10 @@ describe("npm run eval:scripted (D1, INV-08)", () => {
       const r = await evalCli(["--mode", "scripted", "--category", "chit_chat"]);
       expect([r.code, r.out.trim()]).toEqual([2, "unknown category chit_chat"]);
     });
-    it("refuses live mode until the Ollama chat client exists (T-18)", async () => {
-      const r = await evalCli(["--mode", "live"]);
-      expect(r.code).toBe(2);
-      expect(r.out).toMatch(/needs the Ollama chat client/);
+    it("selects only the requested mode: a dir with no live cases runs nothing in live mode (no model call)", async () => {
+      write([original()]);
+      const r = await evalCli(["--mode", "live", "--cases", dir]);
+      expect([r.code, r.out.trim()]).toEqual([2, "eval: no live cases selected"]);
     });
   });
 
