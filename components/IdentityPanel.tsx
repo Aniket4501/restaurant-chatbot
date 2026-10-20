@@ -26,7 +26,7 @@ function Branches({ identity }: { identity: Identity }) {
 
 export function IdentityPanel({ identity }: { identity: Identity }) {
   return (
-    <header className="bg-smoke text-smoke-ink lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-[min(40%,30rem)] lg:shrink-0 lg:flex-col lg:overflow-y-auto">
+    <header className="on-smoke bg-smoke text-smoke-ink lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-[min(40%,30rem)] lg:shrink-0 lg:flex-col lg:overflow-y-auto">
       <div className="px-5 py-5 lg:px-10 lg:pt-14 lg:pb-10">
         <h1 className="font-display text-[34px] leading-none tracking-tight lg:text-[52px]">{identity.name}</h1>
         <p className="mt-3 max-w-[30ch] text-[15px] text-smoke-muted lg:text-[17px]">{identity.cuisine}</p>

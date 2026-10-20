@@ -101,7 +101,7 @@ describe("booking flow (J3, J5; AC-01 logic)", () => {
     expect(r.draft).toMatchObject({ branch: "hauz-khas", partySize: 2, date: null });
   });
 
-  it("partySize 0 never overwrites; 9+ gets the branch phone and keeps the draft", async () => {
+  it("partySize 0 never overwrites; 9+ gets the branch phone and keeps the rest of the draft", async () => {
     const d = { ...emptyDraft(), branch: "hauz-khas", partySize: 4 };
     let r = await runTurn(say("we are 0 people", { draft: d }), deps({ script: { "we are 0 people": booking({ partySize: 0 }) } }));
     expect(r.draft.partySize).toBe(4);
@@ -109,7 +109,7 @@ describe("booking flow (J3, J5; AC-01 logic)", () => {
     r = await runTurn(say("Table for 150 people on Saturday", { draft: d }), deps({ script: { "Table for 150 people on Saturday": booking({ partySize: 150, date: "2026-10-17" }) } }));
     expect(r.meta.outcome).toBe("redirect");
     expect(r.reply.text).toBe("Online bookings are for 1 to 8 guests. For a larger group, please call Hauz Khas on +91 11 4155 0101.");
-    expect(r.draft).toMatchObject({ branch: "hauz-khas", partySize: 4, date: "2026-10-17" });
+    expect(r.draft).toMatchObject({ branch: "hauz-khas", partySize: null, date: "2026-10-17" }); // the 9+ party replaces 4 (review TP-3)
     r = await runTurn(say("a table for 25 tomorrow evening"), deps({ script: { "a table for 25 tomorrow evening": booking({ partySize: 25 }) } }));
     expect(r.reply.text).toMatch(/call Hauz Khas on \+91 11 4155 0101 or Golf Course Road on \+91 124 455 0202\.$/);
   });

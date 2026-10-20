@@ -42,10 +42,23 @@ export function validateField(field: Field, value: Value, ctx: FieldCtx): { ok: 
   }
 }
 
-/** A slot selection no longer matches the draft once any search field changes. */
+/** A slot selection no longer matches the draft once any search field changes, the meal included (review TP-1). */
 function withSelection(prev: Draft, next: Draft): Draft {
-  const changed = prev.branch !== next.branch || prev.date !== next.date || prev.partySize !== next.partySize || prev.time !== next.time;
+  const changed = prev.branch !== next.branch || prev.date !== next.date || prev.partySize !== next.partySize || prev.time !== next.time || prev.timeWindow !== next.timeWindow;
   return changed ? { ...next, selected: null } : next;
+}
+
+/**
+ * The latest stated value wins (§5.7; review TP-1, TP-3):
+ * - a new meal stated without a time replaces the old time preference ("make it lunch instead");
+ * - a value we can't use (9+ guests, a date outside the horizon, an inactive branch) clears that field, so the flow asks
+ *   again instead of offering the old slot.
+ */
+function latestWins(prev: Draft, next: Draft, statedTime: boolean, rejected: Field[]): Draft {
+  const out = { ...next };
+  if (!statedTime && next.timeWindow !== prev.timeWindow && next.timeWindow !== null) out.time = null;
+  for (const f of rejected) if (f === "branch" || f === "date" || f === "partySize") (out as Record<Field, unknown>)[f] = null;
+  return out;
 }
 
 export type MergeResult = {
@@ -85,7 +98,8 @@ export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldC
       changed.push(field);
     }
   }
-  return { draft: withSelection(draft, next), issues, ambiguity, largeParty, changed };
+  const rejected: Field[] = [...issues.map((i) => i.field), ...(largeParty ? (["partySize"] as Field[]) : [])];
+  return { draft: withSelection(draft, latestWins(draft, next, booking.time !== null, rejected)), issues, ambiguity, largeParty, changed };
 }
 
 /** A chip or form action. Unlike model extraction, an explicit null clears the field ("change date"). */
@@ -95,9 +109,12 @@ export function applySetField(draft: Draft, field: Field, value: Value, ctx: Fie
     return { draft: withSelection(draft, next), issues: [], ambiguity: null, largeParty: false, changed: draft[field] === null ? [] : [field] };
   }
   const v = validateField(field, value, ctx);
-  if (!v.ok) return { draft, issues: v.issue === "large_party" ? [] : [{ field, issue: v.issue }], ambiguity: null, largeParty: v.issue === "large_party", changed: [] };
+  if (!v.ok) {
+    const largeParty = v.issue === "large_party";
+    return { draft: withSelection(draft, latestWins(draft, draft, true, [field])), issues: largeParty ? [] : [{ field, issue: v.issue }], ambiguity: null, largeParty, changed: [] };
+  }
   const next = { ...draft, [field]: v.value } as Draft;
-  return { draft: withSelection(draft, next), issues: [], ambiguity: null, largeParty: false, changed: draft[field] === v.value ? [] : [field] };
+  return { draft: withSelection(draft, latestWins(draft, next, field === "time", [])), issues: [], ambiguity: null, largeParty: false, changed: draft[field] === v.value ? [] : [field] };
 }
 
 /** True once the guest has started a booking (any search field set). */

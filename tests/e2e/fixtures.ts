@@ -21,6 +21,9 @@ export const test = base.extend<{ server: Server; observed: Observed; api: Api; 
   api: async ({ request, server, observed }, provide) => {
     await provide({
       async post(pathname, body, headers = {}) {
+        const b = body as Record<string, unknown> | null;
+        if (pathname === "/api/chat") for (const m of (b?.messages as { role: string; content: string }[] | undefined) ?? []) if (m.role === "guest") observed.pii.push(m.content);
+        if (pathname === "/api/reservations") for (const k of ["name", "phone", "email", "note"]) if (typeof b?.[k] === "string") observed.pii.push(b[k] as string);
         const res = await (request as APIRequestContext).post(`${server.origin}${pathname}`, { headers: { origin: server.origin, "content-type": "application/json", ...headers }, data: body });
         const json = await res.json().catch(() => null);
         if (pathname === "/api/reservations") observed.reservationResponses.push({ status: res.status(), ref: (json as { reservation?: { ref: string } } | null)?.reservation?.ref ?? null, at: Date.now() });
@@ -39,6 +42,20 @@ export const test = base.extend<{ server: Server; observed: Observed; api: Api; 
   _invariants: [
     async ({ page, server, observed }, provide, info) => {
       const logOffset = fs.existsSync(server.log) ? fs.statSync(server.log).size : 0;
+      // Everything a guest sends counts as guest data for INV-07, whoever typed it (review UI-3).
+      page.on("request", (r) => {
+        const url = new URL(r.url());
+        if (r.method() !== "POST") return;
+        const body = (() => {
+          try {
+            return r.postDataJSON() as Record<string, unknown> | null;
+          } catch {
+            return null;
+          }
+        })();
+        if (url.pathname === "/api/chat") for (const m of (body?.messages as { role: string; content: string }[] | undefined) ?? []) if (m.role === "guest") observed.pii.push(m.content);
+        if (url.pathname === "/api/reservations") for (const k of ["name", "phone", "email", "note"]) if (typeof body?.[k] === "string") observed.pii.push(body[k] as string);
+      });
       page.on("response", async (r) => {
         const url = new URL(r.url());
         const method = r.request().method();

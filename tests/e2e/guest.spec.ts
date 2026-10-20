@@ -106,6 +106,7 @@ test("J6 a lost response locks the card; Retry with the same key shows the same 
   await expect(form.getByRole("alert")).toContainText("We couldn't reach the restaurant to confirm your booking");
   await expect(form.getByLabel("Name")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Book at Hauz Khas" })).toBeDisabled();
+  await expect(page.getByLabel("Your message")).toBeDisabled(); // nothing can strand the locked card (review UI-1)
   await axe(page, "pending submit");
   await form.getByRole("button", { name: "Retry" }).click();
   await expect(page.locator("[data-confirmation-ref]")).toBeVisible();
@@ -190,4 +191,12 @@ test("on a phone the chat is the page and the hours fold away", async ({ page })
   await expect(page.getByText("Hours and locations")).toBeVisible();
   await expect(page.getByRole("button", { name: "Book at Golf Course Road" })).toBeVisible();
   await axe(page, "phone");
+});
+
+test("focus stays visible on the dark identity panel (WCAG 1.4.11, review UI-4)", async ({ page }) => {
+  await page.goto("/");
+  const link = page.getByRole("link", { name: "+91 11 4155 0101" }).last();
+  await link.focus();
+  const ring = await link.evaluate((el) => ({ visible: el.matches(":focus-visible"), color: getComputedStyle(el).outlineColor, style: getComputedStyle(el).outlineStyle }));
+  expect(ring).toEqual({ visible: true, color: "rgb(241, 235, 226)", style: "solid" });
 });

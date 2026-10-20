@@ -1,3 +1,5 @@
+import { NUMBER_WORDS, numberWordRe } from "@/lib/kb/canonical";
+
 // Booking-claim and booking-state rules for any model prose shown to the guest (H6, INV-04).
 // - D-11: split into sentences; skip hedged ones (when, if, not, cannot, …); reject a sentence that confirms a
 //   booking ("I've booked", "booking confirmed") or claims availability ("tables are available", "we can seat you").
@@ -10,11 +12,19 @@
 // covers the rest.
 
 const CLAIM_RE =
-  /\b(?:i|we)(?:'ve| have)?\s+(?:just\s+)?(?:booked|reserved|confirmed)\b|\b(?:your|the)\s+(?:table|booking|reservation)\s+(?:is|has been|was)\s+(?:now\s+)?(?:booked|reserved|confirmed|held)\b|\bbooking\s+(?:is\s+)?confirmed\b|\bwe have a table for you\b|\byou(?:'re| are)\s+(?:all\s+)?(?:booked|set)\b|\breservation\s+(?:is\s+)?(?:complete|done)\b/i;
+  /\b(?:i|we)(?:'ve| have)?\s+(?:just\s+)?(?:booked|reserved|confirmed)\b|\b(?:your|the)\s+(?:table|booking|reservation|spot|slot)\s+(?:is|has been|was)\s+(?:now\s+)?(?:booked|reserved|confirmed|held|saved|secured)\b|\bbooking\s+(?:is\s+)?confirmed\b|\bwe have a table for you\b|\byou(?:'re| are)\s+(?:all\s+)?(?:booked|set)\b|\breservation\s+(?:is\s+)?(?:complete|done)\b/i;
+// Review MB-4: "We've got …" is reachable now ("\s+" no longer precedes "'ve"), and space, spots, slots and
+// availability count as availability nouns. "room" counts only in "there's room …", so "we have a private room" passes.
 const AVAIL_RE =
-  /\b(?:we|i)\s+(?:have|'ve got|can\s+(?:offer|seat|fit|accommodate|get))\b[^.?!]{0,40}\b(?:tables?|seats?|slots?|availability)\b|\b(?:tables?|seats?|slots?)\b[^.?!]{0,30}\b(?:is|are)\s+(?:still\s+)?(?:available|free|open)\b|\bthere(?:\s+is|\s+are|'s)\s+(?:a\s+)?(?:tables?|space|room|seats?)\s+(?:available|free|for)\b|\bwe can (?:seat|fit|accommodate) you\b|\b(?:tables?|space|seats?)\s+(?:available|free)\s+(?:for|at|on|tonight|tomorrow)\b/i;
+  /\b(?:we|i)(?:\s+have|'ve(?:\s+got)?|\s+can\s+(?:offer|seat|fit|accommodate|get))\b[^.?!]{0,40}\b(?:tables?|seats?|slots?|spots?|space|availability)\b|\b(?:tables?|seats?|slots?|spots?)\b[^.?!]{0,30}\b(?:is|are)\s+(?:still\s+)?(?:available|free|open)\b|\bthere(?:\s+is|\s+are|'s)\s+(?:a\s+)?(?:tables?|space|room|seats?|spots?)\s+(?:available|free|for)\b|\bwe can (?:seat|fit|accommodate) you\b|\b(?:tables?|space|seats?|spots?)\s+(?:available|free)\s+(?:for|at|on|tonight|tomorrow)\b/i;
 const HEDGE_RE = /\b(?:when|if|whether|unless|until|cannot|can't|can not|not|no|unable|never)\b/i;
-const BOOKING_STATE_RE = /\b(?:book\w*|reserv\w*|confirm\w*|tables?|seats?|seated|seating|all set|see you|hold|holds|holding|held|expect you)\b/i;
+const BOOKING_STATE_RE = /\b(?:book\w*|reserv\w*|confirm\w*|tables?|seats?|seated|seating|all set|see you|hold|holds|holding|held|expect you|slots?|spots?)\b/i;
+// Smalltalk is stricter (review MB-3/MB-4): it has no facts to ground against, so it may not mention space, rooms,
+// availability, money or any number at all.
+const SMALLTALK_STATE_RE = /\b(?:space|room|availability|available|rupees?|rs)\b|₹/i;
+
+/** Curly apostrophes read as straight ones, so "you’re" can't slip past a pattern (review MB-4). */
+const fold = (s: string) => s.replace(/[’‘]/g, "'");
 
 /** Sentences as the D-11 filter sees them. */
 export function sentences(text: string): string[] {
@@ -24,14 +34,17 @@ export function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
-const isClaim = (s: string) => !HEDGE_RE.test(s) && (CLAIM_RE.test(s) || AVAIL_RE.test(s));
+const isClaim = (raw: string) => {
+  const s = fold(raw);
+  return !HEDGE_RE.test(s) && (CLAIM_RE.test(s) || AVAIL_RE.test(s));
+};
 
 /** The first sentence that confirms a booking or claims availability, or null (D-11). */
 export function bookingClaim(text: string): string | null {
   return sentences(text).find(isClaim) ?? null;
 }
 
-export const hasBookingStateWords = (text: string) => BOOKING_STATE_RE.test(text);
+export const hasBookingStateWords = (text: string) => BOOKING_STATE_RE.test(fold(text));
 
 const norm = (s: string) =>
   s
@@ -52,7 +65,8 @@ export function unsupportedBookingStateSentence(text: string, citedTexts: string
   return sentences(text).find((s) => hasBookingStateWords(s) && !facts.some((f) => f.includes(norm(s)))) ?? null;
 }
 
-/** Smalltalk prose is shown only with no digits, no claim and no booking-state words (§5.7, D-15). */
+/** Smalltalk prose is shown only with no digits or number words, no claim and no booking-state words (§5.7, D-15). */
 export function smalltalkShowable(text: string): boolean {
-  return !/\d/.test(text) && !bookingClaim(text) && !hasBookingStateWords(text);
+  const t = fold(text);
+  return !/\p{Nd}/u.test(t) && !bookingClaim(t) && !hasBookingStateWords(t) && !SMALLTALK_STATE_RE.test(t) && !NUMBER_WORDS.some((w) => numberWordRe(w).test(t)) && !/\bone\b/i.test(t);
 }

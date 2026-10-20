@@ -181,6 +181,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
     const bookTurnRefs = new Set<string>();
     const guestTexts: string[] = [];
     const submittedNames: string[] = [];
+    const submittedPii: string[] = [];
     const createdRefs = () => snapshotRows(db!).map((r) => r.ref).filter((r) => !setupRefs.has(r) && !bookTurnRefs.has(r));
 
     const doSubmit = async (key: string, body: Record<string, unknown>, card: Extract<Block, { type: "confirm" }>, lock: boolean) => {
@@ -252,6 +253,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         if (!lastConfirm) throw new Error(`turn ${index + 1}: {submit} without a confirm card`);
         const card: Extract<Block, { type: "confirm" }> = lastConfirm;
         submittedNames.push(turn.submit.name);
+        submittedPii.push(turn.submit.phone, turn.submit.phone.replace(/\D/g, ""), ...(turn.submit.email ? [turn.submit.email] : []));
         const body = { branch: card.branch, startsAt: card.startsAtMs, partySize: card.partySize, name: turn.submit.name, phone: turn.submit.phone, email: turn.submit.email ?? null, note: turn.submit.note ?? null };
         // The client reuses a key only to retry an identical body (§5.9).
         const prev: { key: string; body: Record<string, unknown> } | null = lastSubmit;
@@ -325,6 +327,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
       setupRefs: new Set([...setupRefs, ...bookTurnRefs]),
       guestTexts: guestTexts.filter((g) => g.trim().length >= 8),
       submittedNames,
+      submittedPii,
       chatTurns: db.prepare("SELECT * FROM chat_turns").all() as Record<string, unknown>[],
       logs,
     };

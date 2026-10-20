@@ -74,11 +74,13 @@ export function submitOutcome(
     alts?.length
       ? [{ type: "slots", heading: "Other options", branch: ctx.branch.slug, date: ctx.date, partySize: ctx.partySize, reason: "time_unavailable", groups: [], alternatives: altChips(alts, ctx.branches, { branch: ctx.branch.slug, date: ctx.date }) }]
       : [];
+  // With no alternatives, never promise times (review TP-4): point to another date and the branch phone instead.
+  const noTimes = `There are no other open times nearby. Please choose another date, or call ${call(ctx.branch)}.`;
   switch (err.code) {
     case "SLOT_TAKEN":
-      return { ...base, text: MESSAGES.SLOT_TAKEN, blocks: slots(err.alternatives) };
+      return err.alternatives?.length ? { ...base, text: MESSAGES.SLOT_TAKEN, blocks: slots(err.alternatives) } : { ...base, text: `Sorry, that time was just taken. ${noTimes}` };
     case "SLOT_UNAVAILABLE":
-      return { ...base, text: MESSAGES.SLOT_UNAVAILABLE, blocks: slots(err.alternatives) };
+      return err.alternatives?.length ? { ...base, text: MESSAGES.SLOT_UNAVAILABLE, blocks: slots(err.alternatives) } : { ...base, text: `That time can't be booked. ${noTimes}` };
     case "DUPLICATE_BOOKING": {
       const e = err.existing;
       // J7 (D-14): the existing time and ref are in the body only when the submitted name matched.

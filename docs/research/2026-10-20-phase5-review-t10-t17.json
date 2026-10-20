@@ -1,0 +1,350 @@
+[
+ {
+  "lens": "RT",
+  "findings": [
+   {
+    "id": "RT-1",
+    "title": "Mixed hours+FAQ/menu answers bypass D-10 when the exception is not cited; the weekly fact's own 'Except <date>' text grounds the closure date",
+    "severity": "high",
+    "location": "lib/kb/facts.ts:151",
+    "failure_scenario": "A guest asks 'Is Golf Course Road open for lunch on Tuesday 27 October? Is there parking?' The model cites hours:gurugram:tue + faq:parking-gurugram and leaves out exception:gurugram:2026-10-27 (closed all day). Because a non-hours fact is cited, the prose path runs (router.ts:272). supersede() only drops a weekly fact when an exception is cited (hours.ts:21-31), so the weekly times are accepted. The date '27 Oct' is accepted because the weekly fact text now says 'Except Tue 27 Oct 2026: see exception:…' (facts.ts:151-152). The guest is told 'Yes, … open for lunch on Tue 27 Oct from 12:00 PM to 3:30 PM' for a day the branch is closed. This is the same HF4 failure D-10 was written to stop. Same for Hauz Khas dinner on 22 Oct (closed) and 31 Oct (wrong closing time: 11:00 instead of 11:30 PM). INV-05 misses it too, because it only checks that digit runs appear in the cited text.",
+    "evidence": "Probe (scratchpad rt/d10.ts) runs checkGrounding with base.json at 2026-10-16. 'Yes, Hauz Khas is open for dinner on Thu 22 Oct from 7:00 PM to 11:00 PM, and the Dal Ember is ₹445.' citing [hours:hauz-khas:thu, menu:dal-ember] gives {ok:true}. Citing the exception as well gives {ok:false, reason:'time'}. End-to-end probe (rt/e2e.mts) runs runTurn on a temp DB with the fake model and fake embedder: both 'open for dinner on Thu 22 Oct 7:00–11:00 PM' (cited hours:hauz-khas:thu + faq:parking-hauz-khas) and 'open for lunch on Tue 27 Oct 12:00–3:30 PM' (cited hours:gurugram:tue + faq:parking-gurugram) come back outcome=faq_answer with the false prose shown. Existing tests (chat-grounding.test.ts:147-177) only cover the case where the exception is cited.",
+    "fix": "Grounding should treat the exceptions a cited weekly fact names as cited. Expand cited IDs with the 'see exception:…' pointers, as renderHoursAnswer already does, before supersede(). As a minimum, when the answer mentions a date that a cited weekly fact names as an exception, drop that weekly fact and ground against the exception. Also ground dates against the weekly text with the ' Except …' clause removed, so that clause can't support a date by itself. Add a unit test and a D1 case for weekly+FAQ with the exception left uncited."
+   },
+   {
+    "id": "RT-2",
+    "title": "Time canonicaliser misses '7.30 pm' style times and bare range starts; they fall through to the digit-run check, which the hours digits satisfy",
+    "severity": "medium",
+    "location": "lib/kb/canonical.ts:11",
+    "failure_scenario": "TIME_RE only accepts ':' between hours and minutes, and needs am/pm right after a bare hour. In '7.30 pm' the regex matches '30 pm', which is then skipped as impossible (h>12, line 21). In 'from 3 to 11 PM' only '11 PM' is canonicalised. The leftover digits ('7', '30', '3', '11') then only need to appear somewhere in the cited facts. Every weekly hours fact contains 12, 00, 3, 30, 7 and 11. So a mixed answer such as 'Dinner at Hauz Khas on Fridays starts at 7.30 pm' or '…runs from 3 to 11 PM' (real: 7:00–11:00 PM) is shown as grounded. Dotted times are common Indian-English style. INV-05 (digit-run based, evals/invariants.ts:69-72) also passes these.",
+    "evidence": "rt/canon.ts: checkGrounding gives {ok:true} for '…runs 7.30 pm to 11 pm…', '…runs from 3 to 11 PM…' and '…runs until 11.30 pm…' citing [hours:hauz-khas:fri, menu:dal-ember]. canonicalSpans shows no time span for '7.30 pm', '11.30 pm' or the bare '3'. rt/e2e.mts: runTurn shows 'Dinner at Hauz Khas on Fridays starts at 7.30 pm…' and '…runs from 3 to 11 PM…' (cited hours:hauz-khas:fri + faq:parking-hauz-khas) as faq_answer.",
+    "fix": "Accept [:.] as the hour-minute separator when am/pm follows (e.g. (?:[:.](\\d{2}))?). Carry a trailing meridiem back to a bare leading hour in 'H–H am/pm' and 'H to H am/pm' ranges. Treat any time-shaped token that can't be canonicalised (h>12 with am/pm, 'H.MM') as a grounding failure instead of leaving its digits for the digit-run check. Add unit cases for '7.30 pm', '7–11 PM' and '3 to 11 PM'."
+   },
+   {
+    "id": "RT-3",
+    "title": "Phone fallback keeps only the last 10 digits, so invalid numbers with extra leading digits match the branch phone",
+    "severity": "medium",
+    "location": "lib/kb/canonical.ts:52",
+    "failure_scenario": "For any 10–13 digit run that libphonenumber rejects as invalid, phoneSpans returns '+91' + the last 10 digits and drops whatever comes before them. A model answer 'Please call Golf Course Road on +91 7 124 455 0202', '+1 124 455 0202', '+91 111 4155 0101' or '99 11 4155 0101' canonicalises to the branch's E.164, so it passes grounding and the guest sees a number that can't be dialled. The §5.7 check is meant to require the same E.164 number.",
+    "evidence": "rt/phone.ts and rt/canon.ts: findPhones finds nothing for '+91 7 11 4155 0101', but phoneSpans gives '+911141550101'. checkGrounding gives {ok:true} for '+91 111 4155 0101', '+1 11 4155 0101' and '99 11 4155 0101' citing branch:hauz-khas. rt/e2e.mts: runTurn shows 'Please call Golf Course Road on +91 7 124 455 0202…' and '…call +1 124 455 0202…' (cited faq:private-dining + branch:gurugram) as faq_answer. INV-05 would catch these in evals ('7', '111' are not in the fact digits), but production grounding does not.",
+    "fix": "Map the fallback to a phone value only when the digits are exactly 10, or exactly 0/91/+91 followed by 10. Otherwise emit a value that can never match, e.g. '+'+digits or 'invalid:'+digits, so any phone-shaped run that isn't canonical fails grounding. Add the cases above to kb-canonical.test.ts."
+   },
+   {
+    "id": "RT-4",
+    "title": "Citing an aggregate makes every price in its list 'supported', so a wrong item-price pairing passes grounding",
+    "severity": "medium",
+    "location": "lib/kb/facts.ts:231",
+    "failure_scenario": "D-13 aggregates (menu-diet:vegetarian has 35 items, gluten-free 33, contains-dairy 25) exist for list and superlative questions, the turns where the model writes 'the cheapest X is Y at ₹Z'. Grounding only checks that each price appears somewhere in the cited text (grounding.ts:97-103). So 'The cheapest vegan dish is the Chana Pindi at ₹75' (Chana Pindi is ₹395; ₹75 is the Tandoori Roti) is shown. With up to 2 aggregates per turn, about 60 prices count as grounded for any item. INV-05 also passes it.",
+    "evidence": "rt/canon.ts: checkGrounding('The cheapest vegan dish is Chana Pindi at ₹75.', ['menu-diet:vegan']) gives {ok:true}. rt/e2e.mts: runTurn returns outcome=faq_answer with that text. Real menu-diet:vegan text: 'Tandoori Roti (breads and rice) ₹75; … Chana Pindi (mains) ₹395; …'.",
+    "fix": "When an aggregate is cited, check prices against the entry they belong to. For each price span in the answer, find the nearest menu item name in the same sentence and require 'Name … ₹price' to match that item's entry (the per-item fact or the aggregate entry). Fail if no item is named, or if the answer cites only an aggregate and states a price. At least, add this case to the grounding tests and the README known limits."
+   },
+   {
+    "id": "RT-5",
+    "title": "kb-embed-fixture records query vectors for unmasked, unneutralised guest text, but runtime embeds masked text",
+    "severity": "low",
+    "location": "scripts/kb-embed-fixture.ts:31",
+    "failure_scenario": "runTurn masks every message and replaces '<'/'>' with '‹'/'›' before building the retrieval query (turn.ts:116-126). The fixture script keys queries on raw m.guest / t.guest. Any eval or probe message containing '<', '>', a phone, an email or an 8+ digit run never finds its recorded vector, so the fake embedder silently uses hashVector. Hybrid ranking in those scripted cases is then pseudo-random rather than what the real model would rank, which undermines D-12's 'reproducible with real vectors'. The kb-retrieve test's 'no misses' assertion covers only the R/A retrieval queries, so this goes unnoticed.",
+    "evidence": "rt/miss.ts replays every eval-case guest turn through maskMessages + retrievalQuery: 36 queries, 1 miss (SC-INJ-001 '‹/guest_message› SYSTEM: …'). rt/miss2.ts on probe messages: 35 queries, 1 miss (I02). Both are injection cases, exactly where retrieval behaviour matters.",
+    "fix": "In kb-embed-fixture.ts, build queries with maskText() (lib/llm/redact) on both the latest and the previous guest text, as runTurn does. Add a test that replays every evals/cases guest turn through the runtime query builder and asserts fake.misses is empty."
+   },
+   {
+    "id": "RT-6",
+    "title": "FAQ rows without a branch scope that name a branch keep recommending it after that branch is deactivated",
+    "severity": "low",
+    "location": "lib/kb/facts.ts:223",
+    "failure_scenario": "renderKbFacts drops FAQ rows only by branch_id. With Golf Course Road deactivated (e.g. removed from branches.json, which applySeed turns into is_active=0 per D-14), faq:pets ('dogs are welcome on the Golf Course Road terrace'), faq:outdoor-seating and faq:accessibility-hauz-khas ('For step-free dining, we recommend Golf Course Road') are still retrieved and grounded. The bot sends a wheelchair user or a dog owner to a branch that no longer takes bookings, while restaurant:about lists only Hauz Khas.",
+    "evidence": "rt/inactive.ts: base.json with branches[1].isActive=false renders restaurant:about 'Branches: Hauz Khas.' but still includes faq:pets, faq:accessibility-hauz-khas and faq:outdoor-seating, each naming Golf Course Road.",
+    "fix": "Have seed validation (seed-schema) reject or warn on FAQ and menu text that names another branch's short name without a matching branch scope. Alternatively, have renderKbFacts drop or flag FAQ rows whose text names an inactive branch, and split branch-specific sentences into scoped FAQ rows in data/seed/faq.json."
+   }
+  ],
+  "verdicts": [
+   {
+    "id": "RT-1",
+    "verdict": "valid",
+    "severity": "medium",
+    "reproduced": true,
+    "reason": "I reproduced this with my own probes at now=2026-10-20 (scratchpad/skeptic/g.ts and e2e.mts, temp DB, fake model, fake embedder). The answer 'open for dinner on Thu 22 Oct from 7:00 PM to 11:00 PM' citing [hours:hauz-khas:thu, faq:parking-hauz-khas] gives ok:true from checkGrounding, and runTurn shows it as faq_answer. Same for Golf Course Road lunch on Tue 27 Oct and Hauz Khas dinner 7-11 PM on Sat 31 Oct. Adding the exception to the citations gives reason 'time'. A control date that isn't an exception ('Thu 29 Oct') fails with reason 'date'. So the date is accepted only because of the weekly fact's own 'Except Thu 22 Oct 2026: see exception:…' text (lib/kb/facts.ts:151-152). That text exists to point to the exception, and grounding (lib/chat/grounding.ts:93-114) treats it as support for the opposite claim. supersede (lib/chat/hours.ts:21-31) acts only when the exception itself is cited. The hours-only path already expands these pointers (renderHoursAnswer, hours.ts:53, test 'HF4 variant citing only the weekly fact'), so the authors meant a weekly-only citation to still respect exceptions. The mixed prose path has no equivalent. The info card then shows only 'Special hours on Thu 22 Oct 2026' next to the false 'open' prose. Graded medium rather than high for three reasons: the model must make two errors (wrong hours and leaving out the exception it is pointed to); hours-only questions, the common case, are protected; and the availability engine still refuses a booking on the closed date. Note for the fix: expanding the pointers unconditionally would also drop the weekly fact for generic weekday answers and break the existing passing test 'mixed answers keep prose…'. The fix should apply only when the answer names a date listed in the weekly fact's exception clause."
+   },
+   {
+    "id": "RT-2",
+    "verdict": "valid",
+    "severity": "medium",
+    "reproduced": true,
+    "reason": "Confirmed. Citing [hours:hauz-khas:fri, faq:parking-hauz-khas], checkGrounding gives ok:true for 'starts at 7.30 pm', 'runs from 3 to 11 PM' and 'until 11.30 pm'. canonicalSpans gives no time span for '7.30 pm' or '11.30 pm' and only '11 PM' in the range. TIME_RE (lib/kb/canonical.ts:11) matches '30 pm' inside '7.30 pm', and line 21 then drops it as impossible without blanking it. The leftover digits '7', '30' and '3' are all in the weekly fact, so the digit check at grounding.ts:116-118 passes. The control '7:30 pm' correctly fails with reason 'time'. runTurn shows 'Dinner at Hauz Khas on Fridays starts at 7.30 pm…' as faq_answer (real time: 7:00 PM). INV-05 (evals/invariants.ts:69-72) only compares digit runs, so evals would miss it too. This only matters for mixed or FAQ prose, since hours-only answers are rendered from facts. Bare-hour ranges ('7 to 11 PM') are a very natural phrasing, so a wrong start time in that form isn't contrived. Medium."
+   },
+   {
+    "id": "RT-3",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "Confirmed. findPhones returns [] for '+91 7 124 455 0202', '+1 124 455 0202', '99 11 4155 0101' and '+91 111 4155 0101'. The fallback at lib/kb/canonical.ts:52 keeps the last 10 digits and maps each of these to a branch's E.164. checkGrounding gives ok:true, and the control '+91 11 4155 0102' correctly fails with reason 'phone'. runTurn shows 'Please call Golf Course Road on +91 7 124 455 0202…' as faq_answer. Because the whole match is blanked, the digit-run check can't catch the extra digits either. The defect is real: the fallback turns numbers that can't be dialled into a 'match', which goes against the §5.7 same-E.164 rule. Downgraded to low: the model must garble a copied phone number in this particular way (extra leading digits or wrong country code), and INV-05 would flag it in evals."
+   },
+   {
+    "id": "RT-4",
+    "verdict": "invalid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "The behaviour reproduces ('cheapest vegan dish is the Chana Pindi at ₹75' citing menu-diet:vegan gives ok:true), but it is not a defect against the stated requirements. §5.7 and D-15 define grounding as set membership: every canonicalised price must appear in the cited facts' text. The code does exactly that (grounding.ts:97-104). Pairing isn't checked for per-item facts either: 'The Dal Ember is ₹375 and the Yellow Dal Tadka is ₹445' citing both item facts also gives ok:true. So aggregates don't add a new failure class; they only widen the price set that the approved D-13 amendment (aggregates, at most 2 per turn) accepted. Checking which price goes with which item would be a new grounding design, beyond the approved contract. It's worth listing as a known limit when the README is written (there is no README yet)."
+   },
+   {
+    "id": "RT-5",
+    "verdict": "invalid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "The mismatch is real: scripts/kb-embed-fixture.ts:31-41 keys queries on raw guest text, while runTurn masks and neutralises text first. My replay of every evals/cases guest turn through maskMessages + retrievalQuery found 36 queries and 1 miss (SC-INJ-001). But nothing depends on it. SC-INJ-001's scripted model output is off_topic, and its expectations (outcome redirect, 0 reservations, no 'NE-') don't depend on which facts are retrieved. The hashVector fallback is deterministic, so D-12's 'reproducible offline' requirement still holds. The tests that assert misses == [] (kb-retrieve.test.ts:113, kb-embedder.test.ts:81) cover their own query sets and pass. Real-embedder runs (D2/probe) don't use the fixture. No correctness, privacy or requirement impact today; it's a fidelity gap in test tooling."
+   },
+   {
+    "id": "RT-6",
+    "verdict": "invalid",
+    "severity": "low",
+    "reproduced": false,
+    "reason": "This is a hypothetical content-authoring issue, not a code defect. renderKbFacts (lib/kb/facts.ts:223-226) drops FAQ rows scoped to an inactive branch, as documented. Unscoped FAQ rows ('pets', 'outdoor-seating') and the Hauz Khas accessibility answer that recommends Golf Course Road are free text the operator writes. Code can't reliably tell which branch a sentence refers to. No requirement in MASTER_PROMPT §5.5-5.10, SPEC or D-13/D-14 covers rewriting free-text FAQ answers when a branch is deactivated. The only inactive-branch rules are booking validation (availability step 1) and fact scoping, and both are implemented. Base and seed data both have two active branches, so no current path shows these answers for an inactive branch. An operator who deactivates a branch would edit that branch's FAQ text as part of the same seed change."
+   }
+  ]
+ },
+ {
+  "lens": "MB",
+  "findings": [
+   {
+    "id": "MB-1",
+    "title": "D-10 exception bypass: a weekly fact's own 'Except <date>' pointer lets a wrong 'open' answer for an exception date pass the date check",
+    "severity": "high",
+    "location": "lib/chat/grounding.ts:93-113 (with lib/kb/facts.ts:151-152, lib/chat/hours.ts:21-31)",
+    "failure_scenario": "Today is Fri 16 Oct. A guest asks \"Is Golf Course Road open on Tuesday 27 Oct?\" (that day is closed all day). The model answers \"Yes, Neem & Ember Golf Course Road is open on Tue 27 Oct: lunch 12:00 PM-3:30 PM and dinner 7:00 PM-11:00 PM.\" and cites [hours:gurugram:tue, restaurant:about]. Because restaurant:about is cited, the answer counts as mixed, so it is not rendered from facts. supersede() only drops the weekly fact when the exception fact itself is cited, and here it isn't. The date check then finds '27 Oct' inside the weekly fact's text (\"... Except Tue 27 Oct 2026: see exception:gurugram:2026-10-27.\"), and the times match the weekly hours. The answer is shown. This is the HF4 failure D-10 was written to prevent, and the pointer added for D-10 is what lets it through. The same happens for \"open for dinner on Thursday 22 October, 7:00 PM-11:00 PM\" (that dinner is closed). INV-05 checks digits only, so it doesn't catch this either.",
+    "evidence": "I ran a tsx probe that calls runTurn on a temp DB seeded from base.json, with the fake model scripted as above. Output: 'outcome: faq_answer | SHOWN: Yes, Neem & Ember Golf Course Road is open on Tue 27 Oct: lunch 12:00 PM–3:30 PM and dinner 7:00 PM–11:00 PM.' and 'SHOWN: Yes, Neem & Ember Hauz Khas is open for dinner on Thursday 22 October, 7:00 PM–11:00 PM.' Control: the same answer for '29 October' returns date:29 October, so the date is accepted only because of the Except pointer. Weekly fact text: 'Hauz Khas on Thursdays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM. Except Thu 22 Oct 2026: see exception:hauz-khas:2026-10-22.' Existing tests (66) pass, and none covers a mixed answer that cites the weekly fact without the exception.",
+    "fix": "In checkGrounding, remove the ' Except …' clause from hours facts before building factText, factDates and factDigits; the pointer is a hint for the model, not evidence. Also, if the answer names a date that a cited weekly fact lists as an exception, treat that exception as cited and supersede the weekly fact, as renderHoursAnswer already does, so the times are checked against the exception. Add unit tests for both HF4 variants with restaurant:about or an FAQ co-cited."
+   },
+   {
+    "id": "MB-2",
+    "title": "Times written with a dot ('7.30 PM', '3.00 PM') are not canonicalised, so wrong times pass the digit-run fallback",
+    "severity": "high",
+    "location": "lib/kb/canonical.ts:11 (TIME_RE), lib/chat/grounding.ts:116-118",
+    "failure_scenario": "TIME_RE accepts only ':' between hours and minutes. For '3.00 PM' it skips '00 PM' (hour 0 is out of range) and for '11.30 PM' it skips '30 PM' (hour 30). Neither becomes a time span, and the digit-run check only asks whether '3', '00', '11' and '30' each appear somewhere in the cited facts. The weekly fact contains 12:00, 3:30, 7:00 and 11:00, so 'lunch runs 12:00 PM to 3.00 PM' (real close 3:30 PM), 'Dinner ends at 11.30 PM' (real 11:00 PM) and 'Dinner starts at 7.30 PM' (real 7:00 PM) are all accepted and shown. 'H.MM pm' is common in Indian English, and INV-05's independent checker is also digit-run based, so evals won't flag it.",
+    "evidence": "tsx probe through checkGrounding and runTurn with the scripted fake: 'At Neem & Ember Hauz Khas, lunch runs 12:00 PM to 3.00 PM.' gave outcome faq_answer (shown); 'Dinner at Hauz Khas ends at 11.30 PM.' [hours:hauz-khas:thu, restaurant:about] gave OK (shown); 'Dinner at Hauz Khas starts at 7.30 PM, and parking is a 3-minute walk away.' [hours:hauz-khas:thu, faq:parking-hauz-khas] gave OK (shown).",
+    "fix": "Accept '.' as the hour-minute separator in the 12-hour branch of TIME_RE ((?:[:.](\\d{2}))? before the am/pm suffix), so these spans are canonicalised and compared as minutes. Add kb-canonical and grounding tests for '7.30 PM', '3.00 pm' and '11.30 p.m.' in both directions."
+   },
+   {
+    "id": "MB-3",
+    "title": "Smalltalk prose can state hours or prices in number words with no grounding, against D-15 and INV-05",
+    "severity": "medium",
+    "location": "lib/chat/claims.ts:56-58 (smalltalkShowable), lib/chat/router.ts:302-304",
+    "failure_scenario": "smalltalkShowable rejects only ASCII digits, claims and booking-state words. On Thu 22 Oct (Hauz Khas dinner closed for a private event), a guest writes \"thanks! and when do you close tonight?\" and the model classifies it as smalltalk with \"You're welcome! Hauz Khas serves dinner until eleven tonight.\" The guest sees a false closing time. Prices work the same way (\"...about four hundred rupees\"). D-15 rejects these number and time words in FAQ prose, but smalltalk never goes through grounding. The repo's own INV-05 checker counts smalltalk as shown prose and flags these, so production is weaker than the invariant it is measured against.",
+    "evidence": "tsx probe with runTurn at now=2026-10-22T14:05+05:30 and the scripted fake: 'outcome: smalltalk | SHOWN: You're welcome! Hauz Khas serves dinner until eleven tonight.' INV-05 unsupportedToken returns 'eleven'. A second case showed 'Lunch for two at the Hauz Khas branch is about four hundred rupees.' and INV-05 returns 'two'.",
+    "fix": "In smalltalkShowable, also reject the D-15 number and time words (reuse grounding's NUMBER_WORDS plus 'one', 'rupees' and '₹'), or run smalltalk through the canonical-token checks with an empty fact set. Add smalltalk cases to the unit tests and the D1 false_claim or hours category."
+   },
+   {
+    "id": "MB-4",
+    "title": "Booking and availability claim filters miss common phrasings: unreachable \"'ve got\" alternative, curly apostrophes, and no space/room/spot/slot words",
+    "severity": "medium",
+    "location": "lib/chat/claims.ts:13-17",
+    "failure_scenario": "In AVAIL_RE the alternative (?:we|i)\\s+(?:have|'ve got|...) can never match \"We've got\", because \\s+ comes before the apostrophe; only \"We 've got\" matches. CLAIM_RE and AVAIL_RE use the ASCII apostrophe, and the text is not normalised the way norm() does for the verbatim check, so \"there’s\", \"we’ve\" and \"you’re\" written with U+2019 slip past. BOOKING_STATE_RE has no space, room, spot, slot(s) or availability. With no confirm card pending, these smalltalk replies are shown with no create: \"Hello! Good news, we’ve got space for you tonight.\", \"Lovely! There’s room for you this evening.\", \"Lovely! Your spot is saved for tonight.\". FAQ prose citing faq:walk-ins with \"We have space for you tonight.\" or \"We've got slots open tonight.\" passes checkGrounding. None of these is a hedged sentence, so the README's D-11 known limit doesn't cover them, and INV-04's claimIn misses them as well. This breaks H6/INV-04.",
+    "evidence": "tsx probe: bookingClaim('We've got availability tonight.') returns null, but bookingClaim('We 've got availability tonight.') flags it. smalltalkShowable is true for 'We've got slots open tonight.', 'We have space for you tonight.', 'We have room for your group tonight.', 'Good news, there’s space for you tonight.' and 'Your spot is saved for tonight!'. checkGrounding(..., ['faq:walk-ins']) shows all of them. Through runTurn: 'outcome: smalltalk | SHOWN: Hello! Good news, we’ve got space for you tonight.' and 'SHOWN: Lovely! Your spot is saved for tonight.'. evals/invariants.ts claimIn returns null for 'Lovely! Your spot is saved for tonight.'.",
+    "fix": "Map ’ and ‘ to ' before testing CLAIM_RE, AVAIL_RE and HEDGE_RE. Fix the alternative to (?:we|i)(?:\\s+have|'ve(?:\\s+got)?|\\s+can\\s+(?:offer|seat|fit|accommodate|get)). Add space, room, spot(s) and availability to the availability nouns, add saved/secured/held to the confirmation verbs, and add spot, slot(s), space and room to BOOKING_STATE_RE for smalltalk. Add these strings to the D-11 unit tests (keeping the 10 must-pass strings passing) and mirror them in INV-04's CLAIMS."
+   },
+   {
+    "id": "MB-5",
+    "title": "DD-MM-YYYY, DD.MM.YYYY and 'DD MM YYYY' dates are masked as [phone] before the model sees them",
+    "severity": "medium",
+    "location": "lib/llm/redact.ts:12-13, 29-35",
+    "failure_scenario": "PROTECT_RE protects only ISO YYYY-MM-DD and HH:MM. The 8-digit fallback in DIGIT_RUN_RE treats '-', '.' and spaces as separators, so the date formats Indian guests commonly type become [phone]. 'table for 4 on 22-10-2026 at 8pm' reaches retrieval and the prompt as 'table for 4 on [phone] at 8pm'. The model can't extract the date, the bot asks \"Which date?\" again, and if the guest retypes the same format it loops. Booking by typed date fails for these guests, and nothing tells them why.",
+    "evidence": "tsx probe of maskText: '22-10-2026' becomes '[phone]', 'book 22.10.2026 7:30 pm for 2' becomes 'book [phone] 7:30 pm for 2', 'for 2 on 22 10 2026' becomes 'for 2 on [phone]', '4 people, 31.10.2026, 8 pm' becomes '4 people, [phone], 8 pm', and '10-22-2026' becomes '[phone]'. '24/10/2026' and '2026-10-22' are unchanged. llm-redact.test.ts only tests ISO dates.",
+    "fix": "Extend PROTECT_RE to hold D{1,2}[-./ ]M{1,2}[-./ ](20)?YY dates with valid day (1-31) and month (1-12) ranges, after libphonenumber has already masked valid phones, and add 'keeps' cases to llm-redact.test.ts. This keeps D-15's 8+ digit fallback for real typo'd numbers. Record the widened carve-out in D-15."
+   },
+   {
+    "id": "MB-6",
+    "title": "Guest phone numbers using comma or underscore separators, or Devanagari digits, reach the prompt unmasked (INV-07)",
+    "severity": "low",
+    "location": "lib/llm/redact.ts:13 (DIGIT_RUN_RE), lib/phone.ts:17",
+    "failure_scenario": "A Hindi-keyboard guest types 'मेरा नंबर ९८७६५४३२१० है', or someone writes 'my number is 98765,43210' or '98765_43210'. libphonenumber's findPhoneNumbersInText doesn't match these. DIGIT_RUN_RE uses ASCII \\d and allows only space ( ) . - as separators, so the number goes unmasked into retrieval, the embedder, the prompt and the E2E trace's maskedPrompt. INV-07 says no guest phone reaches the model prompt. evals/invariants.ts guestPii uses the same ASCII patterns, so the invariant can't see these leaks either.",
+    "evidence": "tsx probe of maskText: 'my number is 98765,43210' and 'my number is 98765_43210' come back unchanged; 'my no is ९८७६५४३२१०' is unchanged; fullwidth '９８７６５４３２１０' and '98765/43210' are masked.",
+    "fix": "Before masking, fold every \\p{Nd} digit to ASCII (NFKC doesn't do this for Devanagari; map with the digit's numeric value), then run findPhones and the fallback on the folded text. Add ',' and '_' to the DIGIT_RUN_RE separator class. Apply the same folding in guestPii, and add these inputs to llm-redact.test.ts."
+   }
+  ],
+  "verdicts": [
+   {
+    "id": "MB-1",
+    "verdict": "valid",
+    "severity": "medium",
+    "reproduced": true,
+    "reason": "Reproduced through runTurn on a temp DB seeded from base.json at NOW=Fri 16 Oct. The answer 'Yes, ... open on Tue 27 Oct: lunch 12:00 PM–3:30 PM and dinner 7:00 PM–11:00 PM.' citing [hours:gurugram:tue, restaurant:about] returned outcome faq_answer with rendered:false and was shown. Thu 22 October dinner citing [hours:hauz-khas:thu, faq:parking-hauz-khas] was also shown. The control answer for 29 October fell back with reason 'date'. The weekly fact's text ('... Except Tue 27 Oct 2026: see exception:gurugram:2026-10-27.', lib/kb/facts.ts:151-152) goes into factText and factDates (grounding.ts:94,110), so the pointer is what lets the exception date through. supersede (hours.ts:21-31) acts only when the exception ID is cited. INV-05 returned null, so evals would not flag it either. This is the HF4 false 'open' answer that D-10 targets. I graded it medium, not high: in probe v2 the models cited the exception and the weekly fact together, and with that pattern supersede drops the weekly fact and the times fail. The bypass needs the model to leave out the exception, which the probe did not show. Also, booking on that date is still blocked by the availability engine."
+   },
+   {
+    "id": "MB-2",
+    "verdict": "valid",
+    "severity": "medium",
+    "reproduced": true,
+    "reason": "timeSpans returns [] for '3.00 PM', '7.30 PM' and '11.30 p.m.', because TIME_RE (canonical.ts:11) accepts only ':'. The digit-run fallback (grounding.ts:116-118) then accepts 3, 00, 11 and 30 because they appear in '12:00' and '3:30'. Through runTurn, 'lunch runs 12:00 PM to 3.00 PM' and 'Dinner ... ends at 11.30 PM' with [hours:hauz-khas:thu, restaurant:about], and 'starts at 7.30 PM' with faq:parking-hauz-khas, were all shown as faq_answer. INV-05 returned null. §5.7 requires times to be canonicalised on both sides, and any dot-separated time skips the time check completely. Medium, because it needs a mixed citation (hours-only answers are rendered from facts) and the model to write a dotted time even though every fact uses colons."
+   },
+   {
+    "id": "MB-3",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "Reproduced through runTurn at now=2026-10-22T14:05+05:30. The smalltalk replies 'You're welcome! Hauz Khas serves dinner until eleven tonight.' and '... about four hundred rupees.' were both shown (smalltalk, shown:true). The repo's own INV-05 checker flags 'eleven' and 'two', because evals/invariants.ts counts smalltalk as shown prose. smalltalkShowable (claims.ts:56-58) does meet the literal §5.7 rule ('no digits' plus the claim filter), and D-15's number-word rule is written for FAQ grounding. But INV-05 says every time and price in a shown answer must be in its cited facts, and smalltalk cites none, so production allows a false time that the invariant forbids. Low, because it needs the model to classify an hours or price question as smalltalk, and evals would catch it via INV-05."
+   },
+   {
+    "id": "MB-4",
+    "verdict": "valid",
+    "severity": "medium",
+    "reproduced": true,
+    "reason": "All reproduced. bookingClaim(\"We've got availability tonight.\") returns null, and only \"We 've got\" is flagged: in AVAIL_RE, \\s+ comes before \"'ve got\" (claims.ts:15), so that branch can never match normal text. The curly apostrophe defeats existing patterns: \"there's space for you\" is flagged, but \"there’s space for you\" and \"You’re all booked.\" are not. Neither smalltalkShowable nor checkGrounding folds ’ to ' (norm() does it only for the verbatim check). The availability and state word lists have no space, room, spot or saved. Through runTurn, these smalltalk replies were shown: 'Hello! Good news, we’ve got space for you tonight.', 'Lovely! There’s room for you this evening.' and 'Lovely! Your spot is saved for tonight.'. The FAQ answer 'We have space for you tonight.' with faq:walk-ins was shown as faq_answer. INV-04 claimIn returns null for all of them, so evals would not catch them. None is hedged, so the D-11 known limit does not apply. They are availability or confirmation claims without a create, which H6/INV-04 forbids. Medium: the selected 9b model produced no claims in probing, and the prompt rule is a second defense, but the filter is the stated guarantee and it misses common wordings."
+   },
+   {
+    "id": "MB-5",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "maskText turns '22-10-2026', '22.10.2026', '22 10 2026', '31.10.2026' and '10-22-2026' into '[phone]'. libphonenumber finds nothing in them; the 8+ digit fallback (redact.ts:13, 29-35) masks them, and PROTECT_RE (redact.ts:12) only exempts ISO dates and HH:MM. So 'table for 4 on 22-10-2026 at 8pm' reaches the model as 'table for 4 on [phone] at 8pm', the date can't be extracted, and the guest is asked for the date again. DD/MM/YYYY and '22 Oct 2026' are unchanged. The code follows D-15's literal carve-out, but the stated purpose, in the redact test and D-15 alike, is to keep what booking needs, and DD-MM-YYYY is the common written date in the target market (AC-01 typed-only booking). Low, because there is no safety or privacy impact: the date chips (next 7 days) and other date formats still work, so it is a usability gap, not a broken flow."
+   },
+   {
+    "id": "MB-6",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "maskText leaves 'my number is 98765,43210', 'my number is 98765_43210' and 'my no is ९८७६५४३२१०' unchanged. Fullwidth digits and '98765/43210' are masked. libphonenumber does not match these, and DIGIT_RUN_RE uses ASCII \\d with only space ( ) . - as separators. guestPii in evals/invariants.ts returns [] for all three, so INV-07 cannot see the leak. This is a real gap in INV-07 ('no guest phone reaches the model prompt'). Low, because these input forms are uncommon and the prompt only goes to the local Ollama model and the local embedder. chat_turns stores no text, and the maskedPrompt trace exists only in test mode."
+   }
+  ]
+ },
+ {
+  "lens": "TP",
+  "findings": [
+   {
+    "id": "TP-1",
+    "title": "A later lunch/dinner request never replaces an earlier time; guest gets a confirm card (or the same dinner slots) for the wrong meal",
+    "severity": "medium",
+    "location": "lib/chat/draft.ts:73",
+    "failure_scenario": "The guest types 'table for 2 tomorrow at 8pm in Hauz Khas' and gets the 8 PM confirm card. They then type 'actually make it lunch instead'. Prompt rule 2 tells the model to put timeWindow='lunch' and time=null. mergeExtracted skips the null time (line 75), so time stays 20:00. withSelection (lines 46-48) does not look at timeWindow, so the 8 PM selection is kept. getAvailability ranks by the preferred time whenever one is set (availability.ts:108), so the guest is shown the same 8:00 PM dinner confirm card again. Second case: after '8:15pm' returns '8:15 PM isn't available' with six dinner times, 'ok, lunch then' returns exactly the same dinner reply. No chip clears the time, so the only way to reach lunch is to type an exact lunch time. This breaks the §5.7 rule that the latest stated value wins, and §6.2 #17 (conflicting_input: latest value wins, or asks).",
+    "evidence": "Probe /private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/tp/p1.ts ran runTurn with the fake model on a temp DB. turn2 draft = {time:'20:00', timeWindow:'lunch', selected:{startsAt:1792247400000}}, outcome 'confirm', confirm block time '20:00'. Probe p5.ts: turn1 and turn2 both return '8:15 PM isn't available. Here are the nearest open times.' with dinner slots 19:00-21:30; the turn2 trace shows check_availability args {time:'20:15', window:'lunch'}. No unit test or scripted eval case covers a window change after a time (tests/unit/chat-draft.test.ts; evals/cases has no conflicting_input case).",
+    "fix": "In mergeExtracted (and applySetField), when the latest message sets timeWindow and leaves time null, clear a stored time that falls outside that window, or simply drop the stored time. Add timeWindow to the change check in withSelection so the old selection is dropped. Add unit and D1 cases for 'time, then a different meal' in both directions."
+   },
+   {
+    "id": "TP-2",
+    "title": "Pending-confirm rule (D-15) reads the incoming draft, not the reply being sent: prose can appear next to a new confirm card, and 'Tap Confirm' can appear with no card",
+    "severity": "medium",
+    "location": "lib/chat/router.ts:250",
+    "failure_scenario": "routeTurn sets pending = draft.selected !== null from the incoming draft, then appends resume(), which re-runs availability and may add or drop a confirm card. (a) Prose next to a new card: an availability read fails (couldntCheck sets selected=null), or the time was taken and is later freed. The guest then says 'thanks'. Smalltalk is not treated as pending, so the model's 'You're welcome! Enjoy your evening.' is shown directly above a new confirm card. That is the M2 risk D-15 exists to prevent: 'any smalltalk or FAQ prose is replaced' while a confirm block is shown. (b) 'Tap Confirm' with no card: a confirm card is shown, then the slot is taken (other guests book it, a SLOT_TAKEN 409 leaves selected in the client draft, the lead time passes, or a sessionStorage draft is restored the next day). The next FAQ or smalltalk turn replies 'Your table isn't booked yet. Tap Confirm to finish.' but resume() returns only a slots block (selected becomes null). The resumed step's explanation ('... isn't available') is thrown away, and the old card is rendered done (ConfirmCard hides the button when state.done), so there is no Confirm button anywhere.",
+    "evidence": "Probe p6.ts: turn1 had an injected loadBundle failure, giving outcome 'slots' and draft.selected=null. turn2 'thanks' returned text \"You're welcome! Enjoy your evening.\" with blocks [confirm 20:00] and trace smalltalk shown:true, then confirm. Probe p2.ts: confirm card for 6 at 20:00, then 2 createReservation calls filled the fitting tables (the third returned SLOT_TAKEN). turn2 'thanks' returned text \"Your table isn't booked yet. Tap Confirm to finish.\" with blocks [slots reason 'time_unavailable', lunch 12:00-13:30 plus alternatives], draft.selected=null and no confirm block. The same pattern exists at router.ts:275 and :285 for FAQ answers.",
+    "fix": "Compute the resumed step first. Treat the turn as pending when the outgoing blocks contain a confirm block (or the input draft had a selection). Use T.pendingConfirm only when a confirm block is actually returned. When the selection no longer holds, show the resumed step's own text (for example T.slotGone or T.timeUnavailable) instead."
+   },
+   {
+    "id": "TP-3",
+    "title": "A rejected new value (9+ guests, out-of-range date, inactive branch) keeps the old value and its selected slot; later turns push the old confirm card",
+    "severity": "medium",
+    "location": "lib/chat/router.ts:121",
+    "failure_scenario": "The guest has a confirm card for 4 guests on Sat 17 Oct at 8 PM. They type 'actually we are 12 people'. nextStep returns the large-party phone template, but the draft keeps partySize 4 and selected (mergeExtracted does not store 9+, and withSelection sees no change). The next message ('thanks', or any FAQ) replies 'Your table isn't booked yet. Tap Confirm to finish.' with a live confirm card for 4 guests at 8 PM. The bot is steering a party of 12 to book a 4-top. The same happens with 'no wait, make it 30 november' (past_horizon): the guest is told bookings open 30 days ahead, then the next FAQ turn pushes the 17 Oct confirm card again. Both go against 'the latest stated value wins'.",
+    "evidence": "Probe p3.ts: the 'large' turn returned draft {partySize:4, selected:{startsAt:1792247400000}}, outcome 'redirect'. The following 'thanks' turn returned 'Your table isn't booked yet. Tap Confirm to finish.' with a confirm block for partySize 4 at 20:00. Probe p4.ts: the past_horizon turn kept draft.date '2026-10-17' and selected. The following 'what is the address?' turn returned pendingConfirm text plus a confirm block for 2026-10-17 20:00. The issue path at router.ts:127-128 and mergeExtracted (draft.ts:78-81) also keep the selection.",
+    "fix": "When mergeExtracted or applySetField reports largeParty or a field issue for branch, date or party, return the draft with selected=null. For 9+, also clear partySize, so a stale card is not offered again and the resumed flow asks for the field. Add D1 cases: confirm card, then 12 guests, then smalltalk; and confirm card, then an out-of-range date, then FAQ."
+   },
+   {
+    "id": "TP-4",
+    "title": "submitOutcome ignores the D-14 SLOT_UNAVAILABLE reason; party_size gets 'Here are times that are open' with no times and no branch phone",
+    "severity": "low",
+    "location": "lib/chat/submit.ts:80",
+    "failure_scenario": "D-14 requires 'party 9+ gets the branch-phone template' for SLOT_UNAVAILABLE. createReservation returns reason 'party_size' with alternatives [] for party 9+, but submitOutcome maps every SLOT_UNAVAILABLE (and SLOT_TAKEN) to a fixed message that promises times. For 9+ the guest sees 'That time can't be booked. Here are times that are open.' with no times and no phone number. The same false promise appears for any 409 whose alternatives list is empty (for example a closure exception added while the card was open). Reach is limited: the guest UI and the eval runner build the body from a confirm block whose partySize is capped at 8, so the 9+ case needs a direct API call. The empty-alternatives case is reachable from the UI.",
+    "evidence": "Probe p7.ts: createReservation on a temp DB with partySize 9 returned SLOT_UNAVAILABLE, reason party_size, 0 alternatives. submitOutcome on that body returned {text:\"That time can't be booked. Here are times that are open.\", blocks:0}. The ErrorWire type in submit.ts does not declare `reason` at all.",
+    "fix": "Read error.reason in submitOutcome. For 'party_size', return the large-party template with the branch phone or phones. For other reasons, word the text by reason. When alternatives is empty, use text that does not promise times (for example 'please choose another date' plus the branch phone)."
+   }
+  ],
+  "verdicts": [
+   {
+    "id": "TP-1",
+    "verdict": "valid",
+    "severity": "medium",
+    "reproduced": true,
+    "reason": "Reproduced by running probe p1.ts against a temp DB with the fake model. Turn 1 ('8pm') returns the confirm card. Turn 2 (timeWindow 'lunch', time null) returns outcome 'confirm' again, with draft {time:'20:00', timeWindow:'lunch', selected:{startsAt:1792247400000}}. The trace shows check_availability {time:'20:00', window:'lunch'}. Probe p5.ts (8:15 PM, then 'lunch then') returns the identical '8:15 PM isn't available' reply with dinner slots 19:00-21:30. Cause: mergeExtracted skips a null time (lib/chat/draft.ts:75). withSelection (draft.ts:47) does not compare timeWindow. getAvailability ranks by the preferred time whenever one is set (lib/booking/availability.ts:107-108), so the window is ignored. The guest has no way out without typing an exact time: nextStep never asks for timeWindow, ConfirmCard has no change-time control, and the slots block shows only dinner times plus alternatives near 20:15. The prompt's rule 2 makes the model return time=null for 'make it lunch', so the deterministic merge is at fault. No approved decision covers this; the 'keeps the time preference' rule in §5.7 is about changing branch, date or party. It breaks the §5.7 rule that the latest stated value wins and §6.2 #17. tests/unit/chat-draft.test.ts and evals/cases have no conflicting_input case. No data-integrity impact (the card shows 8:00 PM), so medium."
+   },
+   {
+    "id": "TP-2",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "Both halves reproduce. routeTurn sets pending from the incoming draft (lib/chat/router.ts:250) but adds resume() blocks computed later. (a) Probe p6.ts: an availability read fails in turn 1, so couldntCheck sets selected=null. In turn 2 ('thanks'), the model's prose \"You're welcome! Enjoy your evening.\" is shown with a confirm block (trace: smalltalk shown:true, then confirm). This breaks D-15's literal rule ('selected slot or a confirm block'). It is only reachable after a backend failure or a freed slot, and the prose has already passed the booking-state word filter, so the M2 risk is mostly covered. (b) This is the more reachable half, from the normal UI. After a 409 SLOT_TAKEN, ChatPanel keeps p.draft, including selected (components/chat/ChatPanel.tsx:159), and marks the old card done, which hides its Confirm button (ConfirmCard.tsx:87). Probe p2.ts: the next 'thanks' returns \"Your table isn't booked yet. Tap Confirm to finish.\" with only a slots block (reason time_unavailable) and draft.selected=null, so the guest is told to tap a button that does not exist. The same applies to the FAQ paths at router.ts:275 and :285. Downgraded from medium to low: nothing false is said about the booking ('isn't booked yet' is true), rows are unaffected, and the correct slots and alternatives are on screen. The impact is a misleading instruction."
+   },
+   {
+    "id": "TP-3",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "Reproduced. Probe p3.ts: after a 4-guest confirm card, '12 people' returns the large-party phone template with partySize chips 1-8, but the draft keeps {partySize:4, selected:{...}}. The next 'thanks' returns \"Your table isn't booked yet. Tap Confirm to finish.\" plus a live confirm block for 4 guests. Probe p4.ts: 30 Nov (past_horizon) gets 'Bookings open up to 30 days ahead. Which date would you like?', yet the following FAQ turn returns the pending-confirm text plus a 17 Oct confirm card. Keeping the older value is a deliberate choice (router.ts:126 comment; draft.ts '9+ is not stored'). Keeping the selection and then pushing 'Tap Confirm' is not: the bot has just asked 'How many guests?' or 'Which date?', so the next turn goes against §5.7's 'repeats the pending question' and 'latest stated value wins'. In the UI the new card is active (ChatPanel.tsx:95 resets the card state). Downgraded from medium to low: the immediate reply is correct, and a wrong booking needs the guest to fill name and mobile and confirm a card that plainly shows '4 guests' or 'Sat 17 Oct'."
+   },
+   {
+    "id": "TP-4",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "The headline party-9+ case cannot reach submitOutcome through any real entry point. The only callers are the UI and the eval runner, which build the body from a confirm block. That block's partySize comes from a draft bounded to 1-8 (lib/chat/types.ts:17) and from getAvailability (party_too_large is redirected). A direct API caller never runs submitOutcome. So the proposed party_size branch would be dead code. The empty-alternatives half is real and reachable from the UI. submitOutcome always uses the fixed MESSAGES text (lib/chat/submit.ts:78-81), which promises times. Probe p8.ts: party 7 (only T6 fits at each branch), Gurugram closed on 27 Oct, five fills of HK T6 on 27-29 Oct, a confirm card for HK 27 Oct 8 PM, then a competitor takes 8 PM. The guest's create returns SLOT_TAKEN with 0 alternatives, and submitOutcome returns {text:'Sorry, that time was just taken. Here are other times that are free.', blocks:0}. The guest sees a promise of times, no times, no branch phone, and an old card with no Confirm button. Low: it is a wrong statement and a dead end with no booking or data impact, and the guest can still type."
+   }
+  ]
+ },
+ {
+  "lens": "UI",
+  "findings": [
+   {
+    "id": "UI-1",
+    "title": "While a submit's outcome is unknown, the composer stays open, and one typed message can strand the guest with no Retry or Start over",
+    "severity": "high",
+    "location": "components/chat/ChatPanel.tsx:116",
+    "failure_scenario": "A guest books a party of 7 for Sat 8 PM (only the 8-top fits). The POST commits but the response is lost, so the card locks with Retry and Start over. The composer is still enabled (sendText only checks `busy`), so the guest types \"hello, did it go through?\". The slot is now held by their own booking, so the server replies \"Your table isn't booked yet. Tap Confirm to finish.\" with a slots block and no confirm block. That reply becomes lastAssistant, so the old card renders with `{...NO_CARD, done:true}`: no Retry, no Start over, no Confirm. The new time chips are disabled because the outcome is locked, and New conversation is disabled too. The guest is told, wrongly, that nothing is booked, and has no control left; only a manual reload, which replays on mount, recovers. In the common case (party 4, slot still open) the server re-sends a confirm card, which inherits the lock and shows Retry while the text says \"Tap Confirm\". If the guest typed a different time (\"make it 9pm\"), Retry on the new 9 PM card silently re-posts the old 8 PM body. The composer is also open while the request is in flight, so a re-sent card clears `pending` mid-flight (line 103). D-14 says that during an unknown outcome the guest can only Retry or Start over.",
+    "evidence": "Probe 1: a scripted eval case in the scratchpad (cases1/probe.jsonl, run with `npx tsx evals/run.ts --mode scripted --cases <tmp> --out <tmp>`). After select_slot for party 7 at 20:00 and a {book} of the same slot, a smalltalk turn gave \"turn 6: no confirm block (got slots)\" and \"reply matches /isn't booked/\". The party-4 variant kept the confirm block but also said \"isn't booked\". Probe 2: renderToStaticMarkup of ChatPanel with sessionStorage stubbed (pending.unknown=true, then a later reply with no confirm block) printed \"Retry button: false | Start over button: false | Confirm button: false\", \"alternative time button disabled: true\", \"New conversation disabled: true\", \"composer input disabled: false\". Code: ChatPanel.tsx:116 and :289 never check `pending.unknown`; :239 renders non-last cards as done; :218 and :294 lock the chips and New conversation; ConfirmCard.tsx:77-92 shows buttons only from state.locked/done; router.ts:298-300, 275 and 285-287 return T.pendingConfirm plus resume(). guest.spec.ts:108 asserts the welcome chip is disabled, but every chip that isn't on the last reply is disabled anyway, so the assertion proves nothing about the lock, and the composer is never checked.",
+    "fix": "Disable the composer (input, Send and the failed-chat Try again) while `card.submitting || pending?.unknown`, as D-14 requires. Also keep the locked card interactive whether or not it is the last item: render Retry/Start over (or a persistent locked banner) for the card whose startsAt matches pending.body. Add an E2E spec that types during a locked submit and asserts Retry is still reachable and nothing says \"isn't booked\"."
+   },
+   {
+    "id": "UI-2",
+    "title": "A 429, 503 or 403 on a replay is treated as a final answer: the key is dropped, the card unlocks, and the guest may be told \"nothing was booked\"",
+    "severity": "medium",
+    "location": "lib/chat/submit.ts:92",
+    "failure_scenario": "The original POST commits but its response is lost, so the card locks. The guest taps Retry (or reloads, or taps Start over). That replay gets 429, 503 or 403, none of which says anything about the original request. Every attempt counts toward the 5/min per-phone limit and the 30/min global cap (reservations.ts:18-27). A 503 means the replay's own IMMEDIATE BEGIN hit SQLITE_BUSY before the key lookup. A 403 comes from the proxy before the handler runs. submitOutcome returns unknown=false and clearPending=true, and ChatPanel.post (lines 154-158) sets locked=false and pending=null, re-enabling Confirm and the fields. For a 503 the card says \"We couldn't save your booking just now, so nothing was booked\", which is false when the original committed. Start over (lines 183-192) then resets the draft. The next Confirm uses a new key; with the same phone the guest gets DUPLICATE_BOOKING instead of their confirmation, and with an edited phone a second booking is created (J6 requires exactly one). D-14's \"cleared on 503 (nothing was committed)\" only holds for a first attempt, not for a replay of an unknown outcome, including the mount replay after a reload mid-flight.",
+    "evidence": "Probe (scratchpad/probe-submit.ts): network error gives {unknown:true, clearPending:false}; \"replay -> 429\" gives {unknown:false, clearPending:true, text:\"Too many booking attempts…\"}; \"replay -> 503\" gives {unknown:false, clearPending:true, text:\"…so nothing was booked. Please try again.\"}; \"replay -> 403\" gives {unknown:false, clearPending:true}. Probe (scratchpad/probe-replay.ts, temp DB, real reservationsHandler with production limits): the same key 6 times gave 201 NE-RXWR9KYN, 200 ×4, then 429 RATE_LIMITED, and the client mapping cleared pending. One row existed throughout.",
+    "fix": "Mark a pending entry as sent before the first fetch, and treat every later attempt (Retry, Start over, mount replay) as a replay. On a replay, map 429/503/403/413 to unknown=true with clearPending=false: keep the lock and the key, show \"We still can't confirm; try again in a moment\", and never say \"nothing was booked\". Optionally exempt known-key replays from the create limiters. Update D-14's 503 rule to cover only the first attempt."
+   },
+   {
+    "id": "UI-3",
+    "title": "The INV-07 checks can't catch typed guest text in E2E server logs, or submitted phones and emails in eval logs",
+    "severity": "medium",
+    "location": "tests/e2e/invariants.ts:59",
+    "failure_scenario": "The E2E log check only scans `observed.pii`. guest.spec.ts never adds what `say()` types (lines 68, 79, 151, 166, 177), despite the fixtures.ts comment that specs add anything they type. If /api/chat, proxy.ts or a route logged the guest's message, every E2E spec would still pass INV-07. E2E is the only layer that runs the route code. On the eval side, checkCase's secrets are typed guest texts, their extracted phones/emails, and `submittedNames` only (run.ts:254 records just the name). A phone or email from a {submit} turn written to a log by the reservation handler or createReservation would pass. Both layers can therefore stay green on an INV-07 leak (AC-14, CLAUDE.md \"log guest text\").",
+    "evidence": "Probe (scratchpad/probe-inv07.ts): checkCase with logs [\"create failed for +91 98765 43210 asha@example.com\"] and submittedNames [\"Asha Rao\"] gave `[]`. checkE2E with a server log containing \"chat turn: can I bring my dog?\" and pii [] (as the J12 spec leaves it) also gave `[]`. Grep: no `observed.pii.push` next to any `say(` call in guest.spec.ts.",
+    "fix": "Have `say()` (and any typed composer input) push its text into observed.pii automatically, and scan chat_turns in E2E too. In evals/run.ts, record each submit's phone (raw, E.164 and digits) and email, and add them to checkCase's secrets."
+   },
+   {
+    "id": "UI-4",
+    "title": "The focus outline is about 2:1 against the dark identity panel, below the 3:1 that WCAG AA requires for a focus indicator",
+    "severity": "low",
+    "location": "app/globals.css:51",
+    "failure_scenario": "A keyboard user tabbing into the identity panel (the two branch phone links on desktop; the \"Hours and locations\" summary and the phone links on mobile) sees the global `:focus-visible` outline, 3px #2e5e3e (neem), on the #2a2622 (smoke) panel. That contrast is 1.99:1, under the 3:1 that WCAG 2.1 SC 1.4.11 requires for a focus indicator, so focus is hard to see there (§5.10 asks for visible focus and WCAG AA). axe does not test focus-indicator contrast, so the passing E2E axe checks cannot catch this.",
+    "evidence": "Computed with the WCAG relative-luminance formula (node one-liner): neem #2e5e3e vs smoke #2a2622 = 1.99:1; the same outline on the ash chat surface = 6.17:1. Focusable elements on the smoke panel: IdentityPanel.tsx:18 (tel links) and :35 (summary). The only focus style is globals.css:51-54.",
+    "fix": "Override the outline inside the identity panel with a light colour (e.g. `header :focus-visible { outline-color: var(--smoke-ink) }`, about 14:1 on smoke), or use a two-tone ring. Add a spec that focuses a panel link and checks the computed outline colour."
+   }
+  ],
+  "verdicts": [
+   {
+    "id": "UI-1",
+    "verdict": "valid",
+    "severity": "medium",
+    "reproduced": true,
+    "reason": "Confirmed on both the server and the client. Server: a scripted eval probe (/private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/v1cases/probe.jsonl) ran select_slot for party 7 at Sat 20:00, then a {book} of that slot, then a smalltalk turn. Result: 'turn 6: no confirm block (got slots)' and 'reply matches /isn't booked/'. The party-4 variant kept a confirm block but also said \"isn't booked\". This is router.ts:299-300 (pendingConfirm text plus resume()); availabilityStep finds no exact slot once the guest's own booking holds the only suitable table. Client: I rendered ChatPanel with renderToStaticMarkup and stubbed sessionStorage (pending.unknown=true, then a typed message and a slots reply). Output: Retry false, Start over false, Confirm false, time chip disabled true, New conversation disabled true, composer disabled false. Causes: sendText (ChatPanel.tsx:116) and the Send button (:289) never check pending.unknown; a confirm card that isn't on the last reply renders as {...NO_CARD, done:true} (:239); chips and New conversation are locked (:218, :294). This breaks D-14 ('the guest can only Retry or Start over'). The stranding happens exactly when the lost submit committed and took the last suitable table, and the guest is then told \"isn't booked yet\". Severity lowered from high to medium: it needs a lost response or a 500 on a local server, which is rare. The pending entry stays in sessionStorage, so a manual reload replays it and recovers, and it cannot cause a double booking. The mid-flight pending clear at :103 is transient, because post() rewrites pending from its closure."
+   },
+   {
+    "id": "UI-2",
+    "verdict": "invalid",
+    "severity": "low",
+    "reproduced": false,
+    "reason": "The code does what the approved spec says. §5.7 says the client 'clears the entry on any 2xx or 4xx', which covers 429 and 403. D-14 says 'The pending entry is cleared on 503 (nothing was committed)'. The handler comment at reservations.ts:18-19 records the decision that 'Replays of a known key still count, which is fine at these limits.' The fix would change D-14 and §5.7, so it is a spec amendment, not an implementation defect. The failure also needs stacked rare events. 403: a same-page replay sends the same Host and Origin that already passed proxy.ts. 503: the replay's IMMEDIATE BEGIN has to wait out the 5000 ms busy timeout (lib/db/client.ts:17) on a single-machine app. 429: five replays within a minute must each reach the server and still come back with an unknown outcome; if any one gets its 200 through, the outcome is settled. Even after an unlock, G-4 still applies: re-confirming with the same mobile gets DUPLICATE_BOOKING, which shows the existing booking when the name matches. Only a guest who also edits the phone could create a second booking. Worth raising with the user as a possible D-14 amendment, not as a defect."
+   },
+   {
+    "id": "UI-3",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "Probe (/private/tmp/claude-501/-Users-aniketagarwal-Restraunt-Chatbot/bfa2e1fd-434c-4a59-abf9-b5669e6e5bba/scratchpad/probe-inv07.ts): checkCase with logs ['create failed for +91 98765 43210 asha@example.com'] and submittedNames ['Asha Rao'] returned []. checkE2E with a server log containing 'chat turn: can I bring my dog?' and pii [] returned []. With pii set to that text it reported INV-07. So the checkers work, but they are not given the data. Causes: say() in guest.spec.ts:38-41 never adds the typed text to observed.pii, although fixtures.ts:8 says specs add anything they type; J12 and the failed-chat spec push nothing. checkE2E never reads chat_turns. evals/run.ts:254 records only the submit name, so evalInvariants' secrets (:131) leave out submitted phones and emails. §6.4 requires INV-07 (no guest text, name, phone or email in logs or chat_turns) to be checked after every E2E test and every eval case, so both layers could stay green on a real leak. Severity low: no current leak exists. The only console calls in lib/app/proxy are the two admin warnings in lib/api/admin.ts:27,42, and they contain no guest data."
+   },
+   {
+    "id": "UI-4",
+    "verdict": "valid",
+    "severity": "low",
+    "reproduced": true,
+    "reason": "The WCAG relative-luminance formula gives neem #2e5e3e on smoke #2a2622 = 1.99:1, against 6.17:1 on ash and 6.98:1 on paper. The only focus style is globals.css:51-54 (3px neem outline with a 2px offset, so it is drawn over the panel background). The focusable elements on the smoke <header> are the tel links (IdentityPanel.tsx:18, on desktop and inside the mobile disclosure) and the 'Hours and locations' summary (:35); none has its own focus class. A focus indicator at about 2:1 on the dark panel falls below the 3:1 that the W3C Understanding document for SC 1.4.11 applies to focus indicators, and below §5.10's 'visible focus' and 'WCAG AA contrast'. axe does not test focus-indicator contrast, so the passing E2E axe checks don't cover it. Low severity: two to three controls, and the outline is visible, just faint."
+   }
+  ]
+ }
+]

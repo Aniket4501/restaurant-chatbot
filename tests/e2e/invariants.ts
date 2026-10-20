@@ -56,7 +56,11 @@ export function checkE2E(files: { db: string; trace: string; log: string; logOff
     if (claimIn(o.pageTextOutsideConfirmations)) v.push({ inv: "INV-04", turn: null, detail: "claim text outside a confirmation card" });
 
     const log = fs.existsSync(files.log) ? fs.readFileSync(files.log, "utf8").slice(files.logOffset) : "";
-    for (const p of [...o.pii.filter((s) => s.trim().length >= 4), ...guestPii(o.pii)]) if (log.includes(p)) v.push({ inv: "INV-07", turn: null, detail: "guest data in the server log" });
+    const stored = JSON.stringify(db.prepare("SELECT * FROM chat_turns").all());
+    for (const p of [...o.pii.filter((s) => s.trim().length >= 4), ...guestPii(o.pii)]) {
+      if (log.includes(p)) v.push({ inv: "INV-07", turn: null, detail: "guest data in the server log" });
+      if (p.trim().length >= 8 && stored.includes(p)) v.push({ inv: "INV-07", turn: null, detail: "guest data in chat_turns" });
+    }
   } finally {
     db.close();
   }

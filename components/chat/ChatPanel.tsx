@@ -113,7 +113,7 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
 
   const sendText = (raw: string) => {
     const t = raw.trim().slice(0, 500);
-    if (!t || busy) return;
+    if (!t || busy || ref.current.pending?.unknown) return;
     setText("");
     const prev = ref.current.items;
     update((p) => ({ ...p, items: [...p.items, { id: uid(), role: "guest", text: t }] }));
@@ -214,6 +214,9 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
 
   const lastAssistant = [...s.items].reverse().find((i) => i.role === "assistant" && i.tone !== "error");
   const locked = !!s.pending?.unknown;
+  // While a submit's outcome is unknown, its card keeps Retry and Start over even if it isn't the latest reply (review UI-1).
+  const pendingCardItem = locked ? [...s.items].reverse().find((i) => i.blocks?.some((b) => b.type === "confirm" && b.startsAtMs === s.pending!.body.startsAt)) : undefined;
+  const composerLocked = locked || card.submitting;
   const handlers = (item: Item): BlockHandlers => ({
     active: item === lastAssistant && !busy && !locked,
     onAction: sendAction,
@@ -236,9 +239,9 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
                     <ConfirmCard
                       key={`${b.startsAtMs}-${k}`}
                       block={b}
-                      state={item === lastAssistant ? card : { ...NO_CARD, done: true }}
+                      state={item === lastAssistant || item === pendingCardItem ? card : { ...NO_CARD, done: true }}
                       initial={s.pending?.body.startsAt === b.startsAtMs ? s.pending.body : null}
-                      active={item === lastAssistant}
+                      active={item === lastAssistant || item === pendingCardItem}
                       onSubmit={submit}
                       onRetry={retry}
                       onStartOver={startOver}
@@ -259,7 +262,7 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
         {failed && (
           <div role="alert" className="space-y-2">
             <p className="text-warn">We couldn&apos;t reach the restaurant just now. Check your connection and try again.</p>
-            <button type="button" onClick={() => void send(failed)} className="min-h-11 rounded-md border border-line bg-paper px-4 hover:border-neem hover:text-neem">
+            <button type="button" onClick={() => void send(failed)} disabled={composerLocked} className="min-h-11 rounded-md border border-line bg-paper px-4 hover:border-neem hover:text-neem disabled:opacity-50">
               Try again
             </button>
           </div>
@@ -283,10 +286,11 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
             onChange={(e) => setText(e.target.value)}
             maxLength={500}
             autoComplete="off"
-            placeholder="Ask a question, or tell us when you'd like to come"
-            className="min-h-11 flex-1 rounded-md border border-line bg-white px-3 text-[16px] text-ink placeholder:text-muted"
+            disabled={composerLocked}
+            placeholder={composerLocked ? "Finish or retry your booking above first" : "Ask a question, or tell us when you'd like to come"}
+            className="min-h-11 flex-1 rounded-md border border-line bg-white px-3 text-[16px] text-ink placeholder:text-muted disabled:bg-ash"
           />
-          <button type="submit" disabled={busy || !text.trim()} className="min-h-11 rounded-md bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-50">
+          <button type="submit" disabled={busy || composerLocked || !text.trim()} className="min-h-11 rounded-md bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-50">
             Send
           </button>
         </div>

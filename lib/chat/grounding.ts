@@ -1,4 +1,4 @@
-import { canonicalSpans, phonesIn, pricesIn, timesIn } from "@/lib/kb/canonical";
+import { canonicalSpans, NUMBER_WORDS, numberWordRe, phonesIn, pricesIn, timesIn, UNREADABLE_TIME_RE } from "@/lib/kb/canonical";
 import type { Fact } from "@/lib/kb/facts";
 import { bookingClaim, unsupportedBookingStateSentence } from "@/lib/chat/claims";
 import { supersede } from "@/lib/chat/hours";
@@ -55,18 +55,6 @@ export function dateSpans(text: string): DateSpan[] {
   return out.sort((a, b) => a.start - b.start);
 }
 
-const NUMBER_WORDS = [
-  "noon",
-  "midnight",
-  "o'clock",
-  "half past",
-  "quarter past",
-  "quarter to",
-  ...["two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"],
-  ...["thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred"],
-];
-const wordRe = (w: string) => new RegExp(`(?<![\\p{L}])${w.replace(/'/g, "['’]")}(?![\\p{L}])`, "iu");
-
 const blank = (text: string, spans: { start: number; end: number }[]) => {
   let s = text;
   for (const sp of spans) s = s.slice(0, sp.start) + " ".repeat(sp.end - sp.start) + s.slice(sp.end);
@@ -90,9 +78,25 @@ export function checkGrounding(answer: string, citedFactIds: string[], ctx: Grou
   const unsent = citedFactIds.find((id) => !ctx.sentIds.has(id));
   if (unsent) return fail("not_sent", unsent);
 
-  const cited = supersede(citedFactIds, ctx.zoneOf);
-  const factText = cited.map((id) => ctx.factsById.get(id)!.text.normalize("NFKC")).join("\n");
   const text = answer.normalize("NFKC");
+  // D-10 (review RT-1): a weekly fact that names an exception on a date the answer mentions is replaced by that
+  // exception, and the weekly fact's "Except …" pointers never ground anything themselves.
+  const mentioned = dateSpans(text);
+  const cited = [
+    ...new Set(
+      supersede(citedFactIds, ctx.zoneOf).flatMap((id) => {
+        const f = ctx.factsById.get(id)!;
+        if (f.kind !== "hours") return [id];
+        const named = [...f.text.matchAll(/see (exception:[a-z0-9-]+:\d{4}-(\d{2})-(\d{2}))/g)].filter((m) => mentioned.some((d) => d.day === Number(m[3]) && (d.month === null || d.month === Number(m[2]))));
+        return named.length ? named.map((m) => m[1]).filter((x) => ctx.factsById.has(x)) : [id];
+      }),
+    ),
+  ];
+  const groundText = (id: string) => {
+    const f = ctx.factsById.get(id)!;
+    return (f.kind === "hours" ? f.text.replace(/ Except .+$/, "") : f.text).normalize("NFKC");
+  };
+  const factText = cited.map(groundText).join("\n");
 
   const factTimes = timesIn(factText);
   const factPrices = pricesIn(factText);
@@ -105,6 +109,8 @@ export function checkGrounding(answer: string, citedFactIds: string[], ctx: Grou
   }
 
   const rest = blank(text, spans);
+  const unreadable = UNREADABLE_TIME_RE.exec(rest);
+  if (unreadable) return fail("time", unreadable[0]); // e.g. "7.30" with no am/pm (review RT-2)
   const dates = dateSpans(rest);
   const idText = cited.join(" ");
   const factDates = dateSpans(`${factText}\n${idText}`);
@@ -117,7 +123,7 @@ export function checkGrounding(answer: string, citedFactIds: string[], ctx: Grou
   const stray = digitRuns(blank(rest, dates)).find((r) => !factDigits.has(r));
   if (stray) return fail("digits", stray);
 
-  const word = NUMBER_WORDS.find((w) => wordRe(w).test(text) && !wordRe(w).test(factText));
+  const word = NUMBER_WORDS.find((w) => numberWordRe(w).test(text) && !numberWordRe(w).test(factText));
   if (word) return fail("number_word", word);
 
   const claim = bookingClaim(text);

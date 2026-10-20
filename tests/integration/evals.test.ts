@@ -84,7 +84,7 @@ describe("invariants detect violations (§6.4)", () => {
   afterEach(() => t.cleanup());
 
   const turn = (o: Partial<TurnRecord>): TurnRecord => ({ index: 0, kind: "guest", now: NOW, shown: { text: "", blocks: [] }, outcome: null, citedFactIds: [], factText: new Map(), trace: [], rowsBefore: [], rowsAfter: [], offered: [], prompts: [], ...o });
-  const record = (turns: TurnRecord[], o: Partial<CaseRecord> = {}): CaseRecord => ({ turns, setupRefs: new Set(), guestTexts: [], submittedNames: [], chatTurns: [], logs: [], ...o });
+  const record = (turns: TurnRecord[], o: Partial<CaseRecord> = {}): CaseRecord => ({ turns, setupRefs: new Set(), guestTexts: [], submittedNames: [], submittedPii: [], chatTurns: [], logs: [], ...o });
   const invs = (rec: CaseRecord) => checkCase(t.db, rec).map((v) => v.inv);
   const book = (time: string, phone = "+919876543210") => {
     const r = createReservation(t.db, { branch: "hauz-khas", startsAt: toInstant("2026-10-17", time, "Asia/Kolkata"), partySize: 2, name: "Asha Rao", phone }, crypto.randomUUID(), NOW);
@@ -159,5 +159,6 @@ describe("invariants detect violations (§6.4)", () => {
     expect(invs(record([turn({ prompts: ["…my number is 98765 43210…"] })], { guestTexts: guest }))).toContain("INV-07");
     expect(invs(record([], { guestTexts: guest, chatTurns: [{ outcome: "my number is 98765 43210 and mail a@b.com" }] }))).toContain("INV-07");
     expect(invs(record([], { submittedNames: ["Asha Rao"], logs: ["created booking for Asha Rao"] }))).toEqual(["INV-07"]);
+    expect(invs(record([], { submittedPii: ["98765 43210", "9876543210", "asha@example.com"], logs: ["create failed for +919876543210"] }))).toEqual(["INV-07"]); // review UI-3
   });
 });

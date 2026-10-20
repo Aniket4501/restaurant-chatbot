@@ -53,6 +53,11 @@ body {
   outline-offset: 2px;
 }
 
+/* On the dark identity panel the green ring is about 2:1; a light ring keeps focus visible (review UI-4, WCAG 1.4.11). */
+.on-smoke :focus-visible {
+  outline-color: var(--smoke-ink);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

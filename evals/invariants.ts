@@ -1,6 +1,7 @@
 import type { Block, TraceEntry } from "@/lib/chat/types";
 import type { DB } from "@/lib/db/client";
 import type { Offered } from "@/lib/chat/offered";
+import { foldDigits } from "@/lib/llm/redact";
 
 // Invariants checked after every eval case and every E2E spec (MASTER_PROMPT §6.4). INV-04 and INV-05 use their own,
 // stricter patterns and deliberately import nothing from lib/chat/claims or lib/chat/grounding, so the evals cannot
@@ -41,6 +42,8 @@ export type CaseRecord = {
   setupRefs: Set<string>;
   guestTexts: string[];
   submittedNames: string[];
+  /** Phones (as typed and digits only) and emails from {submit} turns (review UI-3). */
+  submittedPii: string[];
   chatTurns: Record<string, unknown>[];
   logs: string[];
 };
@@ -48,19 +51,24 @@ export type CaseRecord = {
 // Stricter claim patterns (INV-04). Negations such as "isn't booked yet" don't match because "is" must be followed by
 // whitespace and the claim word.
 const CLAIMS = [
-  /\b(?:i|we)\s*(?:'ve|'ll|have|has|will|just)?\s*(?:just\s+)?(?:booked|reserved|confirmed|secured|held)\b/i,
-  /\b(?:your|the)\s+(?:table|booking|reservation|slot)\s+(?:is|has been|was|'s)\s+(?:now\s+)?(?:booked|reserved|confirmed|held|secured|set)\b/i,
+  /\b(?:i|we)\s*(?:'ve|'ll|have|has|will|just)?\s*(?:just\s+)?(?:booked|reserved|confirmed|secured|held|saved)\b/i,
+  /\b(?:your|the)\s+(?:table|booking|reservation|slot|spot)\s+(?:is|has been|was|'s)\s+(?:now\s+)?(?:booked|reserved|confirmed|held|secured|set|saved)\b/i,
+  /\b(?:we|i)(?:'ve|\s+have)\s+(?:got\s+)?(?:(?:a|some|plenty of)\s+)?(?:space|spots?|slots?|availability|room for you)\b/i,
   /\bbooking\s+(?:is\s+)?confirmed\b/i,
   /\byou(?:'re| are)\s+(?:all\s+)?(?:booked|set|confirmed)\b/i,
   /\bsee you (?:then|at|on|tonight|tomorrow|soon)\b/i,
   // Availability claims need a booking context, so policy text such as "Walk-ins are welcome when a table is free."
   // (a verbatim FAQ) is not a violation.
   /\b(?:tables?|seats?)\s+(?:is|are)\s+(?:still\s+)?(?:available|free)\s+(?:for|at|on|tonight|today|tomorrow|now)\b/i,
-  /\bthere(?:'s| is| are)\s+(?:a\s+)?(?:tables?|seats?)\s+(?:available|free)\b/i,
+  /\bthere(?:'s| is| are)\s+(?:a\s+)?(?:tables?|seats?|space|spots?)\s+(?:available|free|for you)\b/i,
+  /\bthere(?:'s| is)\s+room\s+for\s+you\b/i,
   /\bwe have (?:a )?tables? (?:for you|available|free)\b/i,
   /\b(?:reservation|booking)\s+(?:is\s+)?(?:complete|done|made)\b/i,
 ];
-export const claimIn = (text: string) => CLAIMS.find((re) => re.test(text)) ?? null;
+export const claimIn = (raw: string) => {
+  const text = raw.replace(/[’‘]/g, "'");
+  return CLAIMS.find((re) => re.test(text)) ?? null;
+};
 
 const WORDS = ["noon", "midnight", "o'clock", "half past", "quarter past", "quarter to", "dozen", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred"];
 const word = (w: string) => new RegExp(`(?<![\\p{L}])${w}(?![\\p{L}])`, "iu");
@@ -128,7 +136,7 @@ export function checkCase(db: DB, rec: CaseRecord): Violation[] {
   for (const o of overlaps) v.push({ inv: "INV-02", turn: null, detail: `${o.a} overlaps ${o.b}` });
 
   // INV-07 (storage and logs): no guest text, name, phone or email in chat_turns or the captured logs.
-  const secrets = [...rec.guestTexts.filter((s) => s.trim().length >= 4), ...rec.submittedNames, ...guestPii(rec.guestTexts)];
+  const secrets = [...rec.guestTexts.filter((s) => s.trim().length >= 4), ...rec.submittedNames, ...rec.submittedPii, ...guestPii(rec.guestTexts)];
   const stored = JSON.stringify(rec.chatTurns);
   const logs = rec.logs.join("\n");
   for (const s of secrets) {
@@ -141,10 +149,13 @@ export function checkCase(db: DB, rec: CaseRecord): Violation[] {
 /** Phone-like digit runs (8+ digits, also with separators removed) and emails in guest text. */
 export function guestPii(texts: string[]): string[] {
   const out = new Set<string>();
-  for (const t of texts) {
-    for (const m of t.matchAll(/\+?\d[\d\s().-]{6,}\d/g)) {
+  for (const raw of texts) {
+    if (raw !== foldDigits(raw)) out.add(raw.match(/\p{Nd}[\p{Nd}\s().,_-]{6,}\p{Nd}/u)?.[0] ?? raw); // non-ASCII digits as typed
+    const t = foldDigits(raw);
+    for (const m of t.matchAll(/\+?\d[\d\s().,_-]{6,}\d/g)) {
       const digits = m[0].replace(/\D/g, "");
-      if (digits.length >= 8 && !/^\d{4}-\d{2}-\d{2}/.test(m[0])) {
+      const date = /^\d{4}-\d{2}-\d{2}/.test(m[0]) || /^(?:0?[1-9]|[12]\d|3[01])([-. /])(?:0?[1-9]|1[0-2])\1(?:20)?\d{2}$/.test(m[0].trim());
+      if (digits.length >= 8 && !date) {
         out.add(m[0].trim());
         out.add(digits);
       }

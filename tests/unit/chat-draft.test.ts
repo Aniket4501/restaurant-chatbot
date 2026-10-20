@@ -44,18 +44,18 @@ describe("mergeExtracted (§5.7 merge rules, D-15)", () => {
     const r = mergeExtracted(draft({ partySize: 4 }), fields({ partySize: 0 }), ctx);
     expect([r.draft.partySize, r.issues, r.changed]).toEqual([4, [], []]);
   });
-  it("flags 9+ guests without storing them", () => {
+  it("flags 9+ guests without storing them, and drops the old party size (latest value wins, review TP-3)", () => {
     const r = mergeExtracted(draft({ partySize: 4 }), fields({ partySize: 150 }), ctx);
     expect(r.largeParty).toBe(true);
-    expect(r.draft.partySize).toBe(4);
+    expect(r.draft.partySize).toBeNull();
   });
-  it("records invalid values as issues and keeps the old value", () => {
+  it("records invalid values as issues and clears the field so the flow asks again (review TP-3)", () => {
     const r = mergeExtracted(draft({ date: "2026-10-17" }), fields({ date: "2026-12-25", branch: "mumbai" }), ctx);
     expect(r.issues).toEqual([
       { field: "branch", issue: "bad_branch" },
       { field: "date", issue: "past_horizon" },
     ]);
-    expect(r.draft.date).toBe("2026-10-17");
+    expect(r.draft.date).toBeNull();
   });
   it("keeps only valid ambiguity candidates (no 0, no 9+) and asks only with two or more", () => {
     const r = mergeExtracted(draft({}), fields({ ambiguity: { field: "date", candidates: ["2026-10-23", "2026-10-30", "2026-12-25"] } }), ctx);

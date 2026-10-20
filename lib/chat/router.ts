@@ -247,65 +247,66 @@ function infoBlock(ids: string[], facts: Map<string, Fact>): Block {
 
 /** Route a validated model turn by intent (§5.7 step 5, D-10, D-15). */
 export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx): Step {
-  const pending = draft.selected !== null;
   const known = (draft.branch ?? turn.booking.branch) as string | null;
+  if (turn.intent === "booking") return nextStep(mergeExtracted(draft, turn.booking, ctx), ctx); // templates only; prose dropped
 
-  // A booking in progress is kept, and its pending question is repeated after an answer (§5.7 merge rules).
-  // Computed at most once per turn.
-  let resumed: Step | null | undefined;
-  const resumeStep = () => (resumed === undefined ? (resumed = bookingInProgress(draft) ? nextStep({ draft, issues: [], ambiguity: null, largeParty: false }, ctx) : null) : resumed);
-  const resume = (): Block[] => resumeStep()?.blocks ?? [];
-  const resumeDraft = (): Draft => resumeStep()?.draft ?? draft;
+  // A booking in progress is kept, and its pending question is repeated after the answer (§5.7 merge rules).
+  const resumed = bookingInProgress(draft) ? nextStep({ draft, issues: [], ambiguity: null, largeParty: false }, ctx) : null;
+  // D-15's pending-confirm rule is decided on the reply actually sent (review TP-2): model prose is replaced only when
+  // this reply carries a confirm card, and if the guest's selected slot was lost, that step's text is shown as a notice.
+  const confirmShown = !!resumed?.blocks.some((b) => b.type === "confirm");
+  const lostSelection = draft.selected !== null && !confirmShown;
+  const prose = (text: string) => {
+    if (!confirmShown) return text;
+    ctx.trace.push({ action: "pending_confirm" });
+    return T.pendingConfirm;
+  };
+  // The lost-slot note is a template, so it goes in a notice block and never mixes with model prose (INV-05).
+  const lostNote: Block[] = lostSelection && resumed ? [{ type: "notice", tone: "warning", text: resumed.text }] : [];
+  const reply = (text: string, outcome: Outcome, o: { lead?: Block[]; idle?: Block[]; cited?: string[] } = {}): Step => ({
+    text,
+    blocks: [...(o.lead ?? []), ...lostNote, ...(resumed ? resumed.blocks : (o.idle ?? []))],
+    draft: resumed?.draft ?? draft,
+    outcome,
+    ...(o.cited ? { citedFactIds: o.cited } : {}),
+  });
 
   switch (turn.intent) {
-    case "booking": {
-      const merged = mergeExtracted(draft, turn.booking, ctx);
-      return nextStep(merged, ctx); // templates only; model prose is dropped
-    }
     case "faq": {
       if (!turn.answerable) {
         ctx.trace.push({ action: "fallback_unknown", reason: "answerable_false" });
-        return { text: T.fallback(phoneBranches(ctx, known)), blocks: resume(), draft: resumeDraft(), outcome: "faq_fallback" };
+        return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback");
       }
       const cited = [...new Set(turn.citedFactIds)];
       const unknown = cited.length === 0 ? "no_citation" : cited.some((id) => !facts.factsById.has(id)) ? "unknown_citation" : cited.some((id) => !facts.sentIds.has(id)) ? "not_sent" : null;
       if (!unknown && isHoursOnly(cited)) {
         const r = renderHoursAnswer(cited, facts.factsById, facts.zoneOf);
         ctx.trace.push({ action: "answer_faq", ids: r.factIds, rendered: true });
-        const text = pending ? T.pendingConfirm : r.text; // rendered from facts, but the confirm card still comes first
-        if (pending) ctx.trace.push({ action: "pending_confirm" });
-        return { text, blocks: [infoBlock(r.factIds, facts.factsById), ...resume()], draft: resumeDraft(), outcome: "hours_answer", citedFactIds: r.factIds };
+        return reply(prose(r.text), "hours_answer", { lead: [infoBlock(r.factIds, facts.factsById)], cited: r.factIds });
       }
       const g = unknown ? ({ ok: false, reason: unknown, detail: "" } as const) : checkGrounding(turn.answer ?? "", cited, facts);
       if (!g.ok || !turn.answer?.trim()) {
         ctx.trace.push({ action: "fallback_unknown", reason: g.ok ? "empty_answer" : g.reason });
-        return { text: T.fallback(phoneBranches(ctx, known)), blocks: resume(), draft: resumeDraft(), outcome: "faq_fallback" };
+        return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback");
       }
       ctx.trace.push({ action: "answer_faq", ids: g.citedIds, rendered: false });
-      if (pending) {
-        ctx.trace.push({ action: "pending_confirm" });
-        return { text: T.pendingConfirm, blocks: [infoBlock(g.citedIds, facts.factsById), ...resume()], draft: resumeDraft(), outcome: "faq_answer", citedFactIds: g.citedIds };
-      }
-      return { text: turn.answer.trim(), blocks: [infoBlock(g.citedIds, facts.factsById), ...resume()], draft: resumeDraft(), outcome: "faq_answer", citedFactIds: g.citedIds };
+      return reply(prose(turn.answer.trim()), "faq_answer", { lead: [infoBlock(g.citedIds, facts.factsById)], cited: g.citedIds });
     }
     case "manage_booking":
       ctx.trace.push({ action: "redirect", kind: "manage_booking" });
-      return { text: T.manageBooking(phoneBranches(ctx, known)), blocks: resume(), draft: resumeDraft(), outcome: "manage_redirect" };
+      return reply(T.manageBooking(phoneBranches(ctx, known)), "manage_redirect");
     case "off_topic":
       ctx.trace.push({ action: "redirect", kind: "off_topic" });
-      return { text: T.offTopic, blocks: bookingInProgress(draft) ? resume() : [QUICK_REPLIES(ctx)], draft: resumeDraft(), outcome: "redirect" };
+      return reply(T.offTopic, "redirect", { idle: [QUICK_REPLIES(ctx)] });
     case "smalltalk": {
-      if (pending) {
-        ctx.trace.push({ action: "pending_confirm" });
-        return { text: T.pendingConfirm, blocks: resume(), draft: resumeDraft(), outcome: "smalltalk" };
-      }
+      if (confirmShown) return reply(prose(""), "smalltalk");
       const shown = !!turn.answer && smalltalkShowable(turn.answer);
       ctx.trace.push({ action: "smalltalk", shown });
-      return { text: shown ? turn.answer!.trim() : T.greeting, blocks: bookingInProgress(draft) ? resume() : [QUICK_REPLIES(ctx)], draft: resumeDraft(), outcome: "smalltalk" };
+      return reply(shown ? turn.answer!.trim() : T.greeting, "smalltalk", { idle: [QUICK_REPLIES(ctx)] });
     }
     case "unclear":
       ctx.trace.push({ action: "clarify" });
-      return { text: T.clarify, blocks: bookingInProgress(draft) ? resume() : [QUICK_REPLIES(ctx)], draft: resumeDraft(), outcome: "clarify" };
+      return reply(T.clarify, "clarify", { idle: [QUICK_REPLIES(ctx)] });
   }
 }
 

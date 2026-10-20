@@ -43,8 +43,9 @@ describe("phones → E.164", () => {
     expect(phonesIn("call +91 124 455 0202 today")).toEqual(set("+911244550202"));
     expect(phonesIn("98765 43210")).toEqual(set("+919876543210"));
   });
-  it("falls back for other 10+ digit runs; shorter runs are not phones", () => {
-    expect(phonesIn("ref 1234-5678-9012")).toEqual(set("+913456789012")); // last 10 digits
+  it("falls back for 10-digit runs (optionally after 0/91); other runs can never match a real number (review RT-3)", () => {
+    expect(phonesIn("call 98765-43210")).toEqual(set("+919876543210"));
+    expect(phonesIn("ref 1234-5678-9012")).toEqual(set("invalid:123456789012"));
     expect(phonesIn("table 12, party of 6")).toEqual(set());
     expect(phonesIn("on 2026-10-22 19:30")).toEqual(set());
   });
