@@ -50,7 +50,8 @@ export const test = base.extend<{ server: Server; observed: Observed; api: Api; 
         if (cancel && method === "PATCH") observed.cancelResponses.push({ status: r.status(), ref: cancel[1] });
       });
       await provide();
-      if (page.url() !== "about:blank") {
+      // INV-04's page check covers guest-facing pages (D-12); admin pages list "Confirmed" bookings by design.
+      if (page.url() !== "about:blank" && !new URL(page.url()).pathname.startsWith("/admin")) {
         observed.renderedConfirmationRefs = await page.locator("[data-confirmation-ref]").evaluateAll((els) => els.map((e) => e.getAttribute("data-confirmation-ref")!));
         observed.pageTextOutsideConfirmations = await page.evaluate(() => {
           const clone = document.body.cloneNode(true) as HTMLElement;

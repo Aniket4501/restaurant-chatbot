@@ -1,8 +1,8 @@
 # Status
 Phase: 5 — Conversational experience and frontend (fake model)   Gate pending: none (G1, G2, G2-M approved 2026-10-19)   Updated: 2026-10-20
-Current task: T-17 Admin UI (next)   Branch: build/reservation-bot   Last commit: see `git log -1`
-Last verification (2026-10-20, after T-16):
-- `npm run verify` → 9/9 steps passed: lint, typecheck, test:unit (245), test:unit:tz (245 ×2), test:integration (207), eval:scripted (36/36, 0 violations), build, test:e2e (16/16 with invariants; 11 guest-UI specs with axe on every state), invariant report
+Current task: Phase 5 review of T-10…T-17, then the Phase 5 exit (next)   Branch: build/reservation-bot   Last commit: see `git log -1`
+Last verification (2026-10-20, after T-17):
+- `npm run verify` → 9/9 steps passed: lint, typecheck, test:unit (245), test:unit:tz (245 ×2), test:integration (207), eval:scripted (36/36, 0 violations), build, test:e2e (20/20 with invariants; guest and admin specs with axe on every state), invariant report
 - A deliberately failing step makes verify exit 1 (tests/integration/verify.test.ts); a throwaway spec booking outside the recorded API failed on INV-06 as intended
 Done in Phase 5:
 - T-10 knowledge base and retrieval: lib/kb/{facts,canonical,embedder,index,retrieve}.ts, kb:index, embeddings fixture (real vectors), golden top-8 lists (tests/golden/retrieval-top8.json). D-13 amendment (aggregate index text, ≤2 aggregates per turn) approved by the user 2026-10-20
@@ -12,6 +12,7 @@ Done in Phase 5:
 - T-14 evals: evals/{case,invariants,run}.ts, evals/thresholds.json, 36 D1 cases in evals/cases/scripted-*.jsonl (every T-14 category ≥ 2), lib/chat/submit.ts (client reaction to a submit, shared with the UI). Mutations of the pending-confirm rule, booking prose and availability each fail D1 cases; INV-04's independent checker flags leaked claims on its own
 - T-15 harness: playwright.config.ts (servers 3100 + low-limit 3101, test mode, temp DBs and logs under test-results/e2e, outputDir test-results/playwright), tests/e2e/{env,fixtures,invariants}.ts (reset before, §6.4 invariants after every spec), POST /api/__test/reset (404 outside test mode), scripts/{e2e-prepare,verify}.ts; test:e2e builds first
 - T-16 guest UI: app/page.tsx (identity panel + chat, server clock and DB), components/{IdentityPanel,chat/*}.tsx, lib/chat/identity.ts. Design: ash surface, wood-smoke identity panel, neem-green accent, system serif/sans (no font download). Specs: J3 chips-only and typed-only, J4, J6 double tap / lost response + Retry / reload replay, J7 both messages, AC-10 model down, chat error retry, J12 + reload persistence, phone layout
+- T-17 admin UI: app/admin/{page,login/page}.tsx, components/admin/{AdminDashboard,LoginForm}.tsx; full admin check in the page (adminStatus). Found and fixed OWN-2: the sign-out epoch was per module instance, so the admin page rejected fresh sessions and sign-out didn't revoke everywhere in the production server (now process-wide on globalThis); covered by the sign-out E2E spec
 Carried forward:
 - T-18: model:check reports index coverage (D-13; /api/health does since T-13); replace the placeholder Ollama chat client in lib/llm/provider.ts
 - End of Phase 5: independent review of T-10…T-17 before the Phase 5 exit (as done for T-03…T-07)

@@ -4,6 +4,7 @@ import { toView, VIEW_SELECT } from "@/lib/booking/view";
 import { loadAdminSecrets, RULES } from "@/lib/config";
 import { clearedCookie, issueSession, passwordMatches, readCookie, rotateEpoch, sessionCookie, verifySession } from "@/lib/auth/admin-session";
 import { errorResponse, okResponse, readJson } from "@/lib/http/json";
+import { formatPhone } from "@/lib/phone";
 import { addLocalDays, isLocalDate, toInstant, todayLocal } from "@/lib/time/tz";
 import type { ApiDeps } from "@/lib/api/deps";
 import { reservationJson } from "@/lib/api/serialize";
@@ -13,13 +14,21 @@ import { reservationJson } from "@/lib/api/serialize";
  * signed, unexpired cookie from the current epoch (else 401).
  */
 export function requireAdmin(req: Request, deps: ApiDeps): { ok: true; key: Buffer } | { ok: false; response: Response } {
+  const s = adminStatus(readCookie(req.headers.get("cookie")), deps);
+  if (s.status === "ok") return { ok: true, key: s.key };
+  if (s.status === "unconfigured") return { ok: false, response: errorResponse(503, "UNAVAILABLE", "Admin isn't configured on this server.") };
+  return { ok: false, response: errorResponse(401, "UNAUTHENTICATED", "Please sign in.") };
+}
+
+/** The same check for the admin page, which reads its cookie from next/headers (D-16 "requireAdmin in the page"). */
+export function adminStatus(cookie: string | null, deps: Pick<ApiDeps, "adminEnv" | "now">): { status: "ok"; key: Buffer } | { status: "unconfigured" | "unauthenticated" } {
   const secrets = loadAdminSecrets(deps.adminEnv());
   if (!secrets.ok) {
     console.warn(`admin disabled: ${secrets.problems.join("; ")}`);
-    return { ok: false, response: errorResponse(503, "UNAVAILABLE", "Admin isn't configured on this server.") };
+    return { status: "unconfigured" };
   }
-  if (!verifySession(readCookie(req.headers.get("cookie")), secrets.secretKey, deps.now())) return { ok: false, response: errorResponse(401, "UNAUTHENTICATED", "Please sign in.") };
-  return { ok: true, key: secrets.secretKey };
+  if (!verifySession(cookie, secrets.secretKey, deps.now())) return { status: "unauthenticated" };
+  return { status: "ok", key: secrets.secretKey };
 }
 
 const Login = z.object({ password: z.string().min(1).max(256) });
@@ -76,7 +85,7 @@ export function adminListHandler(deps: ApiDeps) {
          ORDER BY r.starts_at, b.slug, r.ref`,
       )
       .all(from, to, branch, branch, status, status) as (Parameters<typeof toView>[0] & { phone_e164: string; email: string | null; note: string | null })[];
-    const items = rows.map((r) => ({ ...reservationJson(toView(r)), phone: r.phone_e164, email: r.email, note: r.note }));
+    const items = rows.map((r) => ({ ...reservationJson(toView(r)), phone: r.phone_e164, phoneLabel: formatPhone(r.phone_e164), email: r.email, note: r.note }));
     const confirmed = items.filter((i) => i.status === "confirmed");
     const branches = deps.db().prepare("SELECT slug, name FROM branches WHERE is_active = 1 ORDER BY id").all();
     return okResponse(200, { date, branch: branch ?? "all", status, branches, items, totals: { confirmed: confirmed.length, covers: confirmed.reduce((s, i) => s + i.partySize, 0) } });

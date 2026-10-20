@@ -8,21 +8,25 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 export const ADMIN_COOKIE = "ne_admin";
 export const SESSION_MS = 8 * 60 * 60 * 1000;
 
-let epoch = randomUUID();
-export const currentEpoch = () => epoch;
+// One epoch per process. It lives on globalThis because Next.js can load this module more than once in a production
+// server (route handlers and pages are separate bundles): a module-level variable gave the admin page a different
+// epoch from the sign-in route, so a fresh session was rejected there and sign-out did not revoke everywhere.
+const shared = globalThis as typeof globalThis & { __neAdminEpoch?: string };
+shared.__neAdminEpoch ??= randomUUID();
+export const currentEpoch = () => shared.__neAdminEpoch!;
 export function rotateEpoch(): void {
-  epoch = randomUUID();
+  shared.__neAdminEpoch = randomUUID();
 }
 
 type Payload = { v: 1; iat: number; exp: number; epoch: string };
 
-export function issueSession(key: Buffer, now: number, ep: string = epoch): string {
+export function issueSession(key: Buffer, now: number, ep: string = currentEpoch()): string {
   const payload = Buffer.from(JSON.stringify({ v: 1, iat: now, exp: now + SESSION_MS, epoch: ep } satisfies Payload)).toString("base64url");
   return `${payload}.${createHmac("sha256", key).update(payload).digest("base64url")}`;
 }
 
 /** The payload if the cookie is authentic, unexpired and (when `ep` is given) from the current epoch; else null. */
-export function verifySession(value: string | null | undefined, key: Buffer, now: number, ep: string | null = epoch): Payload | null {
+export function verifySession(value: string | null | undefined, key: Buffer, now: number, ep: string | null = currentEpoch()): Payload | null {
   if (!value || value.length > 512) return null;
   const parts = value.split(".");
   if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
