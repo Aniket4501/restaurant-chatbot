@@ -290,6 +290,11 @@ describe("review: claims in the reply are checked against the dish they are abou
     expect(v({ pick: null, reply: "Our most popular dessert is light, would you like it?" })).not.toEqual([]);
     expect(v({ pick: null, reply: "Would the Mango Sorbet suit you?" })).not.toEqual([]);
   });
+  it("knows a dish by the last two words of its name, as the model writes it (live: 'Pistachio Kulfi')", () => {
+    const reply = "The Coconut Jaggery Payasam at ₹265 is warm. For something richer, try the Pistachio Kulfi at ₹275, or the Mango Sorbet at ₹245.";
+    expect(v({ pick: "menu:coconut-jaggery-payasam", alternatives: ["menu:pistachio-kulfi", "menu:mango-sorbet"], reply })).toEqual([]);
+    expect(v({ pick: "menu:pistachio-kulfi", reply: "The Pistachio Kulfi at ₹275 is creamy." })).toEqual([]);
+  });
   it("pairs every price with the dish named before it", () => {
     expect(v({ alternatives: ["menu:mango-sorbet"], reply: "The Chocolate Chilli Mousse is rich. The Mango Sorbet is ₹345." })).toContain("the reply gives Mango Sorbet the wrong price (₹345)");
   });

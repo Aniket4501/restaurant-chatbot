@@ -159,16 +159,21 @@ const DIET_WORDS: { re: RegExp; label: string; has: (d: MenuEntry) => boolean }[
 ];
 const NEGATED = /\b(?:not|isn't|aren't|non|nor|never|no)[- ](?:\w+ ){0,2}$/i;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-/** Where a dish is named in the text: its full name, or for names of three words or more, the first two. */
-function nameRe(d: MenuEntry, partial: boolean): RegExp {
+/**
+ * Where a dish is named in the text: its full name, or for names of three words or more, its first or last two words
+ * ("Pistachio Kulfi" for "Ember Pistachio Kulfi", as the model writes it) unless another dish's name contains them
+ * too ("Dum Biryani").
+ */
+function nameRe(d: MenuEntry, partial: boolean, menu: MenuEntry[]): RegExp {
   const words = norm(d.name).split(" ");
   const join = (ws: string[]) => ws.map((w) => (w === "and" ? "(?:and|&)" : escapeRe(w))).join("[^a-z0-9₹]+");
-  const alts = [join(words), ...(partial && words.length >= 3 ? [join(words.slice(0, 2))] : [])];
+  const shorts = partial && words.length >= 3 ? [words.slice(0, 2), words.slice(-2)].filter((ws) => !menu.some((o) => o.id !== d.id && ` ${norm(o.name)} `.includes(` ${ws.join(" ")} `))) : [];
+  const alts = [join(words), ...shorts.map(join)];
   return new RegExp(`(?<![a-z0-9])(?:${alts.join("|")})(?![a-z0-9])`, "gi");
 }
 type Mention = { d: MenuEntry; start: number; end: number };
-function mentionsOf(text: string, dishes: MenuEntry[], partial: boolean): Mention[] {
-  return dishes.flatMap((d) => [...text.matchAll(nameRe(d, partial))].map((m) => ({ d, start: m.index, end: m.index + m[0].length }))).sort((a, b) => a.start - b.start);
+function mentionsOf(text: string, dishes: MenuEntry[], partial: boolean, menu: MenuEntry[]): Mention[] {
+  return dishes.flatMap((d) => [...text.matchAll(nameRe(d, partial, menu))].map((m) => ({ d, start: m.index, end: m.index + m[0].length }))).sort((a, b) => a.start - b.start);
 }
 
 /** Why a chooser reply can't be shown (empty when it can). Exported for tests. */
@@ -187,7 +192,7 @@ export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, M
   if (choice.pick === null) {
     // A clarifying question: no dish, no prices, no booking words, and no claims about food.
     if (reply && !(reply.includes("?") && smalltalkShowable(reply))) reasons.push("without a dish, the reply must be one short question with no prices or booking words");
-    if (hype || SAFETY_RE.test(reply) || DIET_WORDS.some((w) => new RegExp(w.re.source, "i").test(reply)) || mentionsOf(reply, menu, false).length) reasons.push("without a dish, the question must not name or describe dishes");
+    if (hype || SAFETY_RE.test(reply) || DIET_WORDS.some((w) => new RegExp(w.re.source, "i").test(reply)) || mentionsOf(reply, menu, false, menu).length) reasons.push("without a dish, the question must not name or describe dishes");
     return { reasons, alternatives: [], pick: null };
   }
   const pick = all.get(choice.pick);
@@ -195,12 +200,12 @@ export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, M
   const alternatives = [...new Set(choice.alternatives)].filter((a) => a !== choice.pick && fitIds.has(a)).slice(0, 2);
   if (reasons.length && !fitIds.has(choice.pick)) return { reasons, alternatives, pick: choice.pick };
   const shown = [choice.pick, ...alternatives].map((x) => all.get(x)!);
-  const named = mentionsOf(reply, shown, true);
+  const named = mentionsOf(reply, shown, true, menu);
   if (!named.some((m) => m.d.id === choice.pick)) reasons.push(`the reply must name ${pick!.name}`);
   const g = checkGrounding(reply, shown.map((d) => d.id), { ...grounding, sentIds: fitIds });
   if (!g.ok) reasons.push(g.reason === "price" ? `the reply has a price that is not on the menu (${g.detail})` : g.reason === "claim" || g.reason === "booking_state" ? "the reply must not talk about tables or bookings" : `the reply has an unsupported detail (${g.detail || g.reason})`);
   // A dish named in the reply must be on the card (one dropped as an alternative, or never chosen, is not).
-  for (const m of mentionsOf(reply, menu, false)) if (!shown.includes(m.d) && !named.some((n) => n.start <= m.start && m.end <= n.end)) reasons.push(`the reply names ${m.d.name}, which is not on the card`);
+  for (const m of mentionsOf(reply, menu, false, menu)) if (!shown.includes(m.d) && !named.some((n) => n.start <= m.start && m.end <= n.end)) reasons.push(`the reply names ${m.d.name}, which is not on the card`);
   // Claims are tied to the dish they are about: the nearest dish named before them in the sentence, else the first
   // one after, else the last one named earlier in the reply, else the pick (review: any dish on the card used to do).
   const sentences = [...reply.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
