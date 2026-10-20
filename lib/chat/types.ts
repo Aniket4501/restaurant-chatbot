@@ -30,6 +30,8 @@ export type Course = (typeof COURSES)[number];
 /** Verified dietary tags a guest can ask for, and the allergens the menu labels (contains-*). */
 export const DIETS = ["vegetarian", "vegan", "gluten-free", "jain"] as const;
 export const AVOIDS = ["dairy", "nuts", "egg"] as const;
+/** Allergens the menu labels don't cover (D-20 review): a guest who states one is sent to staff, never recommended a dish. */
+export const UNLISTED = ["shellfish", "fish", "seafood", "soy", "sesame", "mustard", "mushroom", "coconut", "other"] as const;
 
 export const ActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_field"), field: z.enum(FIELDS), value: z.union([z.string().max(64), z.number().int().min(0).max(999), z.null()]) }),
@@ -49,9 +51,10 @@ export const PrefsSchema = z.strictObject({
   course: z.enum(COURSES).nullable(),
   mild: z.boolean(),
   allergy: z.boolean(),
+  unlisted: z.array(z.enum(UNLISTED)).max(UNLISTED.length).default([]),
 });
 export type Prefs = z.infer<typeof PrefsSchema>;
-export const noPrefs = (): Prefs => ({ diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false });
+export const noPrefs = (): Prefs => ({ diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false, unlisted: [] });
 
 /** Bounded conversation memory the client sends back (D-13, D-20). Item IDs are re-checked against the menu. */
 export const ContextSchema = z.strictObject({

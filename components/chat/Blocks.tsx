@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactElement } from "react";
+import { useId, type ReactElement } from "react";
 import type { Action, Block, Chip, MenuItemView, SlotChip } from "@/lib/chat/types";
 import { CalendarIcon, CheckIcon, ChevronIcon, ClockIcon, DishIcon, LeafMark, MenuBookIcon, PinIcon } from "@/components/ui/icons";
 
@@ -296,29 +296,33 @@ function DishRow({ item }: { item: MenuItemView }) {
 function Recommendation({ block }: { block: Extract<Block, { type: "recommendation" }> }) {
   const [lead, ...rest] = block.items;
   const rows = block.lead ? rest : block.items;
+  const titleId = useId();
   return (
     <div className="space-y-2">
       {block.lead && lead && <DishCard item={lead} />}
       {rows.length > 0 && (
-        <section aria-label={block.lead ? "Also worth a look" : "Dishes that fit"} className="rounded-2xl border border-line bg-paper px-4 py-1.5">
-          {block.lead && <h4 className="pt-2 text-[13px] text-muted">Also worth a look</h4>}
+        <div role="group" aria-labelledby={titleId} className="rounded-2xl border border-line bg-paper px-4 py-1.5">
+          <p id={titleId} className={block.lead ? "pt-2 text-[13px] text-muted" : "sr-only"}>
+            {block.lead ? "Also worth a look" : "Dishes that fit"}
+          </p>
           <ul className="divide-y divide-line">
             {rows.map((i) => (
               <DishRow key={i.id} item={i} />
             ))}
           </ul>
-        </section>
+        </div>
       )}
     </div>
   );
 }
 
 function MenuList({ block }: { block: Extract<Block, { type: "menu_list" }> }) {
+  const baseId = useId();
   return (
     <div className="space-y-2">
       {block.groups.map((g) => (
-        <section key={g.course} aria-label={g.label} className="rounded-2xl border border-line bg-paper px-4 py-1.5">
-          <h3 className="flex items-center gap-2 pt-2 font-display text-[18px] text-ink">
+        <div key={g.course} role="group" aria-labelledby={`${baseId}-${g.course}`} className="rounded-2xl border border-line bg-paper px-4 py-1.5">
+          <h3 id={`${baseId}-${g.course}`} className="flex items-center gap-2 pt-2 font-display text-[18px] text-ink">
             <MenuBookIcon className="h-5 w-5 text-neem" />
             {g.label}
           </h3>
@@ -327,7 +331,7 @@ function MenuList({ block }: { block: Extract<Block, { type: "menu_list" }> }) {
               <DishRow key={i.id} item={i} />
             ))}
           </ul>
-        </section>
+        </div>
       ))}
     </div>
   );

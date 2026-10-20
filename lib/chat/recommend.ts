@@ -1,7 +1,7 @@
 import { checkGrounding, type GroundingContext } from "@/lib/chat/grounding";
 import { smalltalkShowable } from "@/lib/chat/claims";
 import { ALLERGY_NOTE, describePrefs, eligible, hasPrefs, unmet, view, type MenuEntry } from "@/lib/chat/menu";
-import { AVOIDS, DIETS, noPrefs, PrefsSchema, type Action, type Block, type Prefs, type TraceEntry, type TurnContext } from "@/lib/chat/types";
+import { AVOIDS, DIETS, noPrefs, PrefsSchema, UNLISTED, type Action, type Block, type Prefs, type TraceEntry, type TurnContext } from "@/lib/chat/types";
 import { buildChooserSystem, buildChooserUser, chooserCorrection, type Choice } from "@/lib/llm/chooser";
 import type { ChatMessage as LlmMessage } from "@/lib/llm/client";
 import { priceSpans } from "@/lib/kb/canonical";
@@ -18,61 +18,122 @@ import type { Turn } from "@/lib/llm/schema";
 //    are no booking words, invented popularity or unsupported diet or allergy claims. One retry with the reasons;
 //    then an honest fallback that never pretends a choice was made.
 
-const NEGATION = /\b(?:no|not|non|isn't|aren't|without|never)\b|n't\b/i;
+type Diet = Prefs["diet"][number];
+type Avoid = Prefs["avoid"][number];
+type Unlisted = Prefs["unlisted"][number];
+/** What the guest's own words state for certain (D-20), plus a follow-up relation and allergens the labels can't cover. */
+export type Stated = Partial<Omit<Prefs, "unlisted">> & { unlisted?: Unlisted[]; relation?: "cheaper" | "another" };
 
-/** Constraints the guest's own words state for certain (D-20): code adds them if the model's prefs left them out. */
-export function explicitPrefs(raw: string): Partial<Prefs> {
-  const t = foldDigits(raw).toLowerCase().replace(/[’‘]/g, "'");
-  const out: Partial<Prefs> = {};
-  const budget = /\b(?:under|below|less than|within|up ?to|max(?:imum)?|no more than|not more than|budget(?: of| is)?)\s*(?:₹|rs\.?\s*|inr\s*)?(\d{2,5})\b|(?:₹|rs\.?\s*)(\d{2,5})\s*(?:or less|max|tops)\b/.exec(t);
+const clean = (raw: string) => foldDigits(raw).toLowerCase().replace(/[’‘]/g, "'");
+// A word right after one of these (up to two words between: "not really vegetarian", "not suitable for vegans") is negated.
+const NEG_BEFORE = String.raw`(?<!\b(?:non|not|no|nothing|never|isn't|aren't|nor)[- ](?:\w+ ){0,2})`;
+const NUTS = String.raw`(?:pea|ground|wal|hazel|pine|tree[- ]?)?nuts?|cashews?|almonds?|pistachios?`;
+const DAIRY_ALLERGY = String.raw`dairy|lactose|milk`;
+const DAIRY_FOOD = String.raw`dairy|lactose|milk|cream|paneer|ghee|cheese`;
+const EGG = String.raw`eggs?`;
+const ALLERGY_WORD = /\ballerg(?:y|ic|ies)\b|\banaphyla/;
+const NO_ALLERGY = /\bno (?:food )?allerg(?:y|ies)\b|\bnot allergic\b|\bwithout (?:any )?allerg/;
+// "no nuts", "can't eat dairy", "without egg", "nut-free", "egg allergy": the avoidance is tied to the allergen.
+const avoids = (food: string) => new RegExp(String.raw`\b(?:no|without|avoid(?:ing)?|skip|hold the|can't (?:eat|have)|cannot (?:eat|have)|don't (?:eat|want)|free (?:of|from))\s+(?:any |the )?(?:\w+ (?:or|and|,) )?(?:${food})\b|\b(?:${food})[- ]free\b|\b(?:${food}) (?:allerg|intoleran)\w*`);
+const UNLISTED_RE: [Unlisted, RegExp][] = [
+  ["shellfish", /\bshellfish\b|\bprawns?\b|\bshrimps?\b|\bcrabs?\b|\blobsters?\b|\bmolluscs?\b|\bcrustaceans?\b/],
+  ["fish", /\bfish\b/],
+  ["seafood", /\bseafood\b/],
+  ["soy", /\bsoy(?:a|bean)?s?\b/],
+  ["sesame", /\bsesame\b|\btil\b/],
+  ["mustard", /\bmustard\b/],
+  ["mushroom", /\bmushrooms?\b/],
+  ["coconut", /\bcoconuts?\b/],
+];
+const NOT_AN_ALLERGEN = new Set(["a", "an", "my", "the", "some", "any", "severe", "serious", "bad", "mild", "food", "real", "life", "many", "few", "certain", "known", "slight", "major", "minor", "this", "that", "it", "something", "things", "stuff", "several"]);
+
+export function explicitPrefs(raw: string): Stated {
+  const t = clean(raw);
+  const out: Stated = {};
+  const budget = /\b(?:under|below|less than|within|up ?to|max(?:imum)?|no more than|not more than|budget(?: of| is)?)\s*(?:₹|rs\.?\s*|inr\s*)?(\d{2,5})\b(?!\s*(?:people|persons?|guests?|pax|of us|kids?|children|adults?|years?|yrs?|mins?|minutes?|hours?|hrs?|pm|am|o'?clock|km|%|percent))|(?:₹|rs\.?\s*)(\d{2,5})\s*(?:or less|max|tops)\b/.exec(t);
   if (budget) out.maxPrice = Number(budget[1] ?? budget[2]);
-  const diet: Prefs["diet"] = [];
-  if (/(?<!non[- ]?)\bvegan\b/.test(t)) diet.push("vegan");
-  if (/(?<!non[- ]?)\bvegetarian\b|\bpure veg\b|(?<!non[- ]?)\bveg (?:options?|dishes|food|only)\b/.test(t)) diet.push("vegetarian");
-  if (/\bgluten[- ]free\b|\bno gluten\b|\bcoeliac\b|\bceliac\b/.test(t)) diet.push("gluten-free");
+  const diet: Diet[] = [];
+  if (new RegExp(`${NEG_BEFORE}\\bvegans?\\b`).test(t)) diet.push("vegan");
+  if (new RegExp(`${NEG_BEFORE}\\b(?:vegetarians?|veggie|veg)\\b`).test(t)) diet.push("vegetarian");
+  if (/\bgluten[- ]free\b|\bno gluten\b|\bcoeliac\b|\bceliac\b|\bgluten (?:allerg|intoleran)\w*|\ballergic to (?:gluten|wheat)\b|\bwheat allerg\w*|\bcan't (?:eat|have) (?:gluten|wheat)\b/.test(t)) diet.push("gluten-free");
   if (/\bjain\b/.test(t)) diet.push("jain");
   if (diet.length) out.diet = diet;
-  if (/\bnot (?:too |very |that |so )?spicy\b|\bmild\b|\bless spicy\b|\bno spice\b|\bnon[- ]spicy\b/.test(t)) out.mild = true;
-  const allergy = /\ballerg(?:y|ic|ies)\b|\banaphyla/.test(t);
+  if (/\bnot (?:too |very |that |so )?spicy\b|(?<!\b(?:not|nothing|no) (?:too |so |very )?)\bmild\b|\bless spicy\b|\bno spice\b|\bnon[- ]spicy\b/.test(t)) out.mild = true;
+  const allergy = ALLERGY_WORD.test(t) && !NO_ALLERGY.test(t);
   if (allergy) out.allergy = true;
-  const avoid: Prefs["avoid"] = [];
-  if (/\b(?:pea)?nuts?\b|\bcashews?\b|\balmonds?\b|\bpistachios?\b/.test(t) && (allergy || /\b(?:no|without|free|avoid|can't|cannot)\b/.test(t))) avoid.push("nuts");
-  if (/\bdairy\b|\blactose\b|\bmilk\b/.test(t) && (allergy || /\b(?:no|without|free|avoid|can't|cannot)\b/.test(t))) avoid.push("dairy");
-  if (/\beggs?\b/.test(t) && (allergy || /\b(?:no|without|free|avoid|can't|cannot)\b/.test(t))) avoid.push("egg");
+  const avoid: Avoid[] = [];
+  if ((allergy && new RegExp(`\\b(?:${NUTS})\\b`).test(t)) || avoids(NUTS).test(t)) avoid.push("nuts");
+  if ((allergy && new RegExp(`\\b(?:${DAIRY_ALLERGY})\\b`).test(t)) || avoids(DAIRY_FOOD).test(t) || /\blactose[- ]intoleran\w*/.test(t)) avoid.push("dairy");
+  if ((allergy && new RegExp(`\\b${EGG}\\b`).test(t)) || avoids(EGG).test(t)) avoid.push("egg");
   if (avoid.length) out.avoid = avoid;
+  if (allergy) {
+    const unlisted = UNLISTED_RE.filter(([, re]) => re.test(t)).map(([u]) => u);
+    // "allergic to kiwi": an allergen nobody can check against the labels.
+    const named = [...t.matchAll(/\ballergic to (?:\w+ )?(\w+)|\b(\w+) allerg(?:y|ies)\b/g)].map((m) => m[1] ?? m[2]).filter((w) => !NOT_AN_ALLERGEN.has(w));
+    const covered = new RegExp(`^(?:${NUTS}|${DAIRY_ALLERGY}|${DAIRY_FOOD}|${EGG}|gluten|wheat|nut|peanut|tree)$`);
+    if (!unlisted.length && named.some((w) => !covered.test(w) && !UNLISTED_RE.some(([, re]) => re.test(w)))) unlisted.push("other");
+    if (unlisted.length) out.unlisted = unlisted;
+  }
+  if (/^anything cheaper\??$|\bcheaper\b|\bless expensive\b|\bmore affordable\b|\blower[- ]priced?\b/.test(t)) out.relation = "cheaper";
+  else if (/^show me another option$|\banother (?:one|option|dish|suggestion|idea)\b|\bsomething (?:else|different)\b|\bother options?\b/.test(t)) out.relation = "another";
   return out;
 }
 
-/** Active preferences after this turn: the model's proposal (or the previous ones), plus anything stated for certain. */
+/** Constraints the guest's words lift ("I'm not vegetarian", "price doesn't matter", "spicy is fine", "no allergies"). */
+export function liftedPrefs(raw: string): { diet: Diet[]; maxPrice: boolean; mild: boolean; allergy: boolean; avoid: Avoid[] } {
+  const t = clean(raw);
+  const meat = !ALLERGY_WORD.test(t) && /(?<!\b(?:no|not|without|avoid|than|any) )\b(?:chicken|mutton|lamb|goat|fish|prawns?|shrimps?|meat|keema|seafood|pork|beef|non[- ]?veg\w*)\b/.test(t);
+  const diet: Diet[] = [];
+  if (meat || /\bnot (?:a |really |strictly |fully )?(?:vegetarian|veg|veggie)\b|\b(?:i )?eat (?:meat|everything|anything)\b|\b(?:forget|drop|ignore|never ?mind) (?:the )?(?:veg\w*)\b/.test(t)) diet.push("vegetarian", "vegan");
+  else if (/\bnot (?:a |really |strictly |fully )?vegan\b|\b(?:forget|drop|ignore|never ?mind) (?:the )?vegan\b/.test(t)) diet.push("vegan");
+  const maxPrice = /\bprice (?:doesn't|does not|isn't|is not) (?:matter|an issue|a concern)|\bno budget\b|\bany (?:price|budget)\b|\bmoney is no (?:object|issue)|\bbudget (?:doesn't|does not) matter|\bdon't (?:care|worry) about (?:the )?(?:price|cost|budget)|\bsplurge\b|\bforget (?:the |my )?budget\b|\bexpensive is (?:fine|ok|okay)\b/.test(t);
+  const mild = /\b(?:nothing|not) (?:too |so )?mild\b|\bspicier\b|\b(?:like|love|want|prefer) (?:it )?(?:spicy|hot|heat)\b|\b(?:extra|very|really) spicy\b|\bspic(?:y|e) (?:is )?(?:fine|ok|okay|good)\b|\bsomething (?:spicy|hot|fiery)\b/.test(t);
+  const allergy = NO_ALLERGY.test(t);
+  const avoid: Avoid[] = [];
+  const canEat = (food: string) => new RegExp(String.raw`\bcan (?:eat|have) (?:${food})\b|\b(?:${food}) (?:is|are) (?:fine|ok|okay)\b`).test(t);
+  if (allergy || canEat(NUTS)) avoid.push("nuts");
+  if (allergy || canEat(DAIRY_FOOD)) avoid.push("dairy");
+  if (allergy || canEat(EGG)) avoid.push("egg");
+  return { diet, maxPrice, mild, allergy, avoid };
+}
+
+const SPICE_WORD = /\bspic|\bmild\b|\bheat\b|\bhot\b|\bchill?i|\bkick\b|\bbland\b|\bfiery\b/i;
+
+/**
+ * Active preferences after this turn (D-20, review). The model proposes them; code keeps them honest:
+ * - what the guest's words state for certain is always added;
+ * - diet, budget, mild, an allergy and its allergens stay in force from earlier turns unless the guest lifts them
+ *   (the model dropping one is not enough);
+ * - a budget needs a number in the guest's words, and "mild" a word about spice, so the model can't invent either.
+ */
 export function resolvePrefs(model: Turn["prefs"], previous: Prefs | null | undefined, text: string): { prefs: Prefs; added: string[] } {
-  const base: Prefs = model ? PrefsSchema.parse({ diet: [...new Set(model.diet)], avoid: [...new Set(model.avoid)], maxPrice: model.maxPrice && model.maxPrice > 0 ? model.maxPrice : null, course: model.course, mild: model.mild, allergy: model.allergy }) : { ...(previous ?? noPrefs()) };
+  const prev = previous ?? noPrefs();
   const ex = explicitPrefs(text);
-  const added: string[] = [];
-  for (const d of ex.diet ?? [])
-    if (!base.diet.includes(d)) {
-      base.diet.push(d);
-      added.push(d);
-    }
-  for (const a of ex.avoid ?? [])
-    if (!base.avoid.includes(a)) {
-      base.avoid.push(a);
-      added.push(`no ${a}`);
-    }
-  if (ex.maxPrice !== undefined && base.maxPrice !== ex.maxPrice) {
-    base.maxPrice = ex.maxPrice;
-    added.push(`up to ₹${ex.maxPrice}`);
-  }
-  if (ex.mild && !base.mild) {
-    base.mild = true;
-    added.push("mild");
-  }
-  if (ex.allergy && !base.allergy) {
-    base.allergy = true;
-    added.push("allergy");
-  }
-  base.diet = DIETS.filter((d) => base.diet.includes(d));
-  base.avoid = AVOIDS.filter((a) => base.avoid.includes(a));
-  return { prefs: base, added };
+  const lift = liftedPrefs(text);
+  const m = model ? { diet: model.diet, avoid: model.avoid, maxPrice: model.maxPrice && model.maxPrice > 0 ? model.maxPrice : null, course: model.course, mild: model.mild, allergy: model.allergy } : prev;
+  const keep = <T,>(xs: T[], lifted: T[]) => xs.filter((x) => !lifted.includes(x));
+  const relation = model?.relation ?? ex.relation ?? null;
+  const digits = /\d/.test(foldDigits(text));
+  const prefs: Prefs = PrefsSchema.parse({
+    diet: DIETS.filter((d) => ex.diet?.includes(d) || keep([...m.diet, ...prev.diet], lift.diet).includes(d)),
+    avoid: AVOIDS.filter((a) => ex.avoid?.includes(a) || keep([...m.avoid, ...prev.avoid], lift.avoid).includes(a)),
+    maxPrice: ex.maxPrice ?? (lift.maxPrice ? null : digits && m.maxPrice !== null ? m.maxPrice : prev.maxPrice),
+    course: m.course ?? (relation ? prev.course : null),
+    mild: !!ex.mild || (!lift.mild && (prev.mild || (m.mild && SPICE_WORD.test(text)))),
+    allergy: !!ex.allergy || (!lift.allergy && (prev.allergy || m.allergy)),
+    unlisted: UNLISTED.filter((u) => ex.unlisted?.includes(u) || (!lift.allergy && prev.unlisted.includes(u))),
+  });
+  // What code changed relative to the model's proposal, for the trace.
+  const added = [
+    ...prefs.diet.filter((d) => !m.diet.includes(d)),
+    ...m.diet.filter((d) => !prefs.diet.includes(d)).map((d) => `not ${d}`),
+    ...prefs.avoid.filter((a) => !m.avoid.includes(a)).map((a) => `no ${a}`),
+    ...(prefs.maxPrice !== m.maxPrice ? [prefs.maxPrice === null ? "no budget" : `up to ₹${prefs.maxPrice}`] : []),
+    ...(prefs.mild !== m.mild ? [prefs.mild ? "mild" : "not mild"] : []),
+    ...(prefs.allergy && !m.allergy ? ["allergy"] : []),
+    ...prefs.unlisted.map((u) => `unlisted allergen: ${u}`),
+  ];
+  return { prefs, added };
 }
 
 const norm = (s: string) =>
@@ -84,17 +145,31 @@ const norm = (s: string) =>
     .trim();
 
 // Claims the menu can't support (rule 4 of the chooser prompt), unless the dish's own description says so.
-const HYPE_RE = /\b(?:most popular|popular|best[- ]?sell\w*|favou?rites?|signature|chef'?s (?:special|choice|pick|recommendation)|award[- ]winning|famous|highly rated|top[- ]rated|must[- ]try|crowd[- ]pleaser)\b/i;
-// Allergen safety can't be confirmed from labels (ALLERGY_NOTE).
-const SAFETY_RE = /\b(?:nut|peanut|allergen|allergy)[- ]free\b|\b(?:allergy|allergen)[- ]safe\b|\bsafe for (?:people with |anyone with |your |an? )?(?:\w+ )?allerg/i;
-// A diet word in a sentence that isn't negated must be true of at least one dish shown.
+const HYPE_RE = /\b(?:most popular|popular|best[- ]?sell\w*|favou?rites?|signature|chef'?s (?:special|choice|pick|recommendation|speciality|specialty)|chef recommends|award[- ]winning|famous|highly rated|top[- ]rated|must[- ]try|crowd[- ]pleaser|speciality|specialty|house (?:special|classic|favou?rite)|everyone(?:'s)? (?:loves?|favou?rite)|(?:much|well)[- ]loved|loved by|guests love|people love|go-to)\b/i;
+// Allergen safety can't be confirmed from labels (ALLERGY_NOTE): no "safe", no "nut-free", no "contains no nuts".
+const SAFETY_RE = /\bsafe(?:ly|r|st)?\b|\ballerg(?:y|en)[- ](?:free|friendly|safe)\b|\b(?:pea)?nut[- ]free\b|\bwon't (?:trigger|affect|cause|bother)\b|\bharmless\b|\bfree (?:of|from) (?:any )?(?:allergens?|(?:pea)?nuts?|traces?)\b|\b(?:no|without|zero) (?:any )?(?:(?:pea)?nuts?|allergens?|traces?)\b/i;
+// A diet word must be true of the dish it describes (the nearest dish named before it in the sentence, else after).
 const DIET_WORDS: { re: RegExp; label: string; has: (d: MenuEntry) => boolean }[] = [
-  { re: /\bvegan\b/i, label: "vegan", has: (d) => d.dietary.includes("vegan") },
-  { re: /\bvegetarian\b/i, label: "vegetarian", has: (d) => d.dietary.includes("vegetarian") || d.dietary.includes("vegan") },
-  { re: /\bgluten[- ]free\b/i, label: "labelled gluten-free", has: (d) => d.dietary.includes("gluten-free") },
-  { re: /\bjain\b/i, label: "a Jain option", has: (d) => d.dietary.includes("jain-available") },
-  { re: /\b(?:dairy|egg)[- ]free\b/i, label: "vegan (the only dishes known to be dairy- and egg-free)", has: (d) => d.dietary.includes("vegan") },
+  { re: /\bvegans?\b/gi, label: "vegan", has: (d) => d.dietary.includes("vegan") },
+  { re: /\bvegetarians?\b|\bveg\b/gi, label: "vegetarian", has: (d) => d.dietary.includes("vegetarian") || d.dietary.includes("vegan") },
+  { re: /\bgluten[- ]free\b|\bno gluten\b|\bwithout gluten\b/gi, label: "labelled gluten-free", has: (d) => d.dietary.includes("gluten-free") },
+  { re: /\bjain\b/gi, label: "a Jain option", has: (d) => d.dietary.includes("jain-available") },
+  // Only a vegan dish is known to have no dairy or egg.
+  { re: /\b(?:dairy|egg|milk|lactose)[- ]free\b|\b(?:no|without|zero) (?:any )?(?:dairy|milk|cream|ghee|paneer|cheese|lactose|eggs?)\b|\b(?:free (?:of|from)) (?:any )?(?:dairy|milk|eggs?)\b/gi, label: "vegan (the only dishes known to have no dairy or egg)", has: (d) => d.dietary.includes("vegan") },
 ];
+const NEGATED = /\b(?:not|isn't|aren't|non|nor|never|no)[- ](?:\w+ ){0,2}$/i;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Where a dish is named in the text: its full name, or for names of three words or more, the first two. */
+function nameRe(d: MenuEntry, partial: boolean): RegExp {
+  const words = norm(d.name).split(" ");
+  const join = (ws: string[]) => ws.map((w) => (w === "and" ? "(?:and|&)" : escapeRe(w))).join("[^a-z0-9₹]+");
+  const alts = [join(words), ...(partial && words.length >= 3 ? [join(words.slice(0, 2))] : [])];
+  return new RegExp(`(?<![a-z0-9])(?:${alts.join("|")})(?![a-z0-9])`, "gi");
+}
+type Mention = { d: MenuEntry; start: number; end: number };
+function mentionsOf(text: string, dishes: MenuEntry[], partial: boolean): Mention[] {
+  return dishes.flatMap((d) => [...text.matchAll(nameRe(d, partial))].map((m) => ({ d, start: m.index, end: m.index + m[0].length }))).sort((a, b) => a.start - b.start);
+}
 
 /** Why a chooser reply can't be shown (empty when it can). Exported for tests. */
 export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, MenuEntry>, prefs: Prefs, grounding: GroundingContext): { reasons: string[]; alternatives: string[]; pick: string | null } {
@@ -104,51 +179,78 @@ export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, M
   const reasons: string[] = [];
   const fitIds = new Set(fit.map((d) => d.id));
   const reply = choice.reply.trim();
+  const menu = [...all.values()];
   if (!reply) reasons.push("the reply is empty");
+  // The grammar caps the reply at 400 characters; one cut off there (or without an ending) is not shown.
+  else if (reply.length >= 390 || !/[.!?)"'’…]$/.test(reply)) reasons.push("the reply is cut off");
+  const hype = HYPE_RE.exec(reply);
   if (choice.pick === null) {
-    // A clarifying question: no dish, no prices, no booking words.
+    // A clarifying question: no dish, no prices, no booking words, and no claims about food.
     if (reply && !(reply.includes("?") && smalltalkShowable(reply))) reasons.push("without a dish, the reply must be one short question with no prices or booking words");
+    if (hype || SAFETY_RE.test(reply) || DIET_WORDS.some((w) => new RegExp(w.re.source, "i").test(reply)) || mentionsOf(reply, menu, false).length) reasons.push("without a dish, the question must not name or describe dishes");
     return { reasons, alternatives: [], pick: null };
   }
   const pick = all.get(choice.pick);
   if (!fitIds.has(choice.pick)) reasons.push(pick ? `${pick.name} ${unmet(pick, prefs) ?? "is not one of the dishes listed"}` : `"${raw.pick}" is not one of the listed IDs`);
   const alternatives = [...new Set(choice.alternatives)].filter((a) => a !== choice.pick && fitIds.has(a)).slice(0, 2);
-  if (reasons.length) return { reasons, alternatives, pick: choice.pick };
-  const shown = [choice.pick, ...alternatives].map((id) => all.get(id)!);
-  const n = norm(reply);
-  const named = norm(pick!.name);
-  const words = named.split(" ");
-  if (!n.includes(named) && !(words.length >= 2 && n.includes(words.slice(0, 2).join(" ")))) reasons.push(`the reply must name ${pick!.name}`);
+  if (reasons.length && !fitIds.has(choice.pick)) return { reasons, alternatives, pick: choice.pick };
+  const shown = [choice.pick, ...alternatives].map((x) => all.get(x)!);
+  const named = mentionsOf(reply, shown, true);
+  if (!named.some((m) => m.d.id === choice.pick)) reasons.push(`the reply must name ${pick!.name}`);
   const g = checkGrounding(reply, shown.map((d) => d.id), { ...grounding, sentIds: fitIds });
   if (!g.ok) reasons.push(g.reason === "price" ? `the reply has a price that is not on the menu (${g.detail})` : g.reason === "claim" || g.reason === "booking_state" ? "the reply must not talk about tables or bookings" : `the reply has an unsupported detail (${g.detail || g.reason})`);
-  // Each price must sit with its own dish (review: grounding only checks that a price exists somewhere in the
-  // cited facts). Per clause, the dishes named and the prices given are paired in order.
-  for (const clause of reply.split(/[.;!?]|,\s+(?:or|and|but)\s+/)) {
-    const nc = norm(clause);
-    const at = (d: MenuEntry) => {
-      const full = nc.indexOf(norm(d.name));
-      return full >= 0 ? full : nc.indexOf(norm(d.name).split(" ").slice(0, 2).join(" "));
-    };
-    const names = shown
-      .map((d) => ({ d, at: at(d) }))
-      .filter((x) => x.at >= 0)
-      .sort((a, b) => a.at - b.at);
-    const prices = priceSpans(clause).map((s) => s.value);
-    if (names.length && prices.length === names.length) {
-      for (let i = 0; i < names.length; i++) if (prices[i] !== names[i].d.price) reasons.push(`the reply gives ${names[i].d.name} the wrong price (₹${prices[i]})`);
-    } else if (names.length === 1 && prices.some((v) => v !== names[0].d.price)) reasons.push(`the reply gives ${names[0].d.name} a price that isn't its own`);
+  // A dish named in the reply must be on the card (one dropped as an alternative, or never chosen, is not).
+  for (const m of mentionsOf(reply, menu, false)) if (!shown.includes(m.d) && !named.some((n) => n.start <= m.start && m.end <= n.end)) reasons.push(`the reply names ${m.d.name}, which is not on the card`);
+  // Claims are tied to the dish they are about: the nearest dish named before them in the sentence, else the first
+  // one after, else the last one named earlier in the reply, else the pick (review: any dish on the card used to do).
+  const sentences = [...reply.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
+  const subjectAt = (pos: number): MenuEntry => {
+    const sent = sentences.find((s) => s.start <= pos && pos < s.end) ?? { start: 0, end: reply.length };
+    const before = named.filter((m) => m.end <= pos && m.start >= sent.start).at(-1);
+    const after = named.find((m) => m.start >= pos && m.start < sent.end);
+    const earlier = named.filter((m) => m.end <= sent.start).at(-1);
+    return (before ?? after ?? earlier)?.d ?? pick!;
+  };
+  for (const p of priceSpans(reply)) {
+    const d = subjectAt(p.start);
+    if (p.value !== d.price) reasons.push(`the reply gives ${d.name} the wrong price (₹${p.value})`);
   }
-  const hype = HYPE_RE.exec(reply);
   if (hype && !shown.some((d) => d.description.toLowerCase().includes(hype[0].toLowerCase()))) reasons.push(`"${hype[0]}" is not supported by the menu`);
   if (SAFETY_RE.test(reply)) reasons.push("the reply must not promise allergen safety");
-  for (const s of reply.split(/(?<=[.!?])\s+/)) {
-    if (NEGATION.test(s)) continue;
-    for (const w of DIET_WORDS) if (w.re.test(s) && !shown.some(w.has)) reasons.push(`no dish shown is ${w.label}`);
-  }
+  for (const w of DIET_WORDS)
+    for (const m of reply.matchAll(w.re)) {
+      const sent = sentences.find((s) => s.start <= m.index && m.index < s.end);
+      if (NEGATED.test(reply.slice(sent?.start ?? 0, m.index))) continue; // "isn't vegan", "not suitable for vegans"
+      const d = subjectAt(m.index);
+      if (!w.has(d)) reasons.push(`${d.name} is not ${w.label}`);
+    }
   return { reasons: [...new Set(reasons)], alternatives, pick: choice.pick };
 }
 
 export type ChooserCall = (attempt: 1 | 2, messages: LlmMessage[]) => Promise<{ choice: Choice | null; code: string; content: string }>;
+
+/**
+ * The dishes the chooser reads (latency: each line is prompt the model must read). With many dishes that fit, the
+ * ones retrieval found relevant to the message come first, then up to three per course in menu order, so a vague
+ * request still sees every kind of dish. This picks what to show the model; it never decides the answer, and
+ * validation still accepts any dish that fits.
+ */
+export function shortlist(fit: MenuEntry[], relevant: string[], max = 18): MenuEntry[] {
+  if (fit.length <= max) return fit;
+  const byId = new Map(fit.map((d) => [d.id, d]));
+  const out: MenuEntry[] = [];
+  const perCourse = new Map<string, number>();
+  const add = (d: MenuEntry) => {
+    out.push(d);
+    perCourse.set(d.course, (perCourse.get(d.course) ?? 0) + 1);
+  };
+  for (const id of relevant) {
+    const d = byId.get(id);
+    if (d && !out.includes(d) && out.length < max) add(d);
+  }
+  for (const d of fit) if (out.length < max && !out.includes(d) && (perCourse.get(d.course) ?? 0) < 3) add(d);
+  return out;
+}
 
 export type RecommendResult = { text: string; blocks: Block[]; cited: string[]; prefs: Prefs; recommended: string[] };
 
@@ -160,40 +262,67 @@ const FOLLOW_UPS = (): Block => ({
     { label: "Find a table", action: { type: "set_field", field: "branch", value: null } as Action },
   ],
 });
+const MENU_CHIP = (): Block => ({ type: "quick_replies", chips: [{ label: "Show me the menu", action: { type: "menu", course: null } }] });
+
+/** The dishes that fit, the ones retrieval found relevant to this message first (for the fallback list). */
+const relevantFirst = (fit: MenuEntry[], relevant: string[]) => [...fit.filter((d) => relevant.includes(d.id)).sort((a, b) => relevant.indexOf(a.id) - relevant.indexOf(b.id)), ...fit.filter((d) => !relevant.includes(d.id))];
 
 /**
  * A "recommend" turn after the first model call. `call` runs the chooser through the model gate; it is never called
- * when no dish fits, so an impossible request is answered honestly without a model call.
+ * when no dish fits or the guest has an allergy the labels can't cover, so those are answered without a model call.
  */
 export async function recommendTurn(
-  input: { turn: Turn; text: string; history: { role: "guest" | "assistant"; content: string }[]; context: Partial<TurnContext> | undefined; entries: MenuEntry[]; restaurant: string; grounding: GroundingContext; trace: TraceEntry[]; canRetry?: () => boolean },
+  input: { turn: Turn; text: string; history: { role: "guest" | "assistant"; content: string }[]; context: Partial<TurnContext> | undefined; entries: MenuEntry[]; restaurant: string; grounding: GroundingContext; trace: TraceEntry[]; canRetry?: () => boolean; relevant?: string[] },
   call: ChooserCall,
 ): Promise<RecommendResult> {
   const { prefs, added } = resolvePrefs(input.turn.prefs, input.context?.prefs, input.text);
   input.trace.push({ action: "prefs", prefs, added });
   const byId = new Map(input.entries.map((e) => [e.id, e]));
   const previous = (input.context?.recommended ?? []).filter((id) => byId.has(id));
-  const relation = input.turn.prefs?.relation ?? null;
-  const last = previous.length ? byId.get(previous[0])! : null;
+  // The chips send fixed texts, so "cheaper" and "another" never depend on the model alone.
+  const relation = input.turn.prefs?.relation ?? explicitPrefs(input.text).relation ?? null;
+  // The dish "cheaper" is measured against: the last suggestion, else the first dish this conversation last showed.
+  const anchorId = previous[0] ?? (input.context?.lastCitedIds ?? []).find((id) => byId.has(id)) ?? null;
+  const last = anchorId ? byId.get(anchorId)! : null;
   const cheaperThan = relation === "cheaper" && last ? last.price : null;
   const exclude = relation === "another" || relation === "cheaper" ? previous : [];
-  const fit = eligible(input.entries, prefs, { exclude, cheaperThan });
   const allergyNote: Block[] = prefs.avoid.length || prefs.allergy ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
   const keep = (shown: string[]) => [...new Set([...shown, ...previous])].slice(0, 6);
+  const done = (text: string, blocks: Block[]): RecommendResult => ({ text, blocks, cited: [], prefs, recommended: previous });
 
+  // An allergen the labels don't cover: no dish can be checked against it, so the guest is sent to staff.
+  if (prefs.unlisted.length) {
+    const named = prefs.unlisted.filter((u) => u !== "other");
+    input.trace.push({ action: "eligible", count: 0, none: "unlisted allergen" });
+    return done(`Our menu labels only cover nuts, dairy, egg and gluten, not ${named.length ? named.join(" or ") : "that allergen"}, so I can't suggest a dish around your allergy. Please ask your server, who can check each dish with the kitchen.`, [{ type: "notice", tone: "info", text: ALLERGY_NOTE }, MENU_CHIP()]);
+  }
+
+  const fit = eligible(input.entries, prefs, { exclude, cheaperThan });
   if (!fit.length) {
-    const what = describePrefs(prefs, { cheaperThan });
-    const none = relation === "another" && eligible(input.entries, prefs, { cheaperThan }).length ? "already suggested every dish that fits" : "no dish fits";
+    const what = describePrefs(prefs);
+    const any = eligible(input.entries, prefs);
+    let text: string;
+    let none: string;
+    if (cheaperThan !== null && last && any.length && Math.min(...any.map((d) => d.price)) >= last.price) {
+      none = "already the cheapest";
+      text = `The ${last.name} (₹${last.price}) is already the cheapest of the ${what} we have.`;
+    } else if ((relation === "another" || cheaperThan !== null) && eligible(input.entries, prefs, { cheaperThan }).length) {
+      none = "already suggested every dish that fits";
+      text = `I've already suggested all the ${cheaperThan !== null ? `${what} under ₹${cheaperThan}` : what} we have. Want to try something different?`;
+    } else {
+      none = "no dish fits";
+      text = `We don't have any ${describePrefs(prefs, { cheaperThan })} on the menu.${hasPrefs(prefs) ? " Want me to relax one of those?" : ""}`;
+    }
     input.trace.push({ action: "eligible", count: 0, none });
-    const text = none === "no dish fits" ? `We don't have any ${what} on the menu.${hasPrefs(prefs) ? " Want me to relax one of those?" : ""}` : `That's every ${what.replace(/^dishes$/, "dish")} we have. Want to try something different?`;
-    return { text, blocks: [...allergyNote, { type: "quick_replies", chips: [{ label: "Show me the menu", action: { type: "menu", course: null } }] }], cited: [], prefs, recommended: previous };
+    return done(text, [...allergyNote, MENU_CHIP()]);
   }
   input.trace.push({ action: "eligible", count: fit.length, none: null });
 
-  const relationLine = cheaperThan !== null && last ? `They want something cheaper than ${last.name} (₹${last.price}).` : relation === "another" && previous.length ? `They want something different from: ${previous.map((id) => byId.get(id)!.name).join(", ")}.` : null;
+  const relationLine = cheaperThan !== null && last ? `They want something cheaper than ${last.name} (₹${last.price}).` : relation === "another" && previous.length ? `They want something different from: ${previous.map((x) => byId.get(x)!.name).join(", ")}.` : null;
+  const prefsLine = [hasPrefs(prefs) ? describePrefs(prefs) : null, prefs.allergy ? "they have a food allergy, so never call a dish safe or free of anything" : null].filter(Boolean).join("; ") || "none stated";
   const messages: LlmMessage[] = [
     { role: "system", content: buildChooserSystem(input.restaurant) },
-    { role: "user", content: buildChooserUser({ prefs: hasPrefs(prefs) ? describePrefs(prefs) : "none stated", relation: relationLine, history: input.history, dishes: fit, guest: input.text }) },
+    { role: "user", content: buildChooserUser({ prefs: prefsLine, relation: relationLine, history: input.history, dishes: shortlist(fit, input.relevant ?? []), guest: input.text }) },
   ];
 
   let lastPick: string | null = null;
@@ -210,9 +339,9 @@ export async function recommendTurn(
     const v = validateChoice(r.choice, fit, byId, prefs, input.grounding);
     input.trace.push({ action: "recommend", attempt, result: v.reasons.length ? "rejected" : "ok", pick: r.choice.pick, alternatives: r.choice.alternatives, rejected: v.reasons });
     if (!v.reasons.length) {
-      if (v.pick === null) return { text: r.choice.reply.trim(), blocks: [...allergyNote, { type: "quick_replies", chips: [{ label: "Show me the menu", action: { type: "menu", course: null } }] }], cited: [], prefs, recommended: previous };
+      if (v.pick === null) return done(r.choice.reply.trim(), [...allergyNote, MENU_CHIP()]);
       const shown = [v.pick, ...v.alternatives];
-      return { text: r.choice.reply.trim(), blocks: [{ type: "recommendation", lead: true, items: shown.map((id) => view(byId.get(id)!)) }, ...allergyNote, FOLLOW_UPS()], cited: shown, prefs, recommended: keep(shown) };
+      return { text: r.choice.reply.trim(), blocks: [{ type: "recommendation", lead: true, items: shown.map((x) => view(byId.get(x)!)) }, ...allergyNote, FOLLOW_UPS()], cited: shown, prefs, recommended: keep(shown) };
     }
     if (v.pick && fit.some((d) => d.id === v.pick)) {
       lastPick = v.pick;
@@ -221,12 +350,13 @@ export async function recommendTurn(
     messages.push({ role: "assistant", content: r.content }, { role: "user", content: chooserCorrection(v.reasons) });
   }
 
-  // Fallbacks, in code and honest about it: the model's valid pick with a plain line, or a few dishes that fit.
+  // Fallbacks, in code and honest about it: the model's valid pick with a plain line, or a few dishes that fit, the
+  // ones retrieval found for this message first ("anything with black lentils?" shows the dal, not the first starter).
   if (lastPick) {
     const d = byId.get(lastPick)!;
     const shown = [lastPick, ...alternatives];
-    return { text: `I'd suggest the ${d.name} (₹${d.price}).`, blocks: [{ type: "recommendation", lead: true, items: shown.map((id) => view(byId.get(id)!)) }, ...allergyNote, FOLLOW_UPS()], cited: shown, prefs, recommended: keep(shown) };
+    return { text: `I'd suggest the ${d.name} (₹${d.price}).`, blocks: [{ type: "recommendation", lead: true, items: shown.map((x) => view(byId.get(x)!)) }, ...allergyNote, FOLLOW_UPS()], cited: shown, prefs, recommended: keep(shown) };
   }
-  const few = fit.slice(0, 3);
+  const few = relevantFirst(fit, input.relevant ?? []).slice(0, 3);
   return { text: hasPrefs(prefs) ? `Here are a few ${describePrefs(prefs, { cheaperThan })} to choose from.` : "Here are a few dishes to choose from.", blocks: [{ type: "recommendation", lead: false, items: few.map(view) }, ...allergyNote, FOLLOW_UPS()], cited: few.map((d) => d.id), prefs, recommended: keep(few.map((d) => d.id)) };
 }

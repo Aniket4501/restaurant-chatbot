@@ -143,7 +143,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
 
   const sendText = (raw: string) => {
     const t = raw.trim().slice(0, 500);
-    if (!t || inFlight.current || ref.current.pending?.unknown) return;
+    if (!t || inFlight.current || posting.current || ref.current.pending?.unknown) return; // never leave a bubble send() refuses
     setText("");
     const prev = ref.current.items;
     update((p) => ({ ...p, items: [...p.items, { id: uid(), role: "guest", text: t }] }));
@@ -151,7 +151,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
   };
 
   const sendAction = (action: Action, label: string) => {
-    if (inFlight.current || ref.current.pending?.unknown) return;
+    if (inFlight.current || posting.current || ref.current.pending?.unknown) return;
     const prev = ref.current.items;
     update((p) => ({ ...p, items: [...p.items, { id: uid(), role: "guest", text: label }], selected: action.type === "select_slot" ? action.startsAt : p.selected }));
     void send({ messages: [...history(prev), { role: "guest", content: label }], action, requestId: uid() });
@@ -188,14 +188,19 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         update((p) => ({ ...p, pending: { ...pending, unknown: true } }));
         return;
       }
-      if (o.clearDraft) generation.current += 1; // booked: any chat reply still on its way is now stale
+      if (o.clearDraft) {
+        generation.current += 1; // booked: any chat reply still on its way is now stale
+        setFailed(null); // and a chat turn that failed before the booking is no longer worth retrying
+      }
       const inCard = o.unknown || o.fields !== null || status === 503 || status === 429;
       setCard({ submitting: false, locked: o.unknown, fieldErrors: o.fields, done: o.clearDraft || (!inCard && !o.unknown), message: inCard ? o.text : null });
       update((p) => ({
         ...p,
         pending: o.clearPending ? null : { ...pending, unknown: true },
         draft: o.clearDraft ? null : p.draft,
-        context: o.clearDraft ? { lastCitedIds: [] } : p.context,
+        // Booked: the booking's facts are done with, but the guest's food preferences (an allergy) stay (review).
+        context: o.clearDraft ? { ...p.context, lastCitedIds: [] } : p.context,
+        chatPending: o.clearDraft ? null : p.chatPending,
         selected: o.clearDraft ? null : p.selected,
         items: inCard ? p.items : [...p.items, { id: uid(), role: "assistant", text: o.text, blocks: o.blocks }],
       }));
@@ -240,8 +245,9 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
       if (ref.current.pending?.unknown || !ref.current.pending) return;
     }
     setCard(NO_CARD);
+    setFailed(null);
     generation.current += 1;
-    update((prev) => ({ ...prev, pending: null, draft: null, selected: null, context: { lastCitedIds: [] }, items: [...prev.items, { ...welcome(restaurantName), id: uid(), text: "Let's start again. What would you like to do?" }] }));
+    update((prev) => ({ ...prev, pending: null, chatPending: null, draft: null, selected: null, context: { lastCitedIds: [] }, items: [...prev.items, { ...welcome(restaurantName), id: uid(), text: "Let's start again. What would you like to do?" }] }));
   };
 
   // After a reload with a submit in flight, replay it with the same key to learn the outcome (D-14).
@@ -249,7 +255,9 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     if (restored.current) return;
     restored.current = true;
     save(ref.current);
-    if (ref.current.pending) void post(ref.current.pending);
+    // Whatever the stored flag says, the first POST may have reached the server: the replay is uncertain, so a 429 or
+    // 503 keeps the card locked with Retry instead of reporting that nothing was booked (review).
+    if (ref.current.pending) void post({ ...ref.current.pending, unknown: true });
     // A chat turn interrupted by a reload: offer Try again with the same request id (the server may already have it).
     else if (ref.current.chatPending) setFailed(ref.current.chatPending);
   }, [post]);
@@ -273,7 +281,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
   const pendingCardItem = locked ? [...s.items].reverse().find((i) => i.blocks?.some((b) => b.type === "confirm" && b.startsAtMs === s.pending!.body.startsAt)) : undefined;
   const composerLocked = locked || card.submitting;
   const handlers = (item: Item): BlockHandlers => ({
-    active: item === lastAssistant && !busy && !locked,
+    active: item === lastAssistant && !busy && !locked && !card.submitting,
     onAction: sendAction,
     onText: (t) => sendText(t),
     selectedStartsAt: s.selected,

@@ -212,7 +212,7 @@ test("the welcome offers four starting points; the menu opens without the model 
   await page.getByRole("button", { name: "Show me the menu" }).click();
   await expect(page.getByText("Which part of the menu would you like to see?")).toBeVisible();
   await page.getByRole("button", { name: "Desserts", exact: true }).click();
-  const desserts = page.getByRole("region", { name: "Desserts" });
+  const desserts = page.getByRole("group", { name: "Desserts" });
   await expect(desserts.getByText("Mango Sorbet", { exact: true })).toBeVisible();
   await expect(desserts.getByText("₹245", { exact: true })).toBeVisible();
   await expect(page.getByText(/cheapest first|available\)/)).toHaveCount(0);
@@ -226,7 +226,7 @@ test("a recommendation is a card built from the menu table, with follow-ups @cat
   const card = page.getByRole("article", { name: "Dal Ember, ₹445" });
   await expect(card).toBeVisible();
   await expect(card.getByText("Vegetarian", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Also worth a look" }).getByText("Chana Pindi", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Also worth a look" }).getByText("Chana Pindi", { exact: true })).toBeVisible();
   for (const name of ["Something cheaper", "Another option", "Find a table"]) await expect(page.getByRole("button", { name }).last()).toBeEnabled();
   await axe(page, "recommendation");
 });
@@ -238,9 +238,92 @@ test("one guest action sends one chat request, even when tapped twice (D-20) @ca
     await route.continue();
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Recommend something vegetarian" }).dblclick();
+  // Two clicks in the same task, before React re-renders the button as disabled: only the synchronous in-flight
+  // guard can stop the second (review: a dblclick could pass on the disabled state alone).
+  await page.getByRole("button", { name: "Recommend something vegetarian" }).evaluate((el: HTMLElement) => {
+    el.click();
+    el.click();
+  });
   await expect(page.getByText(/^I'd suggest the Dal Ember/)).toHaveCount(1);
   await expect(page.getByText("Recommend something vegetarian", { exact: true }).locator("xpath=self::p")).toHaveCount(1); // one guest bubble
   expect(requests).toBe(1);
+});
+
+test("a chat turn cut off by a reload offers Try again, which resends the same request id (D-20) @cat:context_loss", async ({ page }) => {
+  const bodies: { requestId?: string }[] = [];
+  let held: import("@playwright/test").Route | null = null;
+  await page.route("**/api/chat", async (route) => {
+    bodies.push(route.request().postDataJSON());
+    if (bodies.length === 1) held = route; // the first request never answers: the page is reloaded meanwhile
+    else await route.continue();
+  });
+  await page.goto("/");
+  await say(page, "can I bring my dog?");
+  await expect.poll(() => bodies.length).toBe(1);
+  await page.reload();
+  await (held as import("@playwright/test").Route | null)?.abort().catch(() => undefined);
+  await expect(page.getByRole("alert").filter({ hasText: "We couldn't reach the restaurant just now." })).toBeVisible();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.").first()).toBeVisible();
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1].requestId).toBeTruthy();
+  expect(bodies[1].requestId).toBe(bodies[0].requestId);
+});
+
+test("during a booking, a suggestion keeps the booking: no 'Find a table', and its chips wait for the submit (D-20) @cat:recommendation", async ({ page, server, observed }) => {
+  observed.pii.push("Asha Rao", "98765 43210");
+  await page.goto("/");
+  await chipsToConfirm(page);
+  await say(page, "Recommend something vegetarian");
+  await expect(page.getByRole("article", { name: "Dal Ember, ₹445" })).toBeVisible();
+  const cheaper = page.getByRole("button", { name: "Something cheaper" }).last();
+  await expect(cheaper).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Find a table" })).toHaveCount(1); // the welcome's, not a follow-up
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route("**/api/reservations", async (route) => {
+    await gate;
+    await route.continue();
+  }, { times: 1 });
+  const chats: string[] = [];
+  page.on("request", (r) => r.url().endsWith("/api/chat") && chats.push(r.url()));
+  await (await fillDetails(page)).getByRole("button", { name: "Confirm" }).click();
+  await expect(cheaper).toBeDisabled(); // the submit is in flight: a tap here could rewrite the card
+  await cheaper.click({ force: true });
+  expect(chats).toEqual([]);
+  release();
+  await expect(page.locator("[data-confirmation-ref]")).toBeVisible();
+  expect(rows(server.db)).toHaveLength(1);
+  expect(chats).toEqual([]);
+});
+
+test("J6 a reload while a submit is in flight treats the replay as uncertain: a busy server keeps the card locked (review) @cat:context_loss", async ({ page, server, observed }) => {
+  observed.pii.push("Asha Rao", "98765 43210");
+  await page.goto("/");
+  await chipsToConfirm(page);
+  let held: import("@playwright/test").Route | null = null;
+  let calls = 0;
+  await page.route("**/api/reservations", async (route) => {
+    calls += 1;
+    if (calls === 1) held = route; // in flight when the page reloads
+    else if (calls === 2) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "BUSY", message: "Busy" } }) });
+    else await route.continue();
+  });
+  await (await fillDetails(page)).getByRole("button", { name: "Confirm" }).click();
+  await expect.poll(() => calls).toBe(1);
+  // The tab dies before the failure is recorded (a reload cancels the request, and the page usually marks the submit
+  // uncertain before it unloads): the stored submit still says "not uncertain", so only the replay rule protects it.
+  await page.addInitScript(() => {
+    const raw = sessionStorage.getItem("neem-ember-chat-v1");
+    const s = raw ? JSON.parse(raw) : null;
+    if (s?.pending) sessionStorage.setItem("neem-ember-chat-v1", JSON.stringify({ ...s, pending: { ...s.pending, unknown: false } }));
+  });
+  await page.reload();
+  await (held as import("@playwright/test").Route | null)?.abort().catch(() => undefined);
+  await expect(page.getByText("We still couldn't confirm whether your booking went through. Tap Retry in a moment.")).toBeVisible();
+  await expect(page.getByLabel("Your message")).toBeDisabled();
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.locator("[data-confirmation-ref]")).toBeVisible();
+  expect(rows(server.db)).toHaveLength(1);
 });
 

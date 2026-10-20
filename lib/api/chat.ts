@@ -31,7 +31,11 @@ export function requestDeduper(opts: { ttlMs?: number; max?: number } = {}) {
       if (hit && now - hit.at <= ttl) return { result: hit.result, duplicate: true };
       const result = compute();
       seen.set(key, { at: now, result });
-      result.catch(() => seen.delete(key)); // a crash is not remembered: a retry runs again
+      // Only a reply is remembered: a crash, a rate limit or a full queue is not, so a retry runs again (review).
+      const forget = () => {
+        if (seen.get(key)?.result === result) seen.delete(key);
+      };
+      result.then((r) => r.status !== 200 && forget(), forget);
       return { result, duplicate: false };
     },
   };

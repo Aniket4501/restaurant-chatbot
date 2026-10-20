@@ -68,9 +68,13 @@ describe("buildPrompt matches probe prompt v2 apart from the approved changes", 
       )
       .replace(
         '4. Answer "faq" questions only from the facts.',
-        '4. Answer "faq" questions only from the facts, and use only numbers that appear in them: never repeat the guest\'s own numbers. Call a dish vegan, vegetarian, gluten-free or free of an allergen only if the facts say so for that dish.',
+        '4. Answer "faq" questions only from the facts. Call a dish vegan, vegetarian, gluten-free or free of an allergen only if the facts say so for that dish.',
       )
-      // v5 (D-20): the "menu" and "recommend" intents, rule 8 (prefs), and two examples replaced.
+      // v5 (D-20): the "menu" and "recommend" intents, rule 8 (prefs), rule 4's numbers, and two examples replaced.
+      .replace(
+        '4. Answer "faq" questions only from the facts. Call',
+        '4. Answer "faq" questions only from the facts. Every number in answer must appear in the facts; repeat a number from the guest\'s message only if the facts state it. Call',
+      )
       .replace(
         '"faq" for questions about hours, location, policies, the menu or prices; ',
         '"faq" for questions about hours, location, policies, or a particular dish (its price, ingredients or labels); "menu" when the guest wants to see the menu, a section of it, or the dishes with a dietary label ("what desserts do you have?", "show me the vegan dishes"); "recommend" when the guest wants a suggestion or help choosing what to eat or drink ("what should I order?", "something light", "anything with prawns?", "the best vegetarian dish under ₹400", "anything cheaper?", "another option"); ',
@@ -125,6 +129,8 @@ describe("static prefix (D-05: no dynamic text before the boundary)", () => {
       { retrieved: [] },
       { now: Date.parse("2026-10-16T23:59:00+05:30") },
       { now: Date.parse("2026-10-16T00:00:00+05:30") },
+      { prefs: JSON.stringify({ diet: ["vegan"], avoid: ["nuts"], maxPrice: 300, course: "desserts", mild: true, allergy: true, unlisted: [] }) },
+      { suggested: "Dal Ember (₹445), Mango Sorbet (₹245)" },
     ];
     for (const v of variants) expect(buildPrompt(input(v)).system, JSON.stringify(v).slice(0, 60)).toBe(base);
   });
@@ -177,3 +183,14 @@ describe("prompt fence (D-15)", () => {
     expect(buildPrompt(input({ retrieved: [] })).user).toContain("Menu and policy facts that may be relevant (each line: ID | fact):\n(none)\n");
   });
 });
+
+describe("per-turn food lines (D-20)", () => {
+  it("carry the preferences in force and the dishes last suggested in the user message only", () => {
+    const prefs = JSON.stringify({ diet: ["vegan"], avoid: ["nuts"], maxPrice: 300, course: "desserts", mild: false, allergy: true, unlisted: [] });
+    const p = buildPrompt(input({ prefs, suggested: "Mango Sorbet (₹245)" }));
+    expect(p.user).toContain(`Current food preferences: ${prefs}`);
+    expect(p.user).toContain("Last suggested dishes: Mango Sorbet (₹245)");
+    expect(p.system).not.toContain("Mango Sorbet (₹245)");
+  });
+});
+

@@ -46,7 +46,7 @@ const SetupOp = z.discriminatedUnion("op", [
 
 /** A scripted model reply: a turn, an envelope, a fake directive, or the §6.3 tokens. */
 /** A scripted turn; cases written before D-20 may leave out prefs (null). */
-const ScriptTurn = TurnSchema.extend({ prefs: TurnSchema.shape.prefs.default(null) });
+const ScriptTurn = z.strictObject({ ...TurnSchema.shape, prefs: TurnSchema.shape.prefs.default(null) });
 const ScriptReply = z.union([ScriptTurn, ChooserSchema, z.strictObject({ raw: z.record(z.string(), z.unknown()) }), z.enum(["<<INVALID_JSON>>", "<<TIMEOUT>>", "<<DOWN>>"]), z.string().regex(/^#fake:[a-z_]+$/)]);
 
 const Expect = z.strictObject({
@@ -85,6 +85,8 @@ const Expect = z.strictObject({
       shown: z.boolean().optional(),
       satisfies: z.strictObject({ maxPrice: z.number().int().optional(), diet: z.array(z.enum(DIETS)).optional(), course: z.enum(COURSES).optional(), avoid: z.array(z.enum(AVOIDS)).optional(), mild: z.boolean().optional() }).optional(),
       anyOf: z.array(z.string()).min(1).optional(),
+      /** When a dish card is shown, its lead is one of these (for questions an FAQ answer may also answer). */
+      leadIfShown: z.array(z.string()).min(1).optional(),
       notIds: z.array(z.string()).optional(),
       cheaperThanTurn: z.number().int().min(1).optional(),
       differentFromTurn: z.number().int().min(1).optional(),

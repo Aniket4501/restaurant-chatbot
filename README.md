@@ -34,7 +34,7 @@ The app listens on 127.0.0.1 only. Staff pages stay disabled until both admin va
 
 **Guests** (`/`):
 - Ask a question, for example "Do you have parking at Hauz Khas?" or "How much is the butter chicken?". Unknown or unrelated questions get a short fallback with the branch phone number.
-- Ask for a suggestion in your own words: "the best vegetarian dish under ₹400", "something light", "surprise me". Then refine it: "anything cheaper?", "another option", "actually, a dessert instead". Preferences carry over until you change them.
+- Ask for a suggestion in your own words: "the best vegetarian dish under ₹400", "something light", "surprise me". Then refine it: "anything cheaper?", "another option", "actually, a dessert instead". Preferences, including an allergy, carry over until you change them, even across a booking.
 - Browse the menu by section, or ask for "the vegan dishes".
 - Tap **Book a table**, then choose a branch, date, party size and one of the open times. Enter your name and mobile number, then tap Confirm.
 - You can also type a request, for example "table for 2 tomorrow at 8pm at Golf Course Road".
@@ -58,12 +58,15 @@ booking fields ──► validate ──► availability engine ──► open t
 
 - **Recommendations: the model chooses, code checks.**
   - The first model call understands the request and your active preferences (diet, budget, course, spice, allergies, "cheaper", "another").
+  - Code keeps those preferences honest: what your words state for certain is always added, a constraint stays in force until you lift it ("I'm not vegetarian", "price doesn't matter"), and the model can't invent a budget or "mild".
+  - An allergy the menu labels don't cover (they cover nuts, dairy, egg and gluten) gets a referral to staff instead of a dish.
   - Code narrows the menu to the dishes that meet those constraints, using only verified data. It filters; it never ranks.
   - A second model call compares those dishes, picks one, with up to two alternatives, and says why.
   - Code checks the pick before showing it:
     - it is a real, available dish that meets every stated constraint;
-    - each price is the dish's own;
-    - there are no invented "popular" claims or allergen promises;
+    - each price, and each diet word ("vegan", "no dairy"), is true of the dish it describes;
+    - it names no dish that isn't on the card;
+    - there are no invented "popular" claims and no safety promises ("safe", "nut-free");
     - there is no booking talk.
 
     On failure the model gets one retry, then you see a few dishes that fit, presented as options.

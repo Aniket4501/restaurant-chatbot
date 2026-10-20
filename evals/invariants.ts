@@ -105,8 +105,10 @@ export function checkCase(db: DB, rec: CaseRecord): Violation[] {
     const texts = [t.shown?.text ?? "", ...(t.shown?.blocks ?? []).flatMap((b) => (b.type === "notice" ? [b.text] : b.type === "field_request" ? [b.prompt] : []))];
     if (!created) for (const s of texts) if (claimIn(s)) v.push({ inv: "INV-04", turn: t.index, detail: `claim text without a create: "${s.slice(0, 80)}"` });
 
-    // INV-05: shown model prose is supported by its cited facts (independent checker).
-    if (t.outcome && PROSE_OUTCOMES.has(t.outcome) && t.shown) {
+    // INV-05: shown model prose is supported by its cited facts (independent checker). A recommendation's reply is
+    // model prose too when the chooser's reply was accepted (review); code-built fallback lines are not.
+    const chooserProse = t.outcome === "recommend" && t.trace.some((x) => x.action === "recommend" && x.result === "ok");
+    if (t.outcome && (PROSE_OUTCOMES.has(t.outcome) || chooserProse) && t.shown) {
       const cited = t.citedFactIds.map((id) => t.factText.get(id) ?? "").join("\n");
       const bad = unsupportedToken(t.shown.text, cited);
       if (bad) v.push({ inv: "INV-05", turn: t.index, detail: `"${bad}" is not in the cited facts` });

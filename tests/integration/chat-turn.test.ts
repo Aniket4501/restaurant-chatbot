@@ -333,7 +333,7 @@ describe("POST /api/chat handler (D-15 caps, 429)", () => {
 
   it("gives a repeated request id the same reply with one model call, and a new id a new turn (D-20)", async () => {
     let calls = 0;
-    const inner = fakeModel({ script: { hi: simple("smalltalk", "Hello there!") } });
+    const inner = fakeModel({ script: { hi: simple("smalltalk", "Hello there!"), hello: simple("smalltalk", "Hi again!") } });
     const counting: ModelClient = { ...inner, chat: (req) => ((calls += 1), inner.chat(req)) };
     make({ chat: { ...testChatDeps(), model: () => counting } });
     const handler = chatHandler(api, requestDeduper());
@@ -346,8 +346,12 @@ describe("POST /api/chat handler (D-15 caps, 429)", () => {
     expect(jb).toEqual(ja);
     expect(jc).toEqual(ja);
     expect((t.db.prepare("SELECT COUNT(*) AS n FROM chat_turns").get() as { n: number }).n).toBe(1);
-    await send({ ...ok, requestId: randomUUID() });
+    // The same id with a different body is a different request (the key includes the body), never another's reply.
+    const other = await (await send({ ...body, messages: [{ role: "guest", content: "hello" }] })).json();
     expect(calls).toBe(2);
+    expect(other.reply.text).toBe("Hi again!");
+    await send({ ...ok, requestId: randomUUID() });
+    expect(calls).toBe(3);
   });
   it("answers a turn without the trace outside test mode", async () => {
     make();

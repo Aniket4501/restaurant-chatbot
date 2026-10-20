@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { Block } from "@/lib/chat/types";
 import type { CreateBody } from "@/components/chat/storage";
 import { CalendarIcon, GuestsIcon, PinIcon } from "@/components/ui/icons";
@@ -30,7 +30,9 @@ export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, 
   const [note, setNote] = useState(initial?.note ?? "");
   const disabled = !active || state.submitting || state.locked || state.done;
   const err = state.fieldErrors ?? {};
-  const id = `card-${block.startsAtMs}`;
+  // Unique per card: the same slot's card can be shown twice (repeated after an answer during a booking), and shared
+  // ids left the second card's fields without labels.
+  const id = `card${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   return (
     <form

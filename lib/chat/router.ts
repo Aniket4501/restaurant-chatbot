@@ -299,7 +299,15 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
     case "menu": {
       // Worked out in runTurn (D-20); a booking in progress is kept and its pending question repeated, as for FAQs.
       const p = prepared ?? { text: T.clarify, blocks: [QUICK_REPLIES()], cited: [] };
-      return reply(prose(p.text), turn.intent, { lead: p.blocks, cited: p.cited });
+      // During a booking, chips that would restart it ("Find a table") are left out of the follow-ups (review).
+      const lead = resumed
+        ? p.blocks.flatMap((b): Block[] => {
+            if (b.type !== "quick_replies") return [b];
+            const chips = b.chips.filter((c) => !("action" in c && c.action.type === "set_field"));
+            return chips.length ? [{ ...b, chips }] : [];
+          })
+        : p.blocks;
+      return reply(prose(p.text), turn.intent, { lead, cited: p.cited });
     }
     case "manage_booking":
       ctx.trace.push({ action: "redirect", kind: "manage_booking" });

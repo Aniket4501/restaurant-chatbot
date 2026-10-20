@@ -1,0 +1,301 @@
+{
+ "review": "D-20 adversarial review (read-only workflow wf_8a930942-ee5, 4 finders + 4 skeptics) of 9927fbe..46955af",
+ "date": "2026-10-20",
+ "confirmed": [
+  {
+   "dimension": "lifecycle",
+   "title": "Reload replay of an in-flight submit treats 429/503 as final: forgets the key, unlocks the card and says \"nothing was booked\"",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "lifecycle",
+   "title": "The \"couldn't reach the restaurant / Try again\" alert and chatPending outlive a completed booking and replay a stale pre-booking request",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "lifecycle",
+   "title": "Chips on the latest reply stay enabled during a booking POST; the tap adds a guest bubble and then is silently dropped",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "lifecycle",
+   "title": "No tests for the D-20 client safety fixes (replay lock, chat/submit exclusion, stale-reply drop, reload Try again) or for dedupe eviction and error handling",
+   "severity": "medium",
+   "disposition": "partly fixed: E2E for the reload replay, Try again after a reload, chips during a submit and a same-task double tap; unit tests for requestDeduper. The stale-reply drop (generation counter) still has no E2E."
+  },
+  {
+   "dimension": "lifecycle",
+   "title": "Request dedupe caches 429 rate-limited/queue-full results for 120 s",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "Constraints from earlier turns (allergy, avoid, diet, budget) are lost when the model's prefs leave them out. Rule 8's per-field wording invites this, and resolvePrefs replaces the previous prefs outright",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "Allergy flag is never passed to the chooser: an allergy-only guest is described as 'none stated', and allergens other than dairy/nuts/egg can't be filtered",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "Ingredient requests ('anything with prawns / black lentils?') have no prefs field, so the stated ingredient is ignored: menu shows section chips, the recommend fallback lists the first three dishes on the menu",
+   "severity": "medium",
+   "disposition": "partly fixed: the fallback shows the dishes retrieval found first. A menu-intent ingredient question still gets the section list (prompt rule 1 routes 'anything with prawns?' to recommend)."
+  },
+  {
+   "dimension": "contract",
+   "title": "The only recommend example sets mild:true; the live model adds 'mild' to requests that say nothing about spice, which filters out spicy dishes and carries into later turns",
+   "severity": "medium",
+   "disposition": "fixed in code instead of the prompt: a model 'mild' without a spice word in the guest's message is dropped. No second example was added (prompt budget)."
+  },
+  {
+   "dimension": "contract",
+   "title": "Sticky prefs (course, budget, diet) make the 'Show me the menu' chip after a no-match a dead end with no chips",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "'cheaper'/'another' (relation) has no code backstop, although the follow-up chips send fixed texts",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "Rule 4 changed without being recorded (and contradicts itself): 'use only numbers that appear in them: never repeat the guest's own numbers'; the test files it under v4",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "interpretJson dropped the maxLength truncation guard for the chooser: a reply the grammar cut at 400 characters is accepted and shown",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "Static-prefix test doesn't vary the new per-turn inputs, and no test renders non-null prefs or suggested lines",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "contract",
+   "title": "ScriptTurn's prefs default plus the non-strict TurnSchema let a misspelled prefs key in a scripted case quietly become null",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "A confirmed booking wipes the stored food preferences, so a nut allergy stated earlier is forgotten, and no eval mirrors the reset",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "INV-05 never checks recommendation prose, so the unsupportedClaimsShown gate cannot see the chooser's text",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "The double-click E2E test passes without the new synchronous in-flight guard, and the other client guards have no test",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "SC-REC-007 claims to test preference memory, but its scripted model supplies the diet, so nothing in code is tested",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "LV-REC-008 accepts faq or menu intents, but notIds only inspects recommendation cards",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "LV-REC-013 (\"Is that vegan?\") checks only that the bot did not abstain, so a false 'yes' passes",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "A recommendation passes mustCiteAny through an alternative row, even when the lead dish does not answer the question",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "The \"Find a table\" follow-up appears during a booking in progress and clears the branch and selected slot",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "Follow-up chips stay enabled during a reservation POST, and tapping one leaves a guest bubble that never gets a reply",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "groundedAnswerCorrectness is now credited by code-built menu lists and no-fit replies",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "recommendationValidity is weighted by dishes shown, and the recommend latency mixes 1-call and 3-call turns",
+   "severity": "low",
+   "disposition": "partly fixed: scored once per turn. Recommendation latency still mixes 1-call (no match) and 3-call turns; it is report-only."
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "LV-REC-005 turn 2 does not check the course, so \"similar to that, but cheaper\" passes with any cheaper dish",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "The 'another' exhausted reply produces ungrammatical guest text",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "evals-ui",
+   "title": "New region landmarks repeat names across turns, and the alternatives heading reads as a sub-heading of the lead dish",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Diet-word check passes if any dish on the card has the label, not the dish the reply describes",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Any negation word in a sentence skips every diet check, and 'no dairy'/'without nuts' claims are never checked",
+   "severity": "critical",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Stated allergy/diet is not kept in code across turns: model prefs replace the previous ones wholesale",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Allergy detected but allergen not mapped: groundnut/walnut/hazelnut, gluten allergy, lactose intolerance",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Fish/shellfish/soy allergies cannot be filtered; the fallback shows Amritsari Fish Fry to a fish-allergic guest",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Negated diet and spice words are read as the constraint itself, and re-added every time the guest drops them",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Allergen-safety check misses common safety promises ('safe for you', 'a safe bet', 'contains no nuts')",
+   "severity": "high",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "A clarifying reply (pick null) skips the hype, safety and diet checks",
+   "severity": "critical",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "'Cheaper' no-match text says no dish exists when one is already on the card",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Persisted prefs (including course) hijack the 'Show me the menu' chip; the no-match escape chip repeats the dead end",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Budget regex reads non-price numbers as a rupee cap and overrides the model",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Model-invented constraints are accepted unchecked (live run: 'light' and 'not too expensive' became mild)",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Price pairing misses a wrong price when name and price counts differ or the price is in a separate clause",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "'Cheaper' is enforced only if the model sets relation and a previous suggestion exists; the reply's 'cheaper' claim is unchecked",
+   "severity": "low",
+   "disposition": "fixed: the chip texts are read in code, and 'cheaper' falls back to the first dish last shown. A reply that says 'cheaper' when the guest didn't ask is not checked."
+  },
+  {
+   "dimension": "recommend",
+   "title": "Hype check misses common invented-popularity phrasing",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "'veg' on its own (and 'vegetarians'/'veggie') is not read as a diet constraint",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "Reply may name dishes that are not on the card and not in the fit list",
+   "severity": "medium",
+   "disposition": "fixed, with a test"
+  },
+  {
+   "dimension": "recommend",
+   "title": "'under/below/less than ₹N' is applied as at most N",
+   "severity": "low",
+   "disposition": "not changed (deliberate): 'under ₹400' keeps ₹400 dishes, as the reply's 'up to ₹400' says. Recorded in D-20."
+  },
+  {
+   "dimension": "recommend",
+   "title": "Avoid-allergen trigger is message-wide, so liking an ingredient reads as avoiding it",
+   "severity": "low",
+   "disposition": "fixed, with a test"
+  }
+ ],
+ "refuted": [
+  {
+   "dimension": "contract",
+   "title": "No test pins keeping a constraint across turns: SC-REC-007 scripts the model itself keeping the diet, and the resolvePrefs unit test only covers a constraint restated in the latest message",
+   "severity": "none"
+  }
+ ]
+}

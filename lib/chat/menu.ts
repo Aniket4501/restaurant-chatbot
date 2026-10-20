@@ -88,13 +88,12 @@ export const ALLERGY_NOTE = "Menu labels only list the main allergens, and our k
  */
 export function menuStep(items: MenuEntry[], prefs: Prefs, course: Course | null): { text: string; blocks: Block[]; shown: number; cited: string[] } {
   const p: Prefs = { ...prefs, course: course ?? prefs.course };
-  if (!hasPrefs(p)) {
-    const chips = COURSES.filter((c) => items.some((i) => i.course === c)).map((c) => ({ label: COURSE_LABEL[c], action: { type: "menu" as const, course: c } }));
-    return { text: "Which part of the menu would you like to see?", blocks: [{ type: "quick_replies", chips }], shown: 0, cited: [] };
-  }
+  const sections: Block = { type: "quick_replies", chips: COURSES.filter((c) => items.some((i) => i.course === c)).map((c) => ({ label: COURSE_LABEL[c], action: { type: "menu" as const, course: c } })) };
+  if (!hasPrefs(p)) return { text: "Which part of the menu would you like to see?", blocks: [sections], shown: 0, cited: [] };
   const fit = eligible(items, p);
   const note: Block[] = p.avoid.length || p.allergy ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
-  if (!fit.length) return { text: `We don't have any ${describePrefs(p)} on the menu right now.`, blocks: note, shown: 0, cited: [] };
+  // Nothing fits: the sections are offered, so the guest is never left without a way on.
+  if (!fit.length) return { text: `We don't have any ${describePrefs(p)} on the menu right now.`, blocks: [...note, sections], shown: 0, cited: [] };
   const groups = COURSES.map((c) => ({ course: c, label: COURSE_LABEL[c], items: fit.filter((i) => i.course === c).map(view) })).filter((g) => g.items.length);
   const sectionOnly = p.course !== null && !p.diet.length && !p.avoid.length && p.maxPrice === null && !p.mild;
   const text = sectionOnly ? `Here are our ${COURSE_NOUN[p.course!]}.` : `Here's what we have: ${describePrefs(p)}.`;

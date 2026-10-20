@@ -11,7 +11,7 @@ import { noTurnLimit, openGate } from "@/lib/chat/ratelimit";
 import { historyContent, submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import { branchInfo } from "@/lib/chat/templates";
 import { runTurn, systemInputFor } from "@/lib/chat/turn";
-import { emptyDraft, type Action, type Block, type ChatMessage, type Draft, type TraceEntry } from "@/lib/chat/types";
+import { emptyDraft, type Action, type Block, type ChatMessage, type Draft, type TraceEntry, type TurnContext } from "@/lib/chat/types";
 import { loadConfig, MODEL } from "@/lib/config";
 import { openDb, type DB } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
@@ -164,7 +164,10 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
   if (e.mustIncludeValues) check("mustIncludeValues", e.mustIncludeValues.every((v) => hasValue(text, v)), `reply lacks ${e.mustIncludeValues.filter((v) => !hasValue(text, v)).join(", ")}`);
   if (e.mustNotIncludeValues) check("mustNotIncludeValues", !e.mustNotIncludeValues.some((v) => hasValue(text, v)), `reply includes ${e.mustNotIncludeValues.filter((v) => hasValue(text, v)).join(", ")}`);
   // "abstain" (an unknown fact must get the fallback) and "answer" (a known one must not) are scored separately.
-  if (e.mustAbstain !== undefined) check(e.mustAbstain ? "abstain" : "answer", (t.outcome === "faq_fallback") === e.mustAbstain, e.mustAbstain ? `did not abstain (outcome ${t.outcome})` : "abstained");
+  // "answer" is credited only for an actual answer (review): an FAQ or hours answer, a menu list or a dish card, not
+  // a code-built no-match line or the section chips.
+  const answered = t.outcome === "faq_answer" || t.outcome === "hours_answer" || (t.outcome === "menu" && blocks.some((x) => x.type === "menu_list")) || (t.outcome === "recommend" && blocks.some((x) => x.type === "recommendation"));
+  if (e.mustAbstain !== undefined) check(e.mustAbstain ? "abstain" : "answer", e.mustAbstain ? t.outcome === "faq_fallback" : answered, e.mustAbstain ? `did not abstain (outcome ${t.outcome})` : `no answer shown (outcome ${t.outcome})`);
   if (e.reservationsCreated !== undefined) check("reservationsCreated", ctx.createdRefs().length === e.reservationsCreated, `reservations created ${ctx.createdRefs().length} ≠ ${e.reservationsCreated}`);
   for (const re of e.replyMustMatch ?? []) check("replyMustMatch", new RegExp(re, "i").test(text), `reply does not match /${re}/: "${text.slice(0, 100)}"`);
   for (const re of e.replyMustNotMatch ?? []) check("replyMustNotMatch", !new RegExp(re, "i").test(text), `reply matches /${re}/`);
@@ -174,18 +177,19 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
   if (e.submitCode !== undefined) check("submitCode", (t.submit?.code ?? null) === e.submitCode, `submit code ${t.submit?.code} ≠ ${e.submitCode}`);
   if (e.recommend) {
     const r = e.recommend;
-    const b = t.shown?.blocks.find((x) => x.type === "recommendation");
-    const items = b && b.type === "recommendation" ? b.items : [];
+    const items = dishes; // every dish on screen, in cards and lists (review)
     const lead = leadOf(t.shown?.blocks);
     if (r.shown !== undefined) check("recommend", (lead !== null) === r.shown, r.shown ? "no recommendation shown" : `a recommendation was shown (${lead?.id})`);
     if (r.satisfies) {
-      if (!items.length) check("recommend", false, "no dish shown to check");
-      for (const i of items) {
-        const why = unmetShown(i, r.satisfies);
-        check("recommend", !why, `${i.id} ${why}`);
-      }
+      // One check per turn, whatever the number of dishes shown (review: recommendationValidity was weighted by dishes).
+      const bad = items.flatMap((i) => {
+        const why = unmetShown(i, r.satisfies!);
+        return why ? [`${i.id} ${why}`] : [];
+      });
+      check("recommend", items.length > 0 && !bad.length, items.length ? bad.join("; ") : "no dish shown to check");
     }
     if (r.anyOf) check("recommend", !!lead && r.anyOf.includes(lead.id), `lead dish ${lead?.id ?? "none"} not in ${r.anyOf.join(", ")}`);
+    if (r.leadIfShown && lead) check("recommend", r.leadIfShown.includes(lead.id), `lead dish ${lead.id} not in ${r.leadIfShown.join(", ")}`);
     if (r.notIds) check("recommend", !items.some((i) => r.notIds!.includes(i.id)), `shows one of ${r.notIds.join(", ")}`);
     if (r.cheaperThanTurn !== undefined) {
       const prev = ctx.leadOfTurn?.(r.cheaperThanTurn - 1) ?? null;
@@ -309,7 +313,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
 
     // Client state, as the browser keeps it.
     let draft: Draft = c.draft ?? emptyDraft();
-    let context: { lastCitedIds: string[] } = { lastCitedIds: [] };
+    let context: TurnContext = { lastCitedIds: [] };
     let history: ChatMessage[] = c.history ? [...c.history] : [];
     let lastConfirm: Extract<Block, { type: "confirm" }> | null = null;
     let lastSubmit: { key: string; body: Record<string, unknown>; card: Extract<Block, { type: "confirm" }> } | null = null;
@@ -422,6 +426,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         if (r.outcome.clearDraft) {
           draft = emptyDraft();
           lastConfirm = null;
+          context = { ...context, lastCitedIds: [] }; // as the client does: food preferences stay (review)
         }
         history = [...history, { role: "assistant" as const, content: historyContent(r.outcome.text, r.outcome.blocks) }].filter((m) => m.content).slice(-7);
       } else if ("simulate" in turn) {
@@ -436,6 +441,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
           if (r.outcome.clearDraft) {
             draft = emptyDraft();
             lastConfirm = null;
+            context = { ...context, lastCitedIds: [] };
           }
         }
       } else if ("book" in turn) {

@@ -6,7 +6,7 @@ import { migrate } from "@/lib/db/migrate";
 import { applySeed, parseSeed } from "@/lib/db/seed";
 import { loadFactSource, renderKbFacts, renderStaticFacts, type Fact } from "@/lib/kb/facts";
 import { describePrefs, eligible, menuEntries, menuStep, unmet, type MenuEntry } from "@/lib/chat/menu";
-import { explicitPrefs, recommendTurn, resolvePrefs, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
+import { explicitPrefs, recommendTurn, resolvePrefs, shortlist, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
 import { noPrefs, type Prefs, type TraceEntry } from "@/lib/chat/types";
 import type { Choice } from "@/lib/llm/chooser";
 import type { GroundingContext } from "@/lib/chat/grounding";
@@ -96,7 +96,7 @@ describe("validating the model's choice", () => {
   it("rejects invented popularity, allergen promises and diet claims no dish shown has", () => {
     expect(ok({ reply: "Our most popular dish, the Yellow Dal Tadka at ₹375." })).toContain('"most popular" is not supported by the menu');
     expect(ok({ reply: "The Yellow Dal Tadka at ₹375 is nut-free." })).toContain("the reply must not promise allergen safety");
-    expect(ok({ pick: "menu:dal-ember", reply: "Dal Ember at ₹445 is vegan and rich." }, P({ diet: ["vegetarian"], maxPrice: 500 }))).toContain("no dish shown is vegan");
+    expect(ok({ pick: "menu:dal-ember", reply: "Dal Ember at ₹445 is vegan and rich." }, P({ diet: ["vegetarian"], maxPrice: 500 }))).toContain("Dal Ember is not vegan");
     expect(ok({ pick: "menu:dal-ember", reply: "Dal Ember at ₹445 isn't vegan, but it is rich and smoky." }, P({ diet: ["vegetarian"], maxPrice: 500 }))).toEqual([]);
   });
   it("accepts a short clarifying question without a dish, and nothing else without one", () => {
@@ -176,6 +176,8 @@ describe("recommendTurn: the full turn after the first model call", () => {
   it("always adds the allergy note when an allergy or allergen is in play", async () => {
     const { res } = await run(recTurn({ avoid: ["nuts"], allergy: true, course: "desserts" }), [{ pick: "menu:mango-sorbet", alternatives: [], reply: "The Mango Sorbet at ₹245 is a safe bet for dessert." }], { text: "I have a nut allergy, which dessert?" });
     expect(res.blocks.find((b) => b.type === "notice")).toMatchObject({ text: expect.stringContaining("can't guarantee") });
+    // "a safe bet" is a safety promise (review): the wording is rejected and the valid pick shown with a plain line.
+    expect(res.text).toBe("I'd suggest the Mango Sorbet (₹245).");
   });
 });
 
@@ -194,5 +196,139 @@ describe("menu browsing (no model)", () => {
     const vegan = menuStep(entries, P({ diet: ["vegan"] }), null);
     expect(vegan.text).toBe("Here's what we have: vegan dishes.");
     expect(JSON.stringify(vegan)).not.toMatch(/cheapest first|available\)/);
+  });
+});
+
+describe("shortlist: which dishes the chooser reads (latency), never the answer", () => {
+  it("keeps every dish when few fit", () => {
+    const fit = eligible(entries, P({ diet: ["vegan"], course: "desserts" }));
+    expect(shortlist(fit, [])).toEqual(fit);
+  });
+  it("puts the dishes retrieval found first, then up to three per course, at most 18", () => {
+    const fit = eligible(entries, P({}));
+    const s = shortlist(fit, ["menu:dal-ember", "faq:pets", "menu:mango-sorbet"]);
+    expect(s).toHaveLength(18);
+    expect(s.slice(0, 2).map((d) => d.id)).toEqual(["menu:dal-ember", "menu:mango-sorbet"]);
+    const courses = new Set(s.map((d) => d.course));
+    expect(courses.size).toBe(6); // every section is represented
+    for (const c of courses) expect(s.filter((d) => d.course === c).length).toBeLessThanOrEqual(4);
+  });
+});
+
+
+// ---------- D-20 review (docs/research/2026-10-20-d20-review.json): each scenario that slipped through ----------
+
+describe("review: preferences read from the guest's words", () => {
+  it.each([
+    ["I'm not vegetarian, what's a good meat main?", { diet: undefined }],
+    ["I'm not vegan", { diet: undefined }],
+    ["nothing mild please, I like heat", { mild: undefined }],
+    ["I'm veg, any mains?", { diet: ["vegetarian"] }],
+    ["something for vegetarians", { diet: ["vegetarian"] }],
+    ["I have a groundnut allergy", { allergy: true, avoid: ["nuts"] }],
+    ["allergic to walnuts", { allergy: true, avoid: ["nuts"] }],
+    ["I'm lactose intolerant", { avoid: ["dairy"] }],
+    ["I'm allergic to gluten", { diet: ["gluten-free"] }],
+    ["I can't eat gluten", { diet: ["gluten-free"] }],
+    ["I love nuts, what's good?", { avoid: undefined }],
+    ["a table for 6, something under 4 people", { maxPrice: undefined }],
+    ["anything under 30 minutes for a party of 12?", { maxPrice: undefined }],
+    ["something under ₹400 for 3 people", { maxPrice: 400 }],
+  ])("%s", (text, want) => {
+    const ex = explicitPrefs(text);
+    for (const [k, v] of Object.entries(want)) expect(ex[k as keyof typeof ex], k).toEqual(v);
+  });
+  it("names an allergy the menu labels can't cover", () => {
+    expect(explicitPrefs("I'm allergic to shellfish").unlisted).toEqual(["shellfish"]);
+    expect(explicitPrefs("I have a soy allergy").unlisted).toEqual(["soy"]);
+    expect(explicitPrefs("I'm allergic to kiwi").unlisted).toEqual(["other"]);
+    expect(explicitPrefs("I have a severe peanut allergy").unlisted).toBeUndefined();
+    expect(explicitPrefs("I'm allergic to nuts").unlisted).toBeUndefined();
+  });
+  it("reads the follow-up chips' texts as 'cheaper' and 'another'", () => {
+    expect(explicitPrefs("Anything cheaper?").relation).toBe("cheaper");
+    expect(explicitPrefs("Show me another option").relation).toBe("another");
+  });
+});
+
+describe("review: constraints stay in force until the guest lifts them", () => {
+  const model = (o: Partial<NonNullable<Turn["prefs"]>>): Turn["prefs"] => ({ diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false, relation: null, ...o });
+  it("keeps an allergy and its allergen when the model's follow-up prefs drop them", () => {
+    const r = resolvePrefs(model({ course: "mains", relation: "another" }), P({ avoid: ["nuts"], allergy: true, course: "mains" }), "Show me another option");
+    expect(r.prefs).toMatchObject({ avoid: ["nuts"], allergy: true, course: "mains" });
+  });
+  it("keeps the diet and budget on a change of course, and lets the guest lift them", () => {
+    expect(resolvePrefs(model({ course: "desserts" }), P({ diet: ["vegetarian"], maxPrice: 400 }), "Actually, suggest a dessert instead").prefs).toMatchObject({ diet: ["vegetarian"], maxPrice: 400, course: "desserts" });
+    expect(resolvePrefs(model({ course: "mains" }), P({ diet: ["vegetarian"] }), "I'm not vegetarian actually, any meat main?").prefs.diet).toEqual([]);
+    expect(resolvePrefs(model({}), P({ maxPrice: 400 }), "price doesn't matter, surprise me").prefs.maxPrice).toBeNull();
+  });
+  it("drops constraints the model invented ('light' is not 'mild'; no number, no budget)", () => {
+    const r = resolvePrefs(model({ mild: true, maxPrice: 400 }), null, "I want something light, not too expensive");
+    expect(r.prefs).toMatchObject({ mild: false, maxPrice: null });
+  });
+});
+
+describe("review: claims in the reply are checked against the dish they are about", () => {
+  const v = (c: Partial<Choice>, prefs = P({ course: "desserts" })) =>
+    validateChoice({ pick: "menu:chocolate-chilli-mousse", alternatives: [], reply: "Try the Chocolate Chilli Mousse at ₹345.", ...c }, eligible(entries, prefs), byId(), prefs, grounding).reasons;
+  it("a vegan claim about the pick fails even when an alternative is vegan", () => {
+    expect(v({ alternatives: ["menu:mango-sorbet"], reply: "The Chocolate Chilli Mousse at ₹345 is a rich vegan treat. If you want something lighter, try the Mango Sorbet at ₹245." })).toContain("Chocolate Chilli Mousse is not vegan");
+    expect(v({ pick: "menu:mango-sorbet", reply: "The Mango Sorbet at ₹245 is vegan and light." })).toEqual([]);
+  });
+  it("a negation elsewhere in the sentence doesn't hide a false claim, and an honest negation passes", () => {
+    expect(v({ reply: "The Chocolate Chilli Mousse at ₹345 is vegan and not too heavy." })).toContain("Chocolate Chilli Mousse is not vegan");
+    expect(v({ reply: "The Chocolate Chilli Mousse at ₹345 isn't vegan, but it's rich and dark." })).toEqual([]);
+  });
+  it("rejects allergen-absence and safety wording", () => {
+    for (const reply of ["The Mango Sorbet at ₹245 contains no nuts, so it's safe for you.", "The Mango Sorbet at ₹245 is a safe bet.", "The Mango Sorbet at ₹245 is allergy-friendly."])
+      expect(v({ pick: "menu:mango-sorbet", reply }), reply).not.toEqual([]);
+    expect(v({ reply: "The Chocolate Chilli Mousse at ₹345 has no dairy." })).toContain("Chocolate Chilli Mousse is not vegan (the only dishes known to have no dairy or egg)");
+  });
+  it("a clarifying question can't carry claims or dishes", () => {
+    expect(v({ pick: null, reply: "Would you like something light or more filling?" })).toEqual([]);
+    expect(v({ pick: null, reply: "Our desserts are all vegan, would you like one?" })).not.toEqual([]);
+    expect(v({ pick: null, reply: "Our most popular dessert is light, would you like it?" })).not.toEqual([]);
+    expect(v({ pick: null, reply: "Would the Mango Sorbet suit you?" })).not.toEqual([]);
+  });
+  it("pairs every price with the dish named before it", () => {
+    expect(v({ alternatives: ["menu:mango-sorbet"], reply: "The Chocolate Chilli Mousse is rich. The Mango Sorbet is ₹345." })).toContain("the reply gives Mango Sorbet the wrong price (₹345)");
+  });
+  it("rejects a dish named in the reply that isn't on the card", () => {
+    expect(v({ reply: "The Chocolate Chilli Mousse at ₹345, or the Shahi Tukda." })).toContain("the reply names Shahi Tukda, which is not on the card");
+  });
+  it("rejects a number that is not on the menu (the grounding check)", () => {
+    expect(v({ pick: "menu:mango-sorbet", reply: "The Mango Sorbet at ₹245 serves two." })).toEqual(["the reply has an unsupported detail (two)"]);
+    expect(v({ pick: "menu:mango-sorbet", reply: "The Mango Sorbet at ₹245 takes 5 minutes." })).toEqual(["the reply has an unsupported detail (5)"]);
+    expect(v({ pick: "menu:mango-sorbet", reply: "The Mango Sorbet at ₹245 is light and fruity." })).toEqual([]);
+  });
+  it("rejects extra hype wording and a reply cut off by the length limit", () => {
+    expect(v({ reply: "The Chocolate Chilli Mousse at ₹345 is our speciality." })).toContain('"speciality" is not supported by the menu');
+    expect(v({ reply: `The Chocolate Chilli Mousse at ₹345 ${"is rich ".repeat(48)}` })).toContain("the reply is cut off");
+  });
+});
+
+describe("review: what recommendTurn does with these", () => {
+  const run = async (turn: Turn, replies: Choice[], text: string, context: { prefs?: Prefs | null; recommended?: string[] } = {}) => {
+    const call: ChooserCall = async () => {
+      const r = replies.shift();
+      return r ? { choice: r, code: "ok", content: JSON.stringify(r) } : { choice: null, code: "MODEL_UNAVAILABLE", content: "" };
+    };
+    return recommendTurn({ turn, text, history: [], context: { lastCitedIds: [], ...context }, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
+  };
+  it("an allergy the labels can't cover stops the recommendation and sends the guest to staff", async () => {
+    const res = await run(recTurn({ allergy: true }), [{ pick: "menu:amritsari-fish-fry", alternatives: [], reply: "Amritsari Fish Fry at ₹545." }], "I'm allergic to shellfish, what do you recommend?");
+    expect(res.blocks.some((b) => b.type === "recommendation")).toBe(false);
+    expect(res.text).toMatch(/shellfish/);
+    expect(res.blocks.find((b) => b.type === "notice")).toBeTruthy();
+  });
+  it("the fallback shows dishes retrieval found first, not the first in the menu", async () => {
+    const turn = recTurn({});
+    const call: ChooserCall = async () => ({ choice: null, code: "MODEL_UNAVAILABLE", content: "" });
+    const res = await recommendTurn({ turn, text: "anything with black lentils?", history: [], context: { lastCitedIds: [] }, entries, restaurant: "Neem & Ember", grounding, trace: [], relevant: ["menu:dal-ember"] }, call);
+    expect((res.blocks[0] as { items: { id: string }[] }).items[0].id).toBe("menu:dal-ember");
+  });
+  it("'cheaper' with nothing cheaper says the last suggestion is already the cheapest", async () => {
+    const res = await run(recTurn({ course: "desserts", relation: "cheaper" }), [], "Anything cheaper?", { prefs: P({ course: "desserts" }), recommended: ["menu:mango-sorbet"] });
+    expect(res.text).toBe("The Mango Sorbet (₹245) is already the cheapest of the desserts we have.");
   });
 });

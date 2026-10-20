@@ -127,7 +127,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // 2. Chip, slot and menu actions: deterministic, no model call.
   const entries = menuEntries(src);
   if (input.action?.type === "menu") {
-    const m = menuStep(entries, prefsOut ?? noPrefs(), input.action.course);
+    const p = prefsOut ?? noPrefs();
+    const m = menuStep(entries, input.action.course === null ? noPrefs() : { ...noPrefs(), diet: p.diet, avoid: p.avoid, allergy: p.allergy }, input.action.course);
     trace.push({ action: "menu", course: input.action.course, items: m.shown });
     return finish({ text: m.text, blocks: m.blocks, draft: draft0, outcome: "menu", citedFactIds: m.cited }, null);
   }
@@ -234,7 +235,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       // A stated large party is a booking whatever the model said (D-17), so it never reaches the chooser.
       if (t1.ok && t1.turn.intent === "recommend" && largePartyStated(latest) === null) {
         recommended.result = await recommendTurn(
-          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000 },
+          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: retrieval.hits.map((h) => h.factId) },
           chooser,
         );
         metrics.promptVersion = `${PROMPT_VERSION}+${CHOOSER_VERSION}`;
