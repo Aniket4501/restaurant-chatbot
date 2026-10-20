@@ -2,7 +2,7 @@
 Phase: 6 — Local model integration (DONE)   Gate pending: none (G1, G2, G2-M approved 2026-10-19; G3 not triggered)   Updated: 2026-10-20
 Current task: none. Next is Phase 7 (T-20 QA and AI evaluation)   Branch: build/reservation-bot   Last commit: see `git log -1`
 Last verification (2026-10-20, end of Phase 6):
-- `npm run verify` → 9/9 steps passed (unit 262, tz ×2, integration 209, D1 39/39 with 0 violations, build, E2E 21/21, invariant report)
+- `npm run verify` → 9/9 steps passed (unit 267, tz ×2, integration 209, D1 39/39 with 0 violations, build, E2E 21/21, invariant report)
 - `npm run model:check` → passed (qwen3.5:9b d63f830f28d5 and qwen3-embedding:0.6b ac6da0dfba84, local, MLX, think:false honoured, index 86/86)
 - D2 baseline `npm run eval -- --runs 3 --label baseline` → 225/243 case-runs (92.6%), 0 invariant violations, every §6.5 gate and floor met (evals/results/2026-10-20T09-18-11-078Z_qwen3.5-9b_baseline.json; summary in docs/MODEL_SELECTION.md "Phase 6 live baseline")
 - Hosted-provider grep over lib/app/components/scripts/evals/package.json/proxy.ts → no matches
