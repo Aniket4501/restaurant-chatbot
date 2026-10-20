@@ -2,18 +2,83 @@
 
 import type { ReactElement } from "react";
 import type { Action, Block, Chip, SlotChip } from "@/lib/chat/types";
-import { CalendarIcon, CheckIcon, ClockIcon, MenuBookIcon } from "@/components/ui/icons";
+import { CalendarIcon, CheckIcon, ChevronIcon, ClockIcon, LeafMark, MenuBookIcon, PinIcon } from "@/components/ui/icons";
 
 // Renderers for the blocks /api/chat returns (§5.9, §5.10). Chips and times are real buttons with 44 px targets.
 // Only the latest reply is interactive; earlier ones stay visible but disabled, so an old chip can't act on a draft
 // that has moved on.
+
+export type BranchCard = { slug: string; short: string; address: string; status: { open: boolean; text: string } };
 
 export type BlockHandlers = {
   active: boolean;
   onAction: (action: Action, label: string) => void;
   onText: (text: string) => void;
   selectedStartsAt: number | null;
+  /** Branch details for the branch question (mobile-first redesign); without them it falls back to chips. */
+  branchCards?: BranchCard[];
+  /** Today (branch-local) and the booking horizon, for the slot picker's previous/next day. */
+  dateBounds?: { min: string; days: number } | null;
 };
+
+/** "2026-10-17" ± days, as pure date arithmetic (no clock). */
+function shiftDate(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+const shortDate = (date: string) => {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, d)));
+};
+
+/** The branch question as cards: name, address and today's status, like the user's mockup (no photos). */
+function BranchCards({ chips, h, label }: { chips: Chip[]; h: BlockHandlers; label: string }) {
+  return (
+    <div role="group" aria-label={label} className="space-y-2.5">
+      {chips.map((c) => {
+        const slug = "action" in c && c.action.type === "set_field" ? c.action.value : null;
+        const b = h.branchCards?.find((x) => x.slug === slug);
+        const id = `branch-${slug}`;
+        // The button holds only the name, so its accessible name is its visible label (WCAG 2.5.3); an overlay makes
+        // the whole card the tap target, and the address and status are its description.
+        return (
+          <div
+            key={c.label}
+            className="relative flex items-center gap-3 rounded-2xl border border-line bg-paper p-2.5 transition-colors has-[button:disabled]:opacity-50 has-[button:enabled:hover]:border-neem has-[button:focus-visible]:outline-3 has-[button:focus-visible]:outline-offset-2 has-[button:focus-visible]:outline-neem"
+          >
+            <span aria-hidden className="flex h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center rounded-xl bg-smoke text-smoke-muted">
+              <LeafMark className="h-9 w-9" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <button
+                type="button"
+                aria-describedby={b ? id : undefined}
+                disabled={!h.active}
+                onClick={() => ("action" in c ? h.onAction(c.action, c.label) : h.onText(c.text))}
+                className="block text-left font-display text-[19px] leading-tight text-ink after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none disabled:cursor-default"
+              >
+                {c.label}
+              </button>
+              {b && (
+                <span id={id} className="mt-1 block space-y-0.5 text-[13px] text-muted">
+                  <span className="flex gap-1.5">
+                    <PinIcon className="mt-px h-4 w-4 shrink-0" />
+                    <span className="line-clamp-2">{b.address}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <ClockIcon className="h-4 w-4 shrink-0" />
+                    <span className={b.status.open ? "text-neem-dark" : ""}>{b.status.text}</span>
+                  </span>
+                </span>
+              )}
+            </span>
+            <ChevronIcon className="h-5 w-5 shrink-0 text-muted" />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const chipClass =
   "inline-flex min-h-11 items-center rounded-full border border-line bg-paper px-4 text-[15px] text-ink transition-colors hover:border-neem hover:bg-neem-tint hover:text-neem-dark disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-paper disabled:hover:text-ink";
@@ -76,18 +141,46 @@ function TimeButton({ slot, h }: { slot: SlotChip; h: BlockHandlers }) {
   );
 }
 
+function DateStep({ date, dir, h }: { date: string; dir: -1 | 1; h: BlockHandlers }) {
+  const b = h.dateBounds;
+  const to = shiftDate(date, dir);
+  const out = !b || to < b.min || to > shiftDate(b.min, b.days);
+  const label = shortDate(to);
+  return (
+    <button
+      type="button"
+      aria-label={`${dir < 0 ? "Earlier" : "Later"} date: ${label}`}
+      disabled={!h.active || out}
+      onClick={() => h.onAction({ type: "set_field", field: "date", value: to }, label)}
+      className="flex h-11 w-11 items-center justify-center rounded-full border border-line text-ink hover:border-neem hover:text-neem disabled:cursor-default disabled:opacity-35 disabled:hover:border-line disabled:hover:text-ink"
+    >
+      <ChevronIcon dir={dir < 0 ? "left" : "right"} className="h-5 w-5" />
+    </button>
+  );
+}
+
 function Slots({ block, h }: { block: Extract<Block, { type: "slots" }>; h: BlockHandlers }) {
   if (!block.groups.length && !block.alternatives.length) return null;
+  // Previous/next day on a day's times; not on the "Other options" list after a failed submit (no groups).
+  const nav = !!h.dateBounds && !!block.date && (block.groups.length > 0 || (block.reason !== null && block.reason !== "time_unavailable"));
   return (
-    <section aria-label={block.heading} className="rounded-xl border border-line bg-paper p-4">
-      <h3 className="flex items-center gap-2 font-display text-lg text-ink">
-        <CalendarIcon className="h-5 w-5 shrink-0 text-neem" />
-        {block.heading}
-      </h3>
+    <section aria-label={block.heading} className="rounded-2xl border border-line bg-paper p-4">
+      <div className="flex items-center gap-2">
+        <h3 className="flex min-w-0 flex-1 items-center gap-2 font-display text-lg leading-snug text-ink">
+          <CalendarIcon className="h-5 w-5 shrink-0 text-neem" />
+          {block.heading}
+        </h3>
+        {nav && (
+          <div className="flex shrink-0 gap-1.5">
+            <DateStep date={block.date} dir={-1} h={h} />
+            <DateStep date={block.date} dir={1} h={h} />
+          </div>
+        )}
+      </div>
       {block.groups.map((g) => (
         <div key={g.service} className="mt-4">
           <h4 className="text-[15px] font-medium text-ink">{g.service === "lunch" ? "Lunch" : "Dinner"}</h4>
-          <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+          <div className="mt-2 grid grid-cols-3 gap-2">
             {g.slots.map((s) => (
               <TimeButton key={s.startsAtMs} slot={s} h={h} />
             ))}
@@ -97,7 +190,7 @@ function Slots({ block, h }: { block: Extract<Block, { type: "slots" }>; h: Bloc
       {block.alternatives.length > 0 && (
         <div className="mt-4 border-t border-line pt-3">
           <h4 className="text-[15px] font-medium text-ink">Other options</h4>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="mt-2 grid grid-cols-1 gap-2">
             {block.alternatives.map((s) => (
               <TimeButton key={`${s.branch}-${s.startsAtMs}`} slot={s} h={h} />
             ))}
@@ -148,7 +241,7 @@ export function BlockView({ block, h }: { block: Block; h: BlockHandlers }) {
     case "quick_replies":
       return <Chips chips={block.chips} h={h} label="Suggestions" />;
     case "field_request":
-      return <Chips chips={block.chips} h={h} label={block.prompt} />;
+      return block.field === "branch" && h.branchCards?.length ? <BranchCards chips={block.chips} h={h} label={block.prompt} /> : <Chips chips={block.chips} h={h} label={block.prompt} />;
     case "slots":
       return <Slots block={block} h={h} />;
     case "info":

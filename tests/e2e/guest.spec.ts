@@ -197,6 +197,9 @@ test("on a phone the chat is the page and the hours fold away", async ({ page })
 
 test("focus stays visible on the dark identity panel (WCAG 1.4.11, review UI-4)", async ({ page }) => {
   await page.goto("/");
+  // The branch phones sit in the hero's disclosure (mobile-first); open it from the keyboard, as a keyboard user would.
+  await page.getByText("Hours and locations").focus();
+  await page.keyboard.press("Enter");
   const link = page.getByRole("link", { name: "+91 11 4155 0101" }).last();
   await link.focus();
   const ring = await link.evaluate((el) => ({ visible: el.matches(":focus-visible"), color: getComputedStyle(el).outlineColor, style: getComputedStyle(el).outlineStyle }));

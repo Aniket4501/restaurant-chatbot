@@ -8,6 +8,8 @@ Last verification (2026-10-20):
 - Latency: FAQ p95 5.3 s in the last release (machine loaded by concurrent builds and E2E), 3.9 s on a quiet machine (d9fa131); AC-12 target 4 s
 Done in Phase 7 (T-20): prompt v4, D-17 extraction checks, D-15 amendments, 16 review findings fixed, docs/EVAL_REPORT.md
 D-19 (user, 2026-10-20): two-hour demo scope. Chat, booking and a single-page admin, restyled (off-white, forest green, sage), three quick actions, README. Supersedes D-18's admin extras (staff booking, search, stats, extra pages); nothing removed
+Mobile-first redesign (user, 2026-10-20; D-19 amendment): phone frame on larger screens, scrolling hero with live open status, branch cards, previous/next day in the slot picker. npm run verify 9/9 (unit 350, integration 209, D1 50/50, E2E 21/21)
+Local run: `npm run start -- -p 3005` (3000-3002 are used by other projects), .env.local created with generated admin values
 Not done (out of the D-19 scope, would need a decision to resume): Phase 8 independent review of the restyle and the D-17 large-party addendum; the rest of Phase 9 (fresh-clone check AC-11, final report)
 Notes:
 - `.env.local` does not exist yet: admin returns "not configured" until you create it from .env.example (README Quick start)

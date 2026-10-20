@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { historyContent, submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import type { Action, Block, TurnReply } from "@/lib/chat/types";
-import { BlockView, type BlockHandlers } from "@/components/chat/Blocks";
+import { BlockView, type BlockHandlers, type BranchCard } from "@/components/chat/Blocks";
 import { ConfirmCard, type CardState } from "@/components/chat/ConfirmCard";
 import { clear, load, save, type CreateBody, type Item, type Pending, type Saved } from "@/components/chat/storage";
 import { ArrowUpIcon, LeafMark } from "@/components/ui/icons";
@@ -14,7 +14,16 @@ import { ArrowUpIcon, LeafMark } from "@/components/ui/icons";
 //   replayed on reload. A confirmation is shown only from a 201/200 body (BR-12), via the shared submitOutcome.
 // - While a submit's outcome is unknown, the card, chips and times are locked; the guest can Retry or Start over.
 
-type Props = { branches: SubmitBranch[]; restaurantName: string; scripted: boolean };
+type Props = {
+  branches: SubmitBranch[];
+  restaurantName: string;
+  scripted: boolean;
+  /** Mobile-first redesign: the hero scrolls with the conversation; branch details for the branch cards; date bounds for the slot picker. */
+  header?: ReactNode;
+  branchCards?: BranchCard[];
+  today?: string;
+  horizonDays?: number;
+};
 type ChatRequest = { messages: { role: "guest" | "assistant"; content: string }[]; action?: Action };
 
 const uid = () => crypto.randomUUID();
@@ -45,7 +54,7 @@ function fresh(name: string): Saved {
 const NO_CARD: CardState = { submitting: false, locked: false, fieldErrors: null, done: false, message: null };
 
 /** Rendered in the browser only (ChatPanelClient), so the saved conversation is read synchronously, without a hydration pass. */
-export function ChatPanel({ branches, restaurantName, scripted }: Props) {
+export function ChatPanel({ branches, restaurantName, scripted, header, branchCards = [], today, horizonDays = 30 }: Props) {
   const [initial] = useState<Saved>(() => load() ?? fresh(restaurantName));
   const [s, setS] = useState<Saved>(initial);
   const [busy, setBusy] = useState(false);
@@ -225,12 +234,15 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
     onAction: sendAction,
     onText: (t) => sendText(t),
     selectedStartsAt: s.selected,
+    branchCards,
+    dateBounds: today ? { min: today, days: horizonDays } : null,
   });
 
   return (
     <section aria-label="Reservations and questions" className="flex min-h-0 flex-1 flex-col">
-      <div aria-live="polite" aria-relevant="additions" className="flex-1 space-y-5 overflow-y-auto px-4 py-6 sm:px-8">
-        <div className="mx-auto w-full max-w-2xl space-y-5">
+      <div className="flex-1 overflow-y-auto">
+        {header}
+        <div aria-live="polite" aria-relevant="additions" className="space-y-5 px-4 py-5">
           {s.items.map((item) => (
             <div key={item.id} className={item.role === "guest" ? "flex justify-end" : "flex gap-2.5"}>
               {item.role === "guest" ? (
@@ -287,13 +299,13 @@ export function ChatPanel({ branches, restaurantName, scripted }: Props) {
         </div>
       </div>
       <form
-        className="border-t border-line bg-paper px-4 py-3 sm:px-8"
+        className="border-t border-line bg-paper px-4 pt-3 pb-2"
         onSubmit={(e) => {
           e.preventDefault();
           sendText(text);
         }}
       >
-        <div className="mx-auto w-full max-w-2xl">
+        <div>
           <div className="flex items-center gap-2">
             <label htmlFor="composer" className="sr-only">
               Your message

@@ -58,7 +58,7 @@ export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, 
         </li>
       </ul>
       <div className="mt-4 border-t border-line pt-4 text-[15px] font-medium text-ink">Your details</div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-3">
         <label className="block text-[15px]" htmlFor={`${id}-name`}>
           Name
           <input id={`${id}-name`} className={input} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required maxLength={80} disabled={disabled} aria-invalid={!!err.name} aria-describedby={err.name ? `${id}-name-err` : undefined} />
@@ -74,7 +74,7 @@ export function ConfirmCard({ block, state, initial, active, onSubmit, onRetry, 
           <input id={`${id}-email`} className={input} value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" disabled={disabled} aria-invalid={!!err.email} />
           {err.email && <span className="mt-1 block text-sm text-warn">{err.email}</span>}
         </label>
-        <label className="block text-[15px] sm:col-span-2" htmlFor={`${id}-note`}>
+        <label className="block text-[15px]" htmlFor={`${id}-note`}>
           Note for the restaurant <span className="text-muted">(optional)</span>
           <textarea id={`${id}-note`} className={`${input} min-h-20 py-2`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} disabled={disabled} aria-invalid={!!err.note} />
           {err.note && <span className="mt-1 block text-sm text-warn">{err.note}</span>}

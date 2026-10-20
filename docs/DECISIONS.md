@@ -256,5 +256,12 @@ Decision:
 - **Chat.** Three quick actions: Menu, Opening hours, and Book a table, which needs no model call.
 - **Admin.** The existing single page, restyled: date selector defaulting to today, compact booking and guest counts, and a table of time, guest, party, branch and status with cancel. On phones, party and status sit under the time.
 - **Dropped from D-18:** staff "New reservation" with a channel migration, search, sorting and paging, stat cards against last week, and the read-only Tables, Menu and Hours pages. The open walk-in lead-time question (BR-06) is moot.
+- **Amendment (2026-10-20, requested by the user):** the guest chat is mobile-first.
+  - A phone shows the chat full screen; a larger screen shows the same layout inside a phone frame, with a status-bar strip, instead of the two-column web layout.
+  - The forest hero scrolls with the conversation. It has an open/closed pill computed from today's hours (`openStatus`, unit-tested) and the "Hours and locations" disclosure.
+  - The branch question shows branch cards: a brand tile instead of a photo, plus address and open status. The cards are WCAG 2.5.3-clean, because the button holds only the name.
+  - The slot picker has previous and next day, limited to today through the 30-day horizon, using existing set_field actions.
+  - The chat components no longer use viewport breakpoints.
+  - The staff dashboard stays a responsive page.
 Consequences: E2E specs follow the new entry point ("Book a table", then the branch). The README is written now, ahead of the rest of Phase 9. Phase 8's independent review has not been run on the restyle.
 
