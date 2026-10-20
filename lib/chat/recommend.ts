@@ -268,6 +268,18 @@ const FOLLOW_UPS = (): Block => ({
   ],
 });
 const MENU_CHIP = (): Block => ({ type: "quick_replies", chips: [{ label: "Show me the menu", action: { type: "menu", course: null } }] });
+// Answers to the chooser's clarifying question ("light or filling?"), so the guest can tap instead of typing. Each one
+// is sent as the guest's message and goes back to the model; none of them picks a dish.
+const ANSWER_CHIPS = (): Block => ({
+  type: "quick_replies",
+  chips: [
+    { label: "Something light", text: "Something light" },
+    { label: "Something filling", text: "Something filling" },
+    { label: "Something vegetarian", text: "Something vegetarian" },
+    { label: "Surprise me", text: "Surprise me" },
+    { label: "Show me the menu", action: { type: "menu", course: null } },
+  ],
+});
 
 /** The dishes that fit, the ones retrieval found relevant to this message first (for the fallback list). */
 const relevantFirst = (fit: MenuEntry[], relevant: string[]) => [...fit.filter((d) => relevant.includes(d.id)).sort((a, b) => relevant.indexOf(a.id) - relevant.indexOf(b.id)), ...fit.filter((d) => !relevant.includes(d.id))];
@@ -302,10 +314,16 @@ export async function recommendTurn(
     return done(`Our menu labels only cover nuts, dairy, egg and gluten, not ${named.length ? named.join(" or ") : "that allergen"}, so I can't suggest a dish around your allergy. Please ask your server, who can check each dish with the kitchen.`, [{ type: "notice", tone: "info", text: ALLERGY_NOTE }, MENU_CHIP()]);
   }
 
-  const fit = eligible(input.entries, prefs, { exclude, cheaperThan });
+  // "Cheaper" and "another" stay in the last suggestion's section when the guest named none: a cheaper small plate, not
+  // a bread. "Cheaper" never leaves it (nothing cheaper there is answered as such); "another" looks everywhere if the
+  // section is used up. The section is not stored as a preference.
+  const sameCourse = relation && prefs.course === null && last ? last.course : null;
+  const scope: Prefs = sameCourse ? { ...prefs, course: sameCourse } : prefs;
+  const inCourse = sameCourse ? eligible(input.entries, scope, { exclude, cheaperThan }) : [];
+  const fit = sameCourse && (inCourse.length || cheaperThan !== null) ? inCourse : eligible(input.entries, prefs, { exclude, cheaperThan });
   if (!fit.length) {
-    const what = describePrefs(prefs);
-    const any = eligible(input.entries, prefs);
+    const what = describePrefs(cheaperThan !== null ? scope : prefs);
+    const any = eligible(input.entries, cheaperThan !== null ? scope : prefs);
     let text: string;
     let none: string;
     if (cheaperThan !== null && last && any.length && Math.min(...any.map((d) => d.price)) >= last.price) {
@@ -324,6 +342,7 @@ export async function recommendTurn(
   input.trace.push({ action: "eligible", count: fit.length, none: null });
 
   const relationLine = cheaperThan !== null && last ? `They want something cheaper than ${last.name} (₹${last.price}).` : relation === "another" && previous.length ? `They want something different from: ${previous.map((x) => byId.get(x)!.name).join(", ")}.` : null;
+  if (sameCourse && fit === inCourse) input.trace.push({ action: "eligible", count: inCourse.length, none: `same section as ${last!.name}` });
   const prefsLine = [hasPrefs(prefs) ? describePrefs(prefs) : null, prefs.allergy ? "they have a food allergy, so never call a dish safe or free of anything" : null].filter(Boolean).join("; ") || "none stated";
   const messages: LlmMessage[] = [
     { role: "system", content: buildChooserSystem(input.restaurant) },
@@ -344,7 +363,7 @@ export async function recommendTurn(
     const v = validateChoice(r.choice, fit, byId, prefs, input.grounding);
     input.trace.push({ action: "recommend", attempt, result: v.reasons.length ? "rejected" : "ok", pick: r.choice.pick, alternatives: r.choice.alternatives, rejected: v.reasons });
     if (!v.reasons.length) {
-      if (v.pick === null) return done(r.choice.reply.trim(), [...allergyNote, MENU_CHIP()]);
+      if (v.pick === null) return done(r.choice.reply.trim(), [...allergyNote, ANSWER_CHIPS()]);
       const shown = [v.pick, ...v.alternatives];
       return { text: r.choice.reply.trim(), blocks: [{ type: "recommendation", lead: true, items: shown.map((x) => view(byId.get(x)!)) }, ...allergyNote, FOLLOW_UPS()], cited: shown, prefs, recommended: keep(shown) };
     }

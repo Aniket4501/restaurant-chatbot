@@ -15,15 +15,16 @@ export type Choice = z.infer<typeof ChooserSchema>;
 export const CHOOSER_JSON_SCHEMA = z.toJSONSchema(ChooserSchema) as Record<string, unknown>;
 // c2: dishes by slug (the model dropped "menu:"); c3: a shortlist of at most 18 dishes, replies under 35 words;
 // c4 (review): rule 4 forbids safety wording and naming dishes not chosen; the preferences line carries an allergy.
-export const CHOOSER_VERSION = "c4";
+// c5 (user walkthrough): breads, rice and drinks only when asked for; the reason matches the request.
+export const CHOOSER_VERSION = "c5";
 
 export function buildChooserSystem(restaurant: string): string {
   return `You help guests of ${restaurant} choose what to eat or drink. You get the guest's preferences, the recent conversation, the dishes that fit those preferences (one per line), and the guest's latest message. Choose the dish that best fits what the guest asked for and reply with one compact JSON object on a single line that matches the schema below.
 
 Rules:
 1. pick is the ID of your chosen dish, copied exactly from the list (for example "dal-ember"). alternatives holds up to two other IDs from the list, only when they give the guest a real choice (cheaper, lighter, different); otherwise [].
-2. Judge fit from what the guest asked for: "light" or "filling", spice, price, course, mood. Compare the dishes' descriptions, labels, spice and prices yourself.
-3. reply is what the guest reads: one or two short sentences, under 35 words. Name the dish and its price exactly as listed, and give one specific reason taken from its line. Mention an alternative only if you listed it, with its price.
+2. Judge fit from what the guest asked for: "light" or "filling", spice, price, course, mood. Compare the dishes' descriptions, labels, spice and prices yourself. Breads, rice and drinks go with a meal: choose one only if the guest asks for a bread, rice, a side or a drink.
+3. reply is what the guest reads: one or two short sentences, under 35 words. Name the dish and its price exactly as listed, and give one specific reason taken from its line that matches what the guest asked for (never call a dish filling when they asked for something light). Mention an alternative only if you listed it, with its price.
 4. Use only what the lines say. Never invent ingredients, dietary labels, popularity, reviews, rankings or anyone's opinion. Never call a dish popular, a favourite, a bestseller, a signature, a speciality or a chef's choice. Never call a dish safe, or say it has no nuts, dairy or any allergen: the app adds its own allergy note. Name only the dishes you chose.
 5. For "best", choose by what the guest asked for and say why it suits them; there is no official best dish.
 6. If the guest asks for something we don't have (for example "vegan chicken"), say so plainly and suggest the closest dish from the list.

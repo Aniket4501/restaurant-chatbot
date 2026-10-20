@@ -251,18 +251,19 @@ describe("model failures degrade to chips (J9, AC-10 logic)", () => {
     ["#fake:invalid", "MODEL_INVALID_OUTPUT", 2],
     ["#fake:length", "MODEL_INVALID_OUTPUT", 2],
     ["#fake:context", "CONTEXT_TOO_LARGE", 1],
-  ])("%s → degraded notice plus booking chips", async (directive, code, calls) => {
+  ])("%s → the message once, with the menu and Find a table", async (directive, code, calls) => {
     const r = await runTurn(say(`table please ${directive}`), deps());
     expect(r.meta.outcome).toBe("degraded");
     expect(r.trace).toContainEqual({ action: "degraded", code });
     expect(r.trace.filter((x) => x.action === "model_call")).toHaveLength(calls);
-    expect(r.reply.blocks.map((b) => b.type)).toEqual(["notice", "field_request"]);
-    expect(block(r, "notice")!.text).toBe("I'm having trouble understanding right now. You can still book using the options below.");
+    expect(r.reply.text).toBe("I couldn't work that out just now. You can browse the menu or book a table with the buttons below, or ask again in a moment.");
+    expect(r.reply.blocks).toEqual([{ type: "quick_replies", chips: [{ label: "Show me the menu", action: { type: "menu", course: null } }, { label: "Find a table", action: { type: "set_field", field: "branch", value: null } }] }]);
   });
   it("keeps the booking going: a degraded turn mid-booking offers the next step", async () => {
     const d = { ...emptyDraft(), branch: "hauz-khas", date: "2026-10-17", partySize: 2 };
     const r = await runTurn(say("#fake:down", { draft: d }), deps());
-    expect(r.reply.blocks.map((b) => b.type)).toEqual(["notice", "slots"]);
+    expect(r.reply.text).toBe("I couldn't work that out just now. You can carry on with your booking below, or ask again in a moment.");
+    expect(r.reply.blocks.map((b) => b.type)).toEqual(["slots"]);
   });
   it("retries once with a correction after invalid output", async () => {
     const r = await runTurn(say("hello #fake:invalid_once"), deps());

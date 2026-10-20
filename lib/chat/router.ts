@@ -327,12 +327,20 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
   }
 }
 
-/** The degraded reply (§5.7 step 4): a short notice plus the booking flow's chips, which need no model. */
+/**
+ * The degraded reply (§5.7 step 4, D-20 amendment): the message once, and what works without the model. A booking in
+ * progress continues with its next step; otherwise the menu and "Find a table" are offered. (It used to repeat the
+ * message as a notice and open the branch picker whatever the guest had asked, e.g. "Help me find a dish".)
+ */
 export function degradedStep(draft: Draft, ctx: FlowCtx, code: string): Step {
   ctx.trace.push({ action: "degraded", code });
   const step = bookingInProgress(draft) ? nextStep({ draft, issues: [], ambiguity: null, largeParty: false }, ctx) : null;
-  const blocks: Block[] = [{ type: "notice", tone: "warning", text: T.degraded }, ...(step ? step.blocks : [{ type: "field_request" as const, field: "branch" as const, prompt: T.askBranch, chips: fieldChips("branch", ctx) }])];
-  return { text: T.degraded, blocks, draft: step?.draft ?? draft, outcome: "degraded" };
+  if (step) return { text: T.degradedBooking, blocks: step.blocks, draft: step.draft, outcome: "degraded" };
+  const chips: Chip[] = [
+    { label: "Show me the menu", action: { type: "menu", course: null } },
+    { label: "Find a table", action: { type: "set_field", field: "branch", value: null } },
+  ];
+  return { text: T.degraded, blocks: [{ type: "quick_replies", chips }], draft, outcome: "degraded" };
 }
 
 export const quickReplies = QUICK_REPLIES;

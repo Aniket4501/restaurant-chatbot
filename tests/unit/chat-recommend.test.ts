@@ -154,6 +154,11 @@ describe("recommendTurn: the full turn after the first model call", () => {
     expect(res.text).toBe("I'd suggest the Chana Pindi (₹395).");
     expect(res.blocks[0]).toMatchObject({ type: "recommendation", lead: true, items: [{ id: "menu:chana-pindi" }] });
   });
+  it("offers answers to a clarifying question as chips (user report: only 'Show me the menu' was offered)", async () => {
+    const { res } = await run(recTurn({}), [{ pick: null, alternatives: [], reply: "Would you like something light or more filling?" }], { text: "Help me find a dish" });
+    expect(res.text).toBe("Would you like something light or more filling?");
+    expect(res.blocks).toEqual([{ type: "quick_replies", chips: [{ label: "Something light", text: "Something light" }, { label: "Something filling", text: "Something filling" }, { label: "Something vegetarian", text: "Something vegetarian" }, { label: "Surprise me", text: "Surprise me" }, { label: "Show me the menu", action: { type: "menu", course: null } }] }]);
+  });
   it("answers an impossible request honestly, with no model call", async () => {
     const { res, calls } = await run(recTurn({ diet: ["vegan"], course: "mains", maxPrice: 200 }), [], { text: "Show me a vegan main course under ₹200" });
     expect(calls).toEqual([]);
@@ -172,6 +177,32 @@ describe("recommendTurn: the full turn after the first model call", () => {
     // Pricier than the last suggestion (₹345): rejected, so the second reply is used.
     const notCheaper = await run(recTurn({ course: "desserts", relation: "cheaper" }), [{ pick: "menu:shahi-tukda", alternatives: [], reply: "Shahi Tukda at ₹295." }, { pick: "menu:shahi-tukda", alternatives: [], reply: "Shahi Tukda at ₹295." }], { text: "Anything cheaper?", context: { ...last, recommended: ["menu:shahi-tukda"] } });
     expect(notCheaper.res.blocks[0]).toMatchObject({ lead: false });
+  });
+  it("keeps 'cheaper' in the last suggestion's section when the guest named none", async () => {
+    const seen: string[][] = [];
+    const call: ChooserCall = async (_a, messages) => {
+      seen.push([...messages[1].content.matchAll(/^([a-z0-9-]+) \|/gm)].map((m) => m[1]));
+      return { choice: null, code: "MODEL_UNAVAILABLE", content: "" };
+    };
+    const ctx = { lastCitedIds: [], prefs: P({}), recommended: ["menu:mushroom-galouti"] };
+    await recommendTurn({ turn: recTurn({ relation: "cheaper" }), text: "Anything cheaper?", history: [], context: ctx, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
+    expect(seen[0].length).toBeGreaterThan(0);
+    for (const slug of seen[0]) expect(e(`menu:${slug}`).course, slug).toBe("small-plates");
+    for (const slug of seen[0]) expect(e(`menu:${slug}`).price, slug).toBeLessThan(e("menu:mushroom-galouti").price);
+    // Nothing cheaper in the section: said plainly, with no bread or dessert offered instead (user walkthrough).
+    const cheapest = await recommendTurn({ turn: recTurn({ relation: "cheaper" }), text: "Anything cheaper?", history: [], context: { ...ctx, recommended: ["menu:kale-pakoda"] }, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
+    expect(cheapest.text).toBe("The Kale Pakoda (₹295) is already the cheapest of the small plates we have.");
+    expect(cheapest.blocks.some((b) => b.type === "recommendation")).toBe(false);
+  });
+  it("looks in other sections for 'another' once the last suggestion's section is used up", async () => {
+    const seen: string[][] = [];
+    const call: ChooserCall = async (_a, messages) => {
+      seen.push([...messages[1].content.matchAll(/^([a-z0-9-]+) \|/gm)].map((m) => m[1]));
+      return { choice: null, code: "MODEL_UNAVAILABLE", content: "" };
+    };
+    const desserts = eligible(entries, P({ course: "desserts" })).map((d) => d.id);
+    await recommendTurn({ turn: recTurn({ relation: "another" }), text: "Show me another option", history: [], context: { lastCitedIds: [], prefs: P({}), recommended: desserts.slice(0, 6) }, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
+    expect(seen[0].some((slug) => e(`menu:${slug}`).course !== "desserts")).toBe(true);
   });
   it("always adds the allergy note when an allergy or allergen is in play", async () => {
     const { res } = await run(recTurn({ avoid: ["nuts"], allergy: true, course: "desserts" }), [{ pick: "menu:mango-sorbet", alternatives: [], reply: "The Mango Sorbet at ₹245 is a safe bet for dessert." }], { text: "I have a nut allergy, which dessert?" });

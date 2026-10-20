@@ -152,8 +152,10 @@ test("J9 and AC-10: with the model down, booking still works through the chips @
   observed.pii.push("Asha Rao", "98765 43210");
   await page.goto("/");
   await say(page, "book a table #fake:down");
-  await expect(page.getByRole("status")).toHaveText("I'm having trouble understanding right now. You can still book using the options below.");
+  const msg = "I couldn't work that out just now. You can browse the menu or book a table with the buttons below, or ask again in a moment.";
+  await expect(page.getByText(msg)).toHaveCount(1); // once: no notice repeating it (user report, D-20)
   await axe(page, "degraded");
+  await page.getByRole("button", { name: "Find a table" }).last().click();
   await page.getByRole("button", { name: "Hauz Khas", exact: true }).click();
   await page.getByRole("button", { name: "Tomorrow, Sat 17 Oct" }).click();
   await page.getByRole("button", { name: "2 guests", exact: true }).click();

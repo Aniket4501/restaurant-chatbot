@@ -311,7 +311,7 @@ Decision:
   - Text checks read the dishes shown in cards and lists as well as the reply.
   - `recommendationValidity` and recommendation latency are report-only: a threshold would change thresholds.json and needs the user's approval.
 Consequences:
-- **Schema.** TurnSchema grammar v2 (evals/fixtures/turn.schema.json; v1 kept for the probe); prompt v5; chooser c4 (see the amendment below).
+- **Schema.** TurnSchema grammar v2 (evals/fixtures/turn.schema.json; v1 kept for the probe); prompt v5; chooser c5 (see the amendments below).
 - **Latency.** Recommendation turns take two model calls.
 - **Data.** The seed labels "Chocolate Chilli Mousse" vegetarian and egg; the card shows "Contains egg", but a vegetarian filter includes it as labelled. Allergen labels cover only dairy, nuts and egg, so the allergy note always shows.
 - **New cases.** D1 SC-REC-001…013 and SC-MENU-001…002; D2 LV-REC-001…013 and LV-MENU-008…009; seven food-question cases accept the new intents.
@@ -328,4 +328,12 @@ A read-only adversarial review of the D-20 commit (docs/research/2026-10-20-d20-
 - **Server.** The dedupe remembers only successful replies: a 429, a 503 or a crash runs again on retry.
 - **Evals.** INV-05 also checks a recommendation's reply when the chooser's text was shown. "answer" (a known fact must not get the fallback) is credited only for an FAQ or hours answer, a menu list or a dish card. `satisfies` and `notIds` judge every dish on screen, cards and lists. `recommendationValidity` counts once per turn. New key `recommend.leadIfShown`. Scripted model turns are strict objects. New D1 cases SC-REC-014…017 and SC-MENU-003; SC-REC-007 v2 makes the model drop the diet. LV-MENU-006 v3, LV-RET-003 v3, LV-REC-005 v2, LV-REC-008 v2 and LV-REC-013 v2 are stricter.
 - **Not changed.** "Under ₹400" includes ₹400 dishes, as the reply's "up to ₹400" says. Recommendation latency still mixes one-call (no match) and three-call turns; it is report-only.
+
+### D-20 amendment after the user's walkthrough (2026-10-20)
+The user tapped "Help me find a dish" while the release run was using the model: the turn timed out (15 s) and the reply showed "I'm having trouble understanding right now…" twice, as the text and as a notice, above the branch picker.
+- **Degraded reply** (changes §5.7 step 4, "a short notice plus the booking flow's chips"): the message is shown once, as the reply. With no booking in progress it offers "Show me the menu" and "Find a table", both without the model; a booking in progress continues with its next step ("You can carry on with your booking below"). AC-10 still holds: booking works through the chips with the model down (J9 now taps "Find a table" first).
+- **Clarifying question:** when the chooser asks one ("light or filling?"), answer chips are offered (Something light, Something filling, Something vegetarian, Surprise me, Show me the menu). Each is sent as the guest's message and goes back to the model.
+- **Chooser c5:** breads, rice and drinks are suggested only when the guest asks for one, and the reason must match the request (it had called a pick "filling" for "something light" and offered a bread as the lighter option).
+- **"Cheaper" and "another"** stay in the last suggestion's menu section when the guest named none. "Cheaper" never leaves it: with nothing cheaper there, the reply says the last dish is already the cheapest of that section. "Another" looks in other sections once the section is used up.
+- **Release runs and the local app share the model.** A live eval run makes the local app's replies queue behind it and time out; release runs are scheduled when the app is not being used.
 
