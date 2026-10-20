@@ -15,7 +15,7 @@ import type { LocalDate } from "@/lib/time/tz";
 import { checkGrounding } from "@/lib/chat/grounding";
 import { guardExtraction, largePartyStated } from "@/lib/chat/guards";
 import { foodWords, menuEntries, menuStep } from "@/lib/chat/menu";
-import { explicitPrefs, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
+import { claimProblems, explicitPrefs, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
 import { GateFullError, openGate, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
 import { blankStep, degradedStep, handleAction, routeTurn, type FlowCtx, type Prepared, type Step } from "@/lib/chat/router";
 import { branchInfo } from "@/lib/chat/templates";
@@ -212,6 +212,10 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     }
   };
   const recommended: { result: RecommendResult | null } = { result: null }; // set inside the gate closure
+  const branchIn = (text: string) => {
+    const hits = src.branches.filter((b) => b.isActive && [b.name.split(", ").pop()!, b.slug.replace(/-/g, " ")].some((n) => text.toLowerCase().includes(n.toLowerCase())));
+    return hits.length === 1 ? hits[0].slug : null;
+  };
 
   let outcome: { result: Interpreted; content: string };
   try {
@@ -232,8 +236,12 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
         // (D-21 baseline LV-REG-007). The retry's answer is grounded like any other.
         const g = checkGrounding(r.turn.answer, r.turn.citedFactIds.filter((id) => factsById.has(id)), { factsById, sentIds, zoneOf });
         const guestNumbers = new Set(foldDigits(latest).match(/\d+/g) ?? []);
-        if (!g.ok && g.reason === "digits" && guestNumbers.has(g.detail)) {
-          const again = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: `Your answer repeats the guest's number ${g.detail}, which no fact states. Answer again using only numbers that appear in the facts.` }]);
+        // Likewise when an otherwise good answer promises allergen safety ("these are safe for coeliacs"): the
+        // dishes are worth showing, the promise is not (D-21 after-run LV-AUD-012).
+        const unsafe = claimProblems(r.turn.answer, [], entries).includes("promises allergen safety");
+        const correction = !g.ok && g.reason === "digits" && guestNumbers.has(g.detail) ? `Your answer repeats the guest's number ${g.detail}, which no fact states. Answer again using only numbers that appear in the facts.` : unsafe ? "Your answer promises that something is safe or free of an allergen, which the facts can't confirm. Answer again without that promise; the app adds its own allergy note." : null;
+        if (correction) {
+          const again = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: correction }]);
           if (again.result.ok) first = again;
         }
       } else if (!r.ok && r.code === "CONTEXT_TOO_LARGE" && usedHistory.length > 2) {
@@ -249,7 +257,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       // A food question keeps its answer even with a large party in it (D-21 audit); the large-party line is added.
       if (t1.ok && t1.turn.intent === "recommend") {
         recommended.result = await recommendTurn(
-          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: retrieval.hits.map((h) => h.factId), branch: draft0.branch ?? t1.turn.booking.branch },
+          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: retrieval.hits.map((h) => h.factId), branch: draft0.branch ?? t1.turn.booking.branch ?? branchIn(latest) },
           chooser,
         );
         metrics.promptVersion = `${PROMPT_VERSION}+${CHOOSER_VERSION}`;
@@ -274,6 +282,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // 9. Food turns (D-20): menu browsing from the menu table; recommendations through the chooser.
   let prepared: Prepared | null = null;
   const largeParty = largePartyStated(latest) !== null;
+  // The branch named in the message, when exactly one is (the model fills booking.branch only for bookings).
+  const branchNamed = branchIn(latest);
   if (turn.intent === "menu") {
     const previous = prefsOut;
     const { prefs, added } = resolvePrefs(turn.prefs, prefsOut, latest);
@@ -287,7 +297,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     const words = foodWords(latest, entries);
     const generic = prefs.course === null && !newDiet && !ex.avoid?.length && ex.maxPrice === undefined && !ex.mild && !words.length;
     const listPrefs: Prefs = generic ? { ...noPrefs(), unlisted: prefs.unlisted } : { ...prefs, maxPrice: ex.maxPrice ?? (/\d/.test(latest) ? prefs.maxPrice : null), mild: !!ex.mild || (prefs.mild && !previous?.mild) };
-    const m = menuStep(entries, listPrefs, listPrefs.course, { branch: draft0.branch ?? turn.booking.branch, words });
+    const m = menuStep(entries, listPrefs, listPrefs.course, { branch: draft0.branch ?? turn.booking.branch ?? branchNamed, words });
     trace.push({ action: "menu", course: listPrefs.course, items: m.shown });
     prepared = { text: m.text, blocks: m.blocks, cited: m.cited, largeParty };
   } else if (turn.intent === "recommend" && recommended.result) {
@@ -298,11 +308,13 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   } else {
     // An allergy or diet stated in any other message ("table for 2 tomorrow, I'm allergic to nuts") is remembered for
     // later suggestions (D-21 audit: it was never recorded).
+    // Only allergies and allergens: a diet word here is usually a question about a dish ("is that vegan?"; D-21
+    // after-run LV-CONV-001 stored it as a preference).
     const ex = explicitPrefs(latest);
-    if (ex.allergy || ex.avoid?.length || ex.unlisted?.length || ex.diet?.length) {
-      const r = resolvePrefs(null, prefsOut, latest);
-      prefsOut = { ...r.prefs, course: null };
-      trace.push({ action: "prefs", prefs: prefsOut, added: r.added });
+    if (ex.allergy || ex.avoid?.length || ex.unlisted?.length) {
+      const prev = prefsOut ?? noPrefs();
+      prefsOut = { ...prev, allergy: prev.allergy || !!ex.allergy, avoid: [...new Set([...prev.avoid, ...(ex.avoid ?? [])])], unlisted: [...new Set([...prev.unlisted, ...(ex.unlisted ?? [])])], course: null };
+      trace.push({ action: "prefs", prefs: prefsOut, added: [...(ex.allergy ? ["allergy"] : []), ...(ex.avoid ?? []).map((a) => `no ${a}`), ...(ex.unlisted ?? []).map((u) => `unlisted allergen: ${u}`)] });
     }
   }
   const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries }, prepared);

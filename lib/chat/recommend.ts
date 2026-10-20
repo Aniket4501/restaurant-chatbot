@@ -191,6 +191,7 @@ function mentionsOf(text: string, dishes: MenuEntry[], partial: boolean, menu: M
 // Main ingredients that define a dish. Named after a dish in the same sentence, one must be in that dish's own name or
 // description ("The Chana Pindi is a vegan paneer dish" is false: it is chickpeas; D-21 baseline LV-GRD-011).
 const INGREDIENTS = ["paneer", "chicken", "lamb", "mutton", "goat", "prawn", "shrimp", "fish", "crab", "lobster", "egg", "mushroom", "chickpea", "lentil", "beef", "pork", "tofu", "soya", "keema", "potato", "broccoli", "kale", "beetroot", "aubergine", "baingan", "cauliflower"];
+const ATTRIBUTE_RE = /\b(?:halal|kosher|organic|keto|paleo|low[- ]carb|low[- ]fat|low[- ]calorie|sugar[- ]free|diabetic[- ]friendly|msg|preservatives?|free[- ]range|grass[- ]fed|non[- ]gmo|locally sourced)\b/gi;
 const INGREDIENT_RE = new RegExp(`\\b(${INGREDIENTS.join("|")})(?:e?s)?\\b`, "gi");
 
 /**
@@ -198,9 +199,20 @@ const INGREDIENT_RE = new RegExp(`\\b(${INGREDIENTS.join("|")})(?:e?s)?\\b`, "gi
  * before it in the sentence, else after, else the only dish cited): allergen safety, diet labels, main ingredients.
  * Used for FAQ answers (D-21 audit: "Yes, the Mango Sorbet is safe", "the Dal Ember is vegan" were shown).
  */
-export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry[]): string[] {
+export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry[], citedText = ""): string[] {
   const reasons: string[] = [];
-  if (SAFETY_RE.test(text)) reasons.push("promises allergen safety");
+  const sentencesAll = [...text.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
+  // A safety phrase counts unless the sentence negates it before it ("we can't guarantee … nut-free", "isn't safe").
+  for (const m of text.matchAll(new RegExp(SAFETY_RE.source, "gi"))) {
+    const sent = sentencesAll.find((s) => s.start <= m.index && m.index < s.end);
+    const before = text.slice(sent?.start ?? 0, m.index);
+    if (/\b(?:can't|cannot|can not|not|never|isn't|aren't|unable to|no guarantee|won't guarantee|don't guarantee)\b/i.test(before)) continue;
+    reasons.push("promises allergen safety");
+    break;
+  }
+  // Attributes the menu data never states ("halal", "organic", "keto") must appear in a cited fact (D-21: "No. Our
+  // chicken dishes are not halal." was shown with no fact about halal).
+  for (const m of text.matchAll(ATTRIBUTE_RE)) if (!new RegExp(`\\b${m[0]}`, "i").test(citedText)) reasons.push(`"${m[0]}" is not in the facts`);
   if (!dishes.length) return reasons;
   const named = mentionsOf(text, dishes, true, menu);
   const sentences = [...text.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));

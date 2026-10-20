@@ -308,9 +308,13 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       // Grounding checks numbers and booking words; the claims about dishes are checked against the cited dishes'
       // labels and descriptions (D-21: "Yes, the Mango Sorbet is safe", "the Chana Pindi is a vegan paneer dish").
       const menu = facts.menu ?? [];
-      const problems = claimProblems(turn.answer.trim(), menu.filter((d) => g.citedIds.includes(d.id)), menu);
+      const citedText = g.citedIds.map((id) => facts.factsById.get(id)?.text ?? "").join("\n");
+      const problems = claimProblems(turn.answer.trim(), menu.filter((d) => g.citedIds.includes(d.id)), menu, citedText);
       if (problems.length) {
         ctx.trace.push({ action: "fallback_unknown", reason: `unsupported claim: ${problems.join("; ")}` });
+        // A safety promise is answered with what can be said, and the allergy advice as the usual note, not "I don't
+        // have that information" (D-21 after-run LV-SAFE-001).
+        if (problems.includes("promises allergen safety")) return reply("I can't guarantee that any dish is free of an allergen.", "faq_fallback", { lead: [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] });
         return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback", { lead: allergyLead });
       }
       ctx.trace.push({ action: "answer_faq", ids: g.citedIds, rendered: false });

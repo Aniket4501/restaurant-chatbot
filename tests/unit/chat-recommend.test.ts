@@ -6,7 +6,7 @@ import { migrate } from "@/lib/db/migrate";
 import { applySeed, parseSeed } from "@/lib/db/seed";
 import { loadFactSource, renderKbFacts, renderStaticFacts, type Fact } from "@/lib/kb/facts";
 import { describePrefs, eligible, menuEntries, menuStep, unmet, type MenuEntry } from "@/lib/chat/menu";
-import { explicitPrefs, recommendTurn, resolvePrefs, shortlist, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
+import { claimProblems, explicitPrefs, recommendTurn, resolvePrefs, shortlist, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
 import { noPrefs, type Prefs, type TraceEntry } from "@/lib/chat/types";
 import type { Choice } from "@/lib/llm/chooser";
 import type { GroundingContext } from "@/lib/chat/grounding";
@@ -372,5 +372,21 @@ describe("review: what recommendTurn does with these", () => {
   it("'cheaper' with nothing cheaper says the last suggestion is already the cheapest", async () => {
     const res = await run(recTurn({ course: "desserts", relation: "cheaper" }), [], "Anything cheaper?", { prefs: P({ course: "desserts" }), recommended: ["menu:mango-sorbet"] });
     expect(res.text).toBe("The Mango Sorbet (₹245) is already the cheapest of the desserts we have.");
+  });
+});
+
+describe("FAQ claim checks (D-21 after-run)", () => {
+  it("accepts a negated safety statement and rejects a promise", () => {
+    expect(claimProblems("No. Our kitchen handles nuts, so we can't guarantee the kitchen is nut-free.", [], entries)).toEqual([]);
+    expect(claimProblems("Yes, the Mango Sorbet is safe for a nut allergy.", [e("menu:mango-sorbet")], entries)).toContain("promises allergen safety");
+  });
+  it("rejects an attribute no cited fact states ('halal'), and accepts one that a fact states", () => {
+    expect(claimProblems("No. Our chicken dishes are not halal.", [e("menu:chicken-chettinad")], entries, "Chicken Chettinad: Fiery Tamil chicken curry")).toEqual(['"halal" is not in the facts']);
+    expect(claimProblems("Yes, our chicken is halal.", [], entries, "All our meat is halal certified.")).toEqual([]);
+  });
+  it("rejects an ingredient the dish's description doesn't have, and a diet label it doesn't carry", () => {
+    expect(claimProblems("Yes. The Chana Pindi is a vegan paneer dish.", [e("menu:chana-pindi")], entries)).toEqual(["Chana Pindi has no paneer in its menu description"]);
+    expect(claimProblems("Yes, the Dal Ember is vegan.", [e("menu:dal-ember")], entries)).toEqual(["Dal Ember is not vegan"]);
+    expect(claimProblems("The Chana Pindi is a vegan chickpea curry.", [e("menu:chana-pindi")], entries)).toEqual([]);
   });
 });

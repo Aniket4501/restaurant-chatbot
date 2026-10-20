@@ -243,7 +243,8 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
         const why = unmetShown(i, r.satisfies!);
         return why ? [`${i.id} ${why}`] : [];
       });
-      check("recommend.constraints", items.length > 0 && !bad.length, items.length ? bad.join("; ") : "no dish shown to check");
+      // The code's "X is already the cheapest of the …" line shows no dish by design: nothing to check.
+      if (items.length || !/ is already the cheapest of the /.test(t.shown?.text ?? "")) check("recommend.constraints", items.length > 0 && !bad.length, items.length ? bad.join("; ") : "no dish shown to check");
     }
     if (r.anyOf) check("recommend.lead", !!lead && r.anyOf.includes(lead.id), `lead dish ${lead?.id ?? "none"} not in ${r.anyOf.join(", ")}`);
     if (r.leadIfShown && lead) check("recommend.lead", r.leadIfShown.includes(lead.id), `lead dish ${lead.id} not in ${r.leadIfShown.join(", ")}`);
