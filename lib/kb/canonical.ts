@@ -48,7 +48,7 @@ export function phoneSpans(text: string): Span<string>[] {
     const end = start + m[0].length;
     if (out.some((s) => s.start < end && start < s.end)) continue;
     const digits = m[0].replace(/\D/g, "");
-    if (digits.length < 10) continue;
+    if (digits.length < 10 || /\d{4}-\d{2}-\d{2}/.test(m[0])) continue; // "2026-10-22 19:30" is a date and a time, not a phone
     out.push({ start, end, value: digits.length <= 13 ? `+91${digits.slice(-10)}` : `+${digits}` });
   }
   return out.sort((a, b) => a.start - b.start);

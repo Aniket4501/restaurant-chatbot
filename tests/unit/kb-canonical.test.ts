@@ -46,6 +46,7 @@ describe("phones → E.164", () => {
   it("falls back for other 10+ digit runs; shorter runs are not phones", () => {
     expect(phonesIn("ref 1234-5678-9012")).toEqual(set("+913456789012")); // last 10 digits
     expect(phonesIn("table 12, party of 6")).toEqual(set());
+    expect(phonesIn("on 2026-10-22 19:30")).toEqual(set());
   });
 });
 
