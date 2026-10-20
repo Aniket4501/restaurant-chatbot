@@ -1,4 +1,4 @@
-import { addLocalDays, dayLabel, todayLocal, type LocalDate } from "@/lib/time/tz";
+import { addLocalDays, dayLabel, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 
 /** Branch-local dates from today to today + `days` (BR-06 horizon is 30 days, so 31 dates). */
 export function horizonDates(now: number, zone: string, days: number): LocalDate[] {
@@ -14,4 +14,17 @@ export function calendarLines(now: number, zone: string, days = 30): string[] {
   return horizonDates(now, zone, days).map(
     (d, i) => `${dayLabel(d, zone)} = ${d}${i === 0 ? " (today)" : i === 1 ? " (tomorrow)" : ""}`,
   );
+}
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * The prompt's weekday list (prompt v4, Phase 7): the first date after today for each weekday, from tomorrow, so a
+ * weekday on its own is a lookup ("Saturday = 2026-10-17"). Without it qwen3.5:9b read "this Saturday" (tomorrow) as
+ * the Saturday after (D2 LV-REG-009/010).
+ */
+export function weekdayLines(now: number, zone: string): string[] {
+  return horizonDates(now, zone, 7)
+    .slice(1)
+    .map((d) => `${WEEKDAY_NAMES[weekdayOf(d, zone)]} = ${d}`);
 }

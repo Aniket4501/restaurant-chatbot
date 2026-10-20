@@ -292,7 +292,7 @@ describe("privacy and metrics", () => {
     expect(prompts[0].user).not.toMatch(/98765|a@b\.com/);
     const rows = t.db.prepare("SELECT * FROM chat_turns").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ session_id: SID, intent: "booking", outcome: "ask_field", retrieval_mode: "hybrid", prompt_version: "v3", created_at: NOW });
+    expect(rows[0]).toMatchObject({ session_id: SID, intent: "booking", outcome: "ask_field", retrieval_mode: "hybrid", prompt_version: "v4", created_at: NOW });
     expect(JSON.stringify(rows)).not.toMatch(/98765|a@b|number/);
   });
   it("writes one row per turn, including actions and rate-limited turns", async () => {

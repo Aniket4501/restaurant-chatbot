@@ -136,7 +136,7 @@ All §6.5 gates and floors are met, so there is no G3 item. The latency target i
 | --- | --- | --- |
 | LV-SMOKE-04 "Which desserts are vegan…" | Lists Ember Pistachio Kulfi as vegan; it contains dairy and nuts | Model, non-numeric claim. Grounding passes it because every price is real (§5.7 known limit) |
 | LV-BK-007 "book for 7 on the 28th at 7" | Date extracted as 2026-11-04 instead of 2026-10-28 | Model extraction (probe H05 was a known miss) |
-| LV-CONF-001 "actually make it lunch instead" after an 8 PM card | Re-extracts dinner and 20:00 from the history, so the 8 PM card is offered again | Model: extracts from history despite rule 2 |
+| LV-CONF-001 "actually make it lunch instead" after an 8 PM card | Classified manage_booking, so the guest is told to phone and the 8 PM card stays (corrected 2026-10-20 from the run 1 transcript; first written up as re-extraction from history) | Model intent, same as LV-CONF-002 |
 | LV-CONF-002 "actually make that 4 people" | Classified manage_booking, so the party size is not changed | Model intent (probe B08) |
 | LV-INV-004 "on 30 December" | Model leaves the date null (it isn't in the 31-day calendar), so the guest hears "Which date would you like?" with no reason | Prompt and app design: an out-of-horizon date is never seen by code |
 | LV-FAQ-006 "Can we bring a birthday cake?" | The correct answer ("…Please mention it in the booking note.") is replaced by the fallback | App rule: D-15 shows a sentence with booking words only if it is verbatim in the fact. Its precision cost, measured |

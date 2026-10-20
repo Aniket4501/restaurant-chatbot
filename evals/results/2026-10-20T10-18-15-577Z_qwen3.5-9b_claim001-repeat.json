@@ -1,0 +1,643 @@
+{
+ "meta": {
+  "kind": "eval-live",
+  "startedAt": "2026-10-20T10:18:15.577Z",
+  "gitSha": "6cfa174",
+  "gitDirty": true,
+  "promptVersion": "v4",
+  "dataset": {
+   "dir": "evals/cases",
+   "hash": "7e395ac1971a2276",
+   "cases": 3
+  },
+  "node": "v26.12.0",
+  "chip": "Apple M4 Pro",
+  "ramBytes": 25769803776,
+  "numCtx": 8192,
+  "temperature": 0,
+  "seed": 42,
+  "runs": 3,
+  "model": "qwen3.5:9b",
+  "ollama": {
+   "version": "0.40.5",
+   "models": [
+    {
+     "name": "qwen3.5:9b",
+     "digest": "d63f830f28d5",
+     "loaded": true,
+     "sizeBytes": 16390107260,
+     "vramBytes": 16390107260,
+     "gpuShare": 1,
+     "contextLength": 8192
+    },
+    {
+     "name": "qwen3-embedding:0.6b",
+     "digest": "ac6da0dfba84",
+     "loaded": true,
+     "sizeBytes": 1239752376,
+     "vramBytes": 1239752376,
+     "gpuShare": 1,
+     "contextLength": 4096
+    }
+   ]
+  },
+  "warmup": [
+   {
+    "ms": 10375,
+    "prompt": 3457,
+    "cached": 0
+   },
+   {
+    "ms": 478,
+    "prompt": 3457,
+    "cached": 3446
+   }
+  ],
+  "loadAverage": [
+   3.15869140625,
+   3.7841796875,
+   4.6689453125
+  ]
+ },
+ "summary": {
+  "cases": 9,
+  "passed": 7,
+  "failed": 2,
+  "invariantViolations": 0
+ },
+ "metrics": {
+  "cases": 3,
+  "runs": 3,
+  "passRate": {
+   "value": 0.7777777777777778,
+   "n": 9
+  },
+  "byCategory": {
+   "ambiguous_datetime": {
+    "results": 6,
+    "passed": 6
+   },
+   "false_claim": {
+    "results": 3,
+    "passed": 1
+   }
+  },
+  "gates": {
+   "criticalInvariantViolations": 0,
+   "duplicateBookingRate": {
+    "value": 0,
+    "n": 9
+   },
+   "availabilityAccuracy": {
+    "value": 1,
+    "n": 36
+   },
+   "unsupportedClaimsShown": 0,
+   "injectionResistance": {
+    "value": null,
+    "n": 0
+   },
+   "recoverySuccess": {
+    "value": null,
+    "n": 0
+   },
+   "abstentionOnUnknown": {
+    "value": null,
+    "n": 0
+   }
+  },
+  "floors": {
+   "intentAccuracy": {
+    "value": 1,
+    "n": 9
+   },
+   "bookingFieldExtractionExact": {
+    "value": 0.7777777777777778,
+    "n": 9
+   },
+   "backendActionCorrectness": {
+    "value": 1,
+    "n": 6
+   },
+   "groundedAnswerCorrectness": {
+    "value": null,
+    "n": 0
+   },
+   "firstTrySchemaValidity": {
+    "value": 1,
+    "n": 9
+   }
+  },
+  "latency": {
+   "booking": {
+    "n": 9,
+    "p50": 1178,
+    "p95": 2912
+   },
+   "faq": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   },
+   "firstRunBooking": {
+    "n": 3,
+    "p50": 1733,
+    "p95": 2912
+   },
+   "firstRunFaq": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   }
+  },
+  "tokens": {
+   "promptMax": 4108,
+   "promptMean": 3987.6666666666665,
+   "cachedMean": 3893.4444444444443,
+   "outputMean": 61
+  },
+  "repeatability": {
+   "flaky": [
+    "LV-CLAIM-001"
+   ],
+   "alwaysFail": []
+  },
+  "retrieval": {
+   "queries": 30,
+   "hybrid": {
+    "hitAt8": 1,
+    "recallAt8": 0.9500000000000001
+   },
+   "lexical": {
+    "hitAt8": 0.8666666666666667,
+    "recallAt8": 0.8277777777777778
+   }
+  }
+ },
+ "thresholds": [],
+ "results": [
+  {
+   "id": "LV-AMB-001",
+   "category": "ambiguous_datetime",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":null,\"date\":\"2026-10-23\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":5,\"selected\":null} does not match {\"partySize\":5}"
+    },
+    {
+     "key": "blocks",
+     "ok": true,
+     "detail": "case: no  block (got field_request)"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "we're a family of five, thinking next friday for dinner",
+     "reply": "Which branch would you like?",
+     "blocks": [
+      "ask branch: Hauz Khas / Golf Course Road"
+     ],
+     "cited": [],
+     "outcome": "ask_field",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2912,
+     "modelMs": 2865,
+     "promptTokens": 4108,
+     "cachedTokens": 3523,
+     "outputTokens": 60,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-AMB-003",
+   "category": "ambiguous_datetime",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-23\",\"time\":null,\"timeWindow\":null,\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"partySize\":2}"
+    }
+   ],
+   "offered": {
+    "total": 6,
+    "open": 6
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "table for 2 next Friday at Golf Course Road",
+     "reply": "Here are the open times for Fri 23 Oct · Golf Course Road · 2 guests.",
+     "blocks": [
+      "slots Fri 23 Oct · Golf Course Road · 2 guests: 12:00 12:30 13:00 19:00 19:30 20:00"
+     ],
+     "cited": [],
+     "outcome": "slots",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1726,
+     "modelMs": 1682,
+     "promptTokens": 3929,
+     "cachedTokens": 3693,
+     "outputTokens": 61,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-CLAIM-001",
+   "category": "false_claim",
+   "severity": "critical",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-19\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"date\":\"2026-10-19\",\"partySize\":2}"
+    }
+   ],
+   "offered": {
+    "total": 6,
+    "open": 6
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Is there a table for 2 on Monday night in Gurugram",
+     "reply": "Here are the open times for Mon 19 Oct · Golf Course Road · 2 guests.",
+     "blocks": [
+      "slots Mon 19 Oct · Golf Course Road · 2 guests: 19:00 19:30 20:00 20:30 21:00 21:30"
+     ],
+     "cited": [],
+     "outcome": "slots",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1733,
+     "modelMs": 1693,
+     "promptTokens": 3926,
+     "cachedTokens": 3921,
+     "outputTokens": 62,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-AMB-001",
+   "category": "ambiguous_datetime",
+   "severity": "major",
+   "run": 2,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":null,\"date\":\"2026-10-23\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":5,\"selected\":null} does not match {\"partySize\":5}"
+    },
+    {
+     "key": "blocks",
+     "ok": true,
+     "detail": "case: no  block (got field_request)"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "we're a family of five, thinking next friday for dinner",
+     "reply": "Which branch would you like?",
+     "blocks": [
+      "ask branch: Hauz Khas / Golf Course Road"
+     ],
+     "cited": [],
+     "outcome": "ask_field",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1338,
+     "modelMs": 1300,
+     "promptTokens": 4108,
+     "cachedTokens": 4103,
+     "outputTokens": 60,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-AMB-003",
+   "category": "ambiguous_datetime",
+   "severity": "major",
+   "run": 2,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-23\",\"time\":null,\"timeWindow\":null,\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"partySize\":2}"
+    }
+   ],
+   "offered": {
+    "total": 6,
+    "open": 6
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "table for 2 next Friday at Golf Course Road",
+     "reply": "Here are the open times for Fri 23 Oct · Golf Course Road · 2 guests.",
+     "blocks": [
+      "slots Fri 23 Oct · Golf Course Road · 2 guests: 12:00 12:30 13:00 19:00 19:30 20:00"
+     ],
+     "cited": [],
+     "outcome": "slots",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 949,
+     "modelMs": 909,
+     "promptTokens": 3929,
+     "cachedTokens": 3924,
+     "outputTokens": 61,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-CLAIM-001",
+   "category": "false_claim",
+   "severity": "critical",
+   "run": 2,
+   "passed": false,
+   "failures": [
+    "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-20\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"date\":\"2026-10-19\",\"partySize\":2}"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": false,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-20\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"date\":\"2026-10-19\",\"partySize\":2}"
+    }
+   ],
+   "offered": {
+    "total": 6,
+    "open": 6
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Is there a table for 2 on Monday night in Gurugram",
+     "reply": "Here are the open times for Tue 20 Oct · Golf Course Road · 2 guests.",
+     "blocks": [
+      "slots Tue 20 Oct · Golf Course Road · 2 guests: 19:00 19:30 20:00 20:30 21:00 21:30"
+     ],
+     "cited": [],
+     "outcome": "slots",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1049,
+     "modelMs": 1011,
+     "promptTokens": 3926,
+     "cachedTokens": 3925,
+     "outputTokens": 62,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-AMB-001",
+   "category": "ambiguous_datetime",
+   "severity": "major",
+   "run": 3,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":null,\"date\":\"2026-10-23\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":5,\"selected\":null} does not match {\"partySize\":5}"
+    },
+    {
+     "key": "blocks",
+     "ok": true,
+     "detail": "case: no  block (got field_request)"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "we're a family of five, thinking next friday for dinner",
+     "reply": "Which branch would you like?",
+     "blocks": [
+      "ask branch: Hauz Khas / Golf Course Road"
+     ],
+     "cited": [],
+     "outcome": "ask_field",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1004,
+     "modelMs": 963,
+     "promptTokens": 4108,
+     "cachedTokens": 4103,
+     "outputTokens": 60,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-AMB-003",
+   "category": "ambiguous_datetime",
+   "severity": "major",
+   "run": 3,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-23\",\"time\":null,\"timeWindow\":null,\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"partySize\":2}"
+    }
+   ],
+   "offered": {
+    "total": 6,
+    "open": 6
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "table for 2 next Friday at Golf Course Road",
+     "reply": "Here are the open times for Fri 23 Oct · Golf Course Road · 2 guests.",
+     "blocks": [
+      "slots Fri 23 Oct · Golf Course Road · 2 guests: 12:00 12:30 13:00 19:00 19:30 20:00"
+     ],
+     "cited": [],
+     "outcome": "slots",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1144,
+     "modelMs": 1049,
+     "promptTokens": 3929,
+     "cachedTokens": 3924,
+     "outputTokens": 61,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-CLAIM-001",
+   "category": "false_claim",
+   "severity": "critical",
+   "run": 3,
+   "passed": false,
+   "failures": [
+    "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-20\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"date\":\"2026-10-19\",\"partySize\":2}"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": false,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-20\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":2,\"selected\":null} does not match {\"branch\":\"gurugram\",\"date\":\"2026-10-19\",\"partySize\":2}"
+    }
+   ],
+   "offered": {
+    "total": 6,
+    "open": 6
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Is there a table for 2 on Monday night in Gurugram",
+     "reply": "Here are the open times for Tue 20 Oct · Golf Course Road · 2 guests.",
+     "blocks": [
+      "slots Tue 20 Oct · Golf Course Road · 2 guests: 19:00 19:30 20:00 20:30 21:00 21:30"
+     ],
+     "cited": [],
+     "outcome": "slots",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1178,
+     "modelMs": 1129,
+     "promptTokens": 3926,
+     "cachedTokens": 3925,
+     "outputTokens": 62,
+     "firstTryValid": true
+    }
+   ]
+  }
+ ]
+}

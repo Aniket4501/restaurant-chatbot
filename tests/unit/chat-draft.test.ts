@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySetField, mergeExtracted, validateField, type FieldCtx } from "@/lib/chat/draft";
+import { applySetField, mergeExtracted, statesClockTime, validateField, type FieldCtx } from "@/lib/chat/draft";
 import { createModelGate, GateFullError, turnLimiter } from "@/lib/chat/ratelimit";
 import { fieldChips, phoneBranches } from "@/lib/chat/router";
 import { branchInfo, T } from "@/lib/chat/templates";
@@ -63,6 +63,14 @@ describe("mergeExtracted (§5.7 merge rules, D-15)", () => {
     expect(mergeExtracted(draft({}), fields({ ambiguity: { field: "partySize", candidates: ["0", "4", "12"] } }), ctx).ambiguity).toBeNull();
     expect(mergeExtracted(draft({}), fields({ ambiguity: { field: "partySize", candidates: ["3", "4", "0"] } }), ctx).ambiguity).toEqual({ field: "partySize", candidates: ["3", "4"] });
   });
+  it("asks with the reason when no ambiguity candidate is usable (D2 LV-INV-004: 30 December, either year)", () => {
+    const r = mergeExtracted(draft({ date: "2026-10-20" }), fields({ partySize: 4, ambiguity: { field: "date", candidates: ["2026-12-30", "2027-12-30"] } }), ctx);
+    expect(r.ambiguity).toBeNull();
+    expect(r.issues).toEqual([{ field: "date", issue: "past_horizon" }]);
+    expect(r.draft.date).toBeNull(); // the latest stated date wins, so the old one goes too (review TP-3)
+    expect(mergeExtracted(draft({}), fields({ ambiguity: { field: "partySize", candidates: ["10", "12"] } }), ctx)).toMatchObject({ largeParty: true, issues: [] });
+    expect(mergeExtracted(draft({}), fields({ ambiguity: { field: "date", candidates: ["2026-12-30", "2026-10-23"] } }), ctx)).toMatchObject({ ambiguity: null, issues: [] }); // one usable: ask plainly
+  });
   it("does not set a field it is asking about", () => {
     const r = mergeExtracted(draft({}), fields({ date: "2026-10-23", ambiguity: { field: "date", candidates: ["2026-10-23", "2026-10-30"] } }), ctx);
     expect(r.draft.date).toBeNull();
@@ -71,6 +79,15 @@ describe("mergeExtracted (§5.7 merge rules, D-15)", () => {
     const selected = draft({ branch: "hauz-khas", date: "2026-10-17", time: "20:00", partySize: 4, selected: { startsAt: 1 } });
     expect(mergeExtracted(selected, fields({ date: "2026-10-18" }), ctx).draft).toEqual({ ...selected, date: "2026-10-18", selected: null });
     expect(mergeExtracted(selected, fields({ date: "2026-10-17" }), ctx).draft.selected).toEqual({ startsAt: 1 }); // nothing changed
+  });
+});
+
+describe("statesClockTime (§5.7: values come only from the latest message)", () => {
+  it("finds a clock time in digits, number words, noon, midday, midnight, half and quarter", () => {
+    for (const t of ["table at 8", "8pm please", "19:30", "around seven", "half past seven", "at noon", "midday works", "quarter to nine", "at ８pm"]) expect(statesClockTime(t), t).toBe(true);
+  });
+  it("finds none in a meal or part of the day alone (D2 LV-CONF-001: 'make it lunch instead' became 12:00)", () => {
+    for (const t of ["actually make it lunch instead", "can we switch to dinner?", "this Sunday evening please", "same time works", "[phone]"]) expect(statesClockTime(t), t).toBe(false);
   });
 });
 

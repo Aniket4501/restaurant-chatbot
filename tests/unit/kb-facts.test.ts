@@ -82,7 +82,22 @@ describe("hours facts and the horizon (D-10)", () => {
 
 describe("aggregate facts are complete (D-13)", () => {
   const src = () => loadFactSource(db);
-  const entries = (text: string) => text.split(", cheapest first: ")[1]?.split(". Currently unavailable")[0].replace(/\.$/, "").split("; ") ?? [];
+  // Split on "; " outside parentheses only (entries carry "(vegan, gluten-free; contains nuts)").
+  const topLevel = (s: string) => {
+    const out: string[] = [];
+    let depth = 0;
+    let cur = "";
+    for (let i = 0; i < s.length; i++) {
+      depth += s[i] === "(" ? 1 : s[i] === ")" ? -1 : 0;
+      if (depth === 0 && s.startsWith("; ", i)) {
+        out.push(cur);
+        cur = "";
+        i++;
+      } else cur += s[i];
+    }
+    return [...out, cur];
+  };
+  const entries = (text: string) => topLevel(text.split(", cheapest first: ")[1]?.split(". Currently unavailable")[0].replace(/\.$/, "") ?? "");
   const price = (e: string) => Number(/₹(\d+)/.exec(e)![1]);
 
   it("menu-cat lists every available item of the category with its price, cheapest first", () => {
@@ -95,7 +110,14 @@ describe("aggregate facts are complete (D-13)", () => {
       expect(list.map(price)).toEqual([...list.map(price)].sort((a, b) => a - b));
     }
     expect(f.get("menu-cat:tandoor")).toMatch(/^Tandoor on the menu \(7 available\), cheapest first: .*\. Currently unavailable: Tandoori Pomfret\.$/);
-    expect(f.get("menu-cat:small-plates")).toContain("Keema Pav Sliders ₹525 (Golf Course Road only)");
+
+  });
+
+  it("menu-cat entries carry each item's diet, so a list answer can't guess it (D2 LV-SMOKE-04)", () => {
+    const f = byId(renderKbFacts(src()));
+    expect(f.get("menu-cat:desserts")).toContain("Ember Pistachio Kulfi ₹275 (vegetarian, gluten-free; contains dairy, nuts)");
+    expect(f.get("menu-cat:desserts")).toContain("Mango Sorbet ₹245 (vegan, gluten-free)");
+    expect(f.get("menu-cat:small-plates")).toMatch(/Keema Pav Sliders ₹525 \(non-vegetarian[^)]*; Golf Course Road only\)/);
   });
 
   it("menu-diet lists every item with the tag; vegetarian includes vegan items", () => {

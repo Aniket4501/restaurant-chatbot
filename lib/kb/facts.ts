@@ -228,7 +228,13 @@ export function renderKbFacts(src: FactSource): Fact[] {
 
   type Item = (typeof menu)[number];
   const cheapestFirst = (items: Item[]) => [...items].sort((a, b) => a.priceInr - b.priceInr || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const entry = (m: Item, withCategory: boolean) => `${m.name}${withCategory ? ` (${categoryLabel(m.category)})` : ""} ₹${m.priceInr}${m.scope ? ` (${scopeText(m.scope)})` : ""}`;
+  // Category lists name each item's diet (review of D2 LV-SMOKE-04: with prices but no diets, the model guessed that
+  // a dessert was vegan); diet lists name each item's category.
+  const diet = (m: Item) => dietText(m.dietary).replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase());
+  const entry = (m: Item, withCategory: boolean) =>
+    withCategory
+      ? `${m.name} (${categoryLabel(m.category)}) ₹${m.priceInr}${m.scope ? ` (${scopeText(m.scope)})` : ""}`
+      : `${m.name} ₹${m.priceInr} (${diet(m)}${m.scope ? `; ${scopeText(m.scope)}` : ""})`;
   const listText = (label: string, items: Item[], withCategory: boolean) => {
     const open = cheapestFirst(items.filter((m) => m.isAvailable));
     const off = items.filter((m) => !m.isAvailable).map((m) => m.name);

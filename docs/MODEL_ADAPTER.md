@@ -1,6 +1,6 @@
 # Model adapter
 
-How the app talks to language models, and how to change or test that without touching the booking engine. Status: T-11 and T-18 (2026-10-20).
+How the app talks to language models, and how to change or test that without touching the booking engine. Status: T-11, T-18 and T-20 (prompt v4, 2026-10-20).
 
 ## The boundary
 
@@ -95,15 +95,20 @@ interface Embedder {
 
 ## Prompt
 
-`buildPrompt(input)` in `lib/llm/prompt.ts` is pure and returns `{ system, user, version: "v3" }`.
+`buildPrompt(input)` in `lib/llm/prompt.ts` is pure and returns `{ system, user, version: "v4" }`.
 
-- **`system`** is static for the branch-local day: rules, the schema, the branch list, restaurant, branch, hours and exception facts, 8 examples, and the 31-day calendar. A test asserts it is byte-identical for any guest, draft, history, retrieved facts or minute on the same day, so Ollama can reuse the cached prefix (D-05).
+- **`system`** is static for the branch-local day: rules, the schema, the branch list, restaurant, branch, hours and exception facts, 8 examples, a 7-line weekday list and the 31-day calendar. A test asserts it is byte-identical for any guest, draft, history, retrieved facts or minute on the same day, so Ollama can reuse the cached prefix (D-05).
 - **`user`** holds everything per turn: the current time, the retrieved facts, the draft (booking fields only, never name, phone, email or note), the last 8 messages as one JSON `<history>` block, then `<guest_message>`.
-- **v3 vs the probe's v2.** A test diffs v3 against `evals/fixtures/probe-prompt.v2.json` (written by `node scripts/model-probe.mjs --dump-prompt`). The only differences:
+- **v4 vs the probe's v2.** A test diffs v4 against `evals/fixtures/probe-prompt.v2.json` (written by `node scripts/model-probe.mjs --dump-prompt`). The only differences:
   - the role line comes from the restaurant row (D-13), and `restaurant:about` leads the facts;
   - weekly hours facts name their exceptions (D-10);
   - rule 6 also covers `<history>`, and history is one JSON block (D-15);
-  - `<` and `>` in guest and client text become ‹ ›.
+  - `<` and `>` in guest and client text become ‹ ›;
+  - v4 (Phase 7, each from a D2 failure; `docs/EVAL_REPORT.md`):
+    - rule 1: asking whether a table is free, or changing the booking being arranged in this chat, is `booking`; `manage_booking` is only for a confirmed booking;
+    - rule 2: a weekday on its own is looked up in a new "Weekdays" list (the first date after today for each weekday); "the 28th" is the first calendar date with that day; a day and month beyond the calendar is still written out, so code can explain the 30-day limit; a time is set only from a clock time the guest gives;
+    - rule 4: a dish is called vegan, vegetarian, gluten-free or free of an allergen only if the facts say so for that dish.
+- **After the model (T-20).** Two deterministic guards in `lib/chat`: a model time is dropped when the guest's latest message has no clock time in it (`statesClockTime`, trace `ignore_field`), and an ambiguity whose candidates all fail validation is asked about with the reason ("Bookings open up to 30 days ahead").
 - **Masking.** `lib/llm/redact.ts` runs before retrieval and prompting, on every message whatever its role. Emails become `[email]`. Phones that libphonenumber finds become `[phone]`, as does any other run of 8 or more digits; ISO dates and HH:MM times are kept. The prompt never sees an unmasked number.
 
 ## Fakes

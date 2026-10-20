@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarLines, horizonDates } from "@/lib/time/calendar";
+import { calendarLines, horizonDates, weekdayLines } from "@/lib/time/calendar";
 import {
   addLocalDays,
   dayKeyOf,
@@ -130,5 +130,13 @@ describe("DST-safe instants (review AV-4)", () => {
     expect(() => instantAtMinutes("2026-10-17", 1441, IST)).toThrow(RangeError);
     expect(() => instantAtMinutes("2026-10-17", -1, IST)).toThrow(RangeError);
     expect(() => instantAtMinutes("2026-10-17", 1.5, IST)).toThrow(RangeError);
+  });
+});
+
+describe("weekdayLines (prompt v4 weekday list)", () => {
+  it("lists the first date after today for each weekday, from tomorrow, on the branch-local calendar", () => {
+    // Sun 18 Oct 2026, 11:50 PM IST (18:20 UTC): tomorrow is Monday 19 Oct in Asia/Kolkata.
+    const lines = weekdayLines(Date.parse("2026-10-18T18:20:00Z"), "Asia/Kolkata");
+    expect(lines).toEqual(["Monday = 2026-10-19", "Tuesday = 2026-10-20", "Wednesday = 2026-10-21", "Thursday = 2026-10-22", "Friday = 2026-10-23", "Saturday = 2026-10-24", "Sunday = 2026-10-25"]);
   });
 });

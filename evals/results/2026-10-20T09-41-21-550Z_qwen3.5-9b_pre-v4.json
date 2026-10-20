@@ -1,0 +1,1035 @@
+{
+ "meta": {
+  "kind": "eval-live",
+  "startedAt": "2026-10-20T09:41:21.550Z",
+  "gitSha": "6cfa174",
+  "promptVersion": "v3",
+  "dataset": {
+   "dir": "evals/cases",
+   "hash": "e0241c3bff5fceea",
+   "cases": 14
+  },
+  "node": "v26.12.0",
+  "chip": "Apple M4 Pro",
+  "ramBytes": 25769803776,
+  "numCtx": 8192,
+  "temperature": 0,
+  "seed": 42,
+  "runs": 1,
+  "model": "qwen3.5:9b",
+  "warmup": [
+   {
+    "ms": 5335,
+    "prompt": 3212,
+    "cached": 2056
+   },
+   {
+    "ms": 559,
+    "prompt": 3212,
+    "cached": 3201
+   }
+  ],
+  "loadAverage": [
+   3.16796875,
+   5.11474609375,
+   7.34814453125
+  ]
+ },
+ "summary": {
+  "cases": 14,
+  "passed": 4,
+  "failed": 10,
+  "invariantViolations": 0
+ },
+ "metrics": {
+  "cases": 14,
+  "runs": 1,
+  "passRate": {
+   "value": 0.2857142857142857,
+   "n": 14
+  },
+  "byCategory": {
+   "faq": {
+    "results": 3,
+    "passed": 1
+   },
+   "booking_intent": {
+    "results": 2,
+    "passed": 1
+   },
+   "invalid_input": {
+    "results": 2,
+    "passed": 0
+   },
+   "conflicting_input": {
+    "results": 4,
+    "passed": 0
+   },
+   "menu": {
+    "results": 3,
+    "passed": 2
+   }
+  },
+  "gates": {
+   "criticalInvariantViolations": 0,
+   "duplicateBookingRate": {
+    "value": 0,
+    "n": 14
+   },
+   "availabilityAccuracy": {
+    "value": 1,
+    "n": 11
+   },
+   "unsupportedClaimsShown": 0,
+   "injectionResistance": {
+    "value": null,
+    "n": 0
+   },
+   "recoverySuccess": {
+    "value": null,
+    "n": 0
+   },
+   "abstentionOnUnknown": {
+    "value": null,
+    "n": 0
+   }
+  },
+  "floors": {
+   "intentAccuracy": {
+    "value": 0.7857142857142857,
+    "n": 14
+   },
+   "bookingFieldExtractionExact": {
+    "value": 0.375,
+    "n": 8
+   },
+   "backendActionCorrectness": {
+    "value": 0.6666666666666666,
+    "n": 3
+   },
+   "groundedAnswerCorrectness": {
+    "value": 0.46153846153846156,
+    "n": 13
+   },
+   "firstTrySchemaValidity": {
+    "value": 1,
+    "n": 16
+   }
+  },
+  "latency": {
+   "booking": {
+    "n": 5,
+    "p50": 2201,
+    "p95": 2407
+   },
+   "faq": {
+    "n": 7,
+    "p50": 3236,
+    "p95": 4281
+   },
+   "firstRunBooking": {
+    "n": 5,
+    "p50": 2201,
+    "p95": 2407
+   },
+   "firstRunFaq": {
+    "n": 7,
+    "p50": 3236,
+    "p95": 4281
+   }
+  },
+  "tokens": {
+   "promptMax": 3918,
+   "promptMean": 3778.25,
+   "cachedMean": 3411.3125,
+   "outputMean": 80.8125
+  },
+  "repeatability": {
+   "flaky": [],
+   "alwaysFail": [
+    "LV-FAQ-006",
+    "LV-BK-007",
+    "LV-INV-004",
+    "LV-CONF-001",
+    "LV-CONF-002",
+    "LV-REG-001",
+    "LV-REG-002",
+    "LV-REG-004",
+    "LV-REG-006",
+    "LV-REG-008"
+   ]
+  },
+  "retrieval": {
+   "queries": 30,
+   "hybrid": {
+    "hitAt8": 1,
+    "recallAt8": 0.9500000000000001
+   },
+   "lexical": {
+    "hitAt8": 0.8666666666666667,
+    "recallAt8": 0.8277777777777778
+   }
+  }
+ },
+ "thresholds": [],
+ "results": [
+  {
+   "id": "LV-FAQ-006",
+   "category": "faq",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "turn 1: cited none of faq:celebration-cake (cited none)",
+    "turn 1: abstained",
+    "turn 2: cited none of faq:celebration-cake (cited none)",
+    "turn 2: reply lacks ₹300",
+    "turn 2: abstained"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "turn 1: intent faq ∉ faq"
+    },
+    {
+     "key": "mustCiteAny",
+     "ok": false,
+     "detail": "turn 1: cited none of faq:celebration-cake (cited none)"
+    },
+    {
+     "key": "answer",
+     "ok": false,
+     "detail": "turn 1: abstained"
+    },
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "turn 2: intent faq ∉ faq"
+    },
+    {
+     "key": "mustCiteAny",
+     "ok": false,
+     "detail": "turn 2: cited none of faq:celebration-cake (cited none)"
+    },
+    {
+     "key": "mustIncludeValues",
+     "ok": false,
+     "detail": "turn 2: reply lacks ₹300"
+    },
+    {
+     "key": "answer",
+     "ok": false,
+     "detail": "turn 2: abstained"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 2,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Can we bring a birthday cake?",
+     "reply": "I don't have that information. You can call Hauz Khas on +91 11 4155 0101 or Golf Course Road on +91 124 455 0202.",
+     "blocks": [],
+     "cited": [],
+     "outcome": "faq_fallback",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2765,
+     "modelMs": 2696,
+     "promptTokens": 3783,
+     "cachedTokens": 3245,
+     "outputTokens": 85,
+     "firstTryValid": true
+    },
+    {
+     "kind": "guest",
+     "input": "Is there a fee for that?",
+     "reply": "I don't have that information. You can call Hauz Khas on +91 11 4155 0101 or Golf Course Road on +91 124 455 0202.",
+     "blocks": [],
+     "cited": [],
+     "outcome": "faq_fallback",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 3003,
+     "modelMs": 2956,
+     "promptTokens": 3843,
+     "cachedTokens": 3245,
+     "outputTokens": 78,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-BK-007",
+   "category": "booking_intent",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: draft {\"branch\":null,\"date\":\"2026-11-04\",\"time\":\"19:00\",\"timeWindow\":null,\"partySize\":7,\"selected\":null} does not match {\"date\":\"2026-10-28\",\"partySize\":7}"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": false,
+     "detail": "case: draft {\"branch\":null,\"date\":\"2026-11-04\",\"time\":\"19:00\",\"timeWindow\":null,\"partySize\":7,\"selected\":null} does not match {\"date\":\"2026-10-28\",\"partySize\":7}"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "I'd like to book for 7 on the 28th at 7",
+     "reply": "Which branch would you like?",
+     "blocks": [
+      "ask branch: Hauz Khas / Golf Course Road"
+     ],
+     "cited": [],
+     "outcome": "ask_field",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2269,
+     "modelMs": 2226,
+     "promptTokens": 3643,
+     "cachedTokens": 3280,
+     "outputTokens": 63,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-INV-004",
+   "category": "invalid_input",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: reply does not match /30 days ahead/: \"Which date would you like?\""
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":\"hauz-khas\",\"date\":null,\"time\":null,\"timeWindow\":null,\"partySize\":4,\"selected\":null} does not match {\"date\":null}"
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": false,
+     "detail": "case: reply does not match /30 days ahead/: \"Which date would you like?\""
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Book Hauz Khas for 4 people on 30 December",
+     "reply": "Which date would you like?",
+     "blocks": [
+      "ask date: Today, Fri 16 Oct / Tomorrow, Sat 17 Oct / Sun 18 Oct / Mon 19 Oct / Tue 20 Oct / Wed 21 Oct / Thu 22 Oct"
+     ],
+     "cited": [],
+     "outcome": "ask_field",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1880,
+     "modelMs": 1838,
+     "promptTokens": 3721,
+     "cachedTokens": 3716,
+     "outputTokens": 82,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-CONF-001",
+   "category": "conflicting_input",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: unexpected action confirm",
+    "case: draft {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"timeWindow\":\"dinner\",\"partySize\":4,\"selected\":{\"startsAt\":1792247400000}} does not match {\"time\":null,\"timeWindow\":\"lunch\",\"selected\":null}"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "blocks",
+     "ok": true,
+     "detail": "turn 1: no  block (got confirm)"
+    },
+    {
+     "key": "noActions",
+     "ok": false,
+     "detail": "case: unexpected action confirm"
+    },
+    {
+     "key": "draft",
+     "ok": false,
+     "detail": "case: draft {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"timeWindow\":\"dinner\",\"partySize\":4,\"selected\":{\"startsAt\":1792247400000}} does not match {\"time\":null,\"timeWindow\":\"lunch\",\"selected\":null}"
+    }
+   ],
+   "offered": {
+    "total": 2,
+    "open": 2
+   },
+   "modelCalls": 2,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "table for 4 tomorrow at 8pm in Hauz Khas",
+     "reply": "Here are your booking details. Add your name and mobile number, then tap Confirm.",
+     "blocks": [
+      "confirm hauz-khas 2026-10-17 20:00 x4"
+     ],
+     "cited": [],
+     "outcome": "confirm",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1196,
+     "modelMs": 1148,
+     "promptTokens": 3701,
+     "cachedTokens": 3696,
+     "outputTokens": 68,
+     "firstTryValid": true
+    },
+    {
+     "kind": "guest",
+     "input": "actually make it lunch instead",
+     "reply": "To change or cancel, please call Hauz Khas on +91 11 4155 0101.",
+     "blocks": [
+      "confirm hauz-khas 2026-10-17 20:00 x4"
+     ],
+     "cited": [],
+     "outcome": "manage_redirect",
+     "intent": "manage_booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1345,
+     "modelMs": 1301,
+     "promptTokens": 3756,
+     "cachedTokens": 3751,
+     "outputTokens": 69,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-CONF-002",
+   "category": "conflicting_input",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: intent manage_booking ∉ booking",
+    "case: draft {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"timeWindow\":null,\"partySize\":2,\"selected\":{\"startsAt\":1792247400000}} does not match {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"partySize\":4}"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": false,
+     "detail": "case: intent manage_booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": false,
+     "detail": "case: draft {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"timeWindow\":null,\"partySize\":2,\"selected\":{\"startsAt\":1792247400000}} does not match {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"partySize\":4}"
+    },
+    {
+     "key": "blocks",
+     "ok": true,
+     "detail": "case: no  block (got confirm)"
+    }
+   ],
+   "offered": {
+    "total": 1,
+    "open": 1
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "actually make that 4 people",
+     "reply": "To change or cancel, please call Hauz Khas on +91 11 4155 0101.",
+     "blocks": [
+      "confirm hauz-khas 2026-10-17 20:00 x2"
+     ],
+     "cited": [],
+     "outcome": "manage_redirect",
+     "intent": "manage_booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1356,
+     "modelMs": 1314,
+     "promptTokens": 3754,
+     "cachedTokens": 3749,
+     "outputTokens": 68,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-001",
+   "category": "conflicting_input",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: intent manage_booking ∉ booking",
+    "case: draft {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"timeWindow\":null,\"partySize\":2,\"selected\":{\"startsAt\":1792247400000}} does not match {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"partySize\":5}"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": false,
+     "detail": "case: intent manage_booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": false,
+     "detail": "case: draft {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"timeWindow\":null,\"partySize\":2,\"selected\":{\"startsAt\":1792247400000}} does not match {\"branch\":\"hauz-khas\",\"date\":\"2026-10-17\",\"time\":\"20:00\",\"partySize\":5}"
+    }
+   ],
+   "offered": {
+    "total": 1,
+    "open": 1
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "oh wait, can we make it 5 of us instead?",
+     "reply": "To change or cancel, please call Hauz Khas on +91 11 4155 0101.",
+     "blocks": [
+      "confirm hauz-khas 2026-10-17 20:00 x2"
+     ],
+     "cited": [],
+     "outcome": "manage_redirect",
+     "intent": "manage_booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 1936,
+     "modelMs": 1893,
+     "promptTokens": 3760,
+     "cachedTokens": 3515,
+     "outputTokens": 68,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-002",
+   "category": "conflicting_input",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: intent manage_booking ∉ booking",
+    "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-18\",\"time\":\"13:00\",\"timeWindow\":\"lunch\",\"partySize\":4,\"selected\":{\"startsAt\":1792308600000}} does not match {\"branch\":\"gurugram\",\"date\":\"2026-10-18\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":4}"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": false,
+     "detail": "case: intent manage_booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": false,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":\"2026-10-18\",\"time\":\"13:00\",\"timeWindow\":\"lunch\",\"partySize\":4,\"selected\":{\"startsAt\":1792308600000}} does not match {\"branch\":\"gurugram\",\"date\":\"2026-10-18\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":4}"
+    }
+   ],
+   "offered": {
+    "total": 1,
+    "open": 1
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "can we switch to dinner instead?",
+     "reply": "To change or cancel, please call Golf Course Road on +91 124 455 0202.",
+     "blocks": [
+      "confirm gurugram 2026-10-18 13:00 x4"
+     ],
+     "cited": [],
+     "outcome": "manage_redirect",
+     "intent": "manage_booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2501,
+     "modelMs": 2458,
+     "promptTokens": 3772,
+     "cachedTokens": 3352,
+     "outputTokens": 67,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-003",
+   "category": "booking_intent",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":\"hauz-khas\",\"date\":\"2026-11-03\",\"time\":null,\"timeWindow\":\"dinner\",\"partySize\":2,\"selected\":null} does not match {\"branch\":\"hauz-khas\",\"date\":\"2026-11-03\",\"timeWindow\":\"dinner\",\"partySize\":2}"
+    }
+   ],
+   "offered": {
+    "total": 6,
+    "open": 6
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "dinner for 2 on the 3rd at Hauz Khas",
+     "reply": "Here are the open times for Tue 3 Nov · Hauz Khas · 2 guests.",
+     "blocks": [
+      "slots Tue 3 Nov · Hauz Khas · 2 guests: 19:00 19:30 20:00 20:30 21:00 21:30"
+     ],
+     "cited": [],
+     "outcome": "slots",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2201,
+     "modelMs": 2159,
+     "promptTokens": 3818,
+     "cachedTokens": 3505,
+     "outputTokens": 64,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-004",
+   "category": "invalid_input",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: reply does not match /30 days ahead/: \"Which date would you like?\""
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent booking ∉ booking"
+    },
+    {
+     "key": "noActions",
+     "ok": true,
+     "detail": "case: unexpected action "
+    },
+    {
+     "key": "draft",
+     "ok": true,
+     "detail": "case: draft {\"branch\":\"gurugram\",\"date\":null,\"time\":null,\"timeWindow\":null,\"partySize\":2,\"selected\":null} does not match {\"date\":null}"
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": false,
+     "detail": "case: reply does not match /30 days ahead/: \"Which date would you like?\""
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Table for 2 at Golf Course Road on 25 December",
+     "reply": "Which date would you like?",
+     "blocks": [
+      "ask date: Today, Fri 16 Oct / Tomorrow, Sat 17 Oct / Sun 18 Oct / Mon 19 Oct / Tue 20 Oct / Wed 21 Oct / Thu 22 Oct"
+     ],
+     "cited": [],
+     "outcome": "ask_field",
+     "intent": "booking",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2407,
+     "modelMs": 2367,
+     "promptTokens": 3706,
+     "cachedTokens": 3304,
+     "outputTokens": 80,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-005",
+   "category": "menu",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent faq ∉ faq"
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "case: abstained"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Fish/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Chicken/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Prawn/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Keema/"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Which small plates are vegetarian?",
+     "reply": "The vegetarian small plates are Kale Pakoda, Papdi Chaat, Dahi Puri Shots, Mushroom Galouti, and Beetroot & Peanut Tikki.",
+     "blocks": [
+      "info menu-cat:small-plates, menu:kale-pakoda, menu:papdi-chaat, menu:dahi-puri-shots, menu:mushroom-galouti, menu:beetroot-peanut-tikki"
+     ],
+     "cited": [
+      "menu-cat:small-plates",
+      "menu:kale-pakoda",
+      "menu:papdi-chaat",
+      "menu:dahi-puri-shots",
+      "menu:mushroom-galouti",
+      "menu:beetroot-peanut-tikki"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 3830,
+     "modelMs": 3784,
+     "promptTokens": 3831,
+     "cachedTokens": 3245,
+     "outputTokens": 129,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-006",
+   "category": "menu",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: reply matches /Chaas/",
+    "case: reply matches /Chai/"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent faq ∉ faq"
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "case: abstained"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Lassi/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": false,
+     "detail": "case: reply matches /Chaas/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Coffee/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": false,
+     "detail": "case: reply matches /Chai/"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Which of your drinks are vegan?",
+     "reply": "The vegan drinks on our menu are Fresh Lime Soda, Kokum Cooler, Masala Chaas, and Masala Chai.",
+     "blocks": [
+      "info menu:fresh-lime-soda, menu:kokum-cooler, menu-cat:drinks, faq:vegan-options"
+     ],
+     "cited": [
+      "menu:fresh-lime-soda",
+      "menu:kokum-cooler",
+      "menu-cat:drinks",
+      "faq:vegan-options"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 3672,
+     "modelMs": 3635,
+     "promptTokens": 3877,
+     "cachedTokens": 3244,
+     "outputTokens": 100,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-007",
+   "category": "faq",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent faq ∉ faq"
+    },
+    {
+     "key": "mustCiteAny",
+     "ok": true,
+     "detail": "case: cited none of faq:late-arrival (cited faq:late-arrival)"
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "case: abstained"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "What if we're 20 minutes late?",
+     "reply": "We hold your table for 15 minutes after the booking time. If you'll be later than that, please call the branch.",
+     "blocks": [
+      "info faq:late-arrival"
+     ],
+     "cited": [
+      "faq:late-arrival"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 3236,
+     "modelMs": 3198,
+     "promptTokens": 3854,
+     "cachedTokens": 3245,
+     "outputTokens": 80,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-REG-008",
+   "category": "faq",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "failures": [
+    "case: cited none of faq:outdoor-seating (cited none)",
+    "case: abstained"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent faq ∉ faq"
+    },
+    {
+     "key": "mustCiteAny",
+     "ok": false,
+     "detail": "case: cited none of faq:outdoor-seating (cited none)"
+    },
+    {
+     "key": "answer",
+     "ok": false,
+     "detail": "case: abstained"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Is there outdoor seating at Golf Course Road?",
+     "reply": "I don't have that information. You can call Hauz Khas on +91 11 4155 0101 or Golf Course Road on +91 124 455 0202.",
+     "blocks": [],
+     "cited": [],
+     "outcome": "faq_fallback",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 2656,
+     "modelMs": 2622,
+     "promptTokens": 3715,
+     "cachedTokens": 3245,
+     "outputTokens": 75,
+     "firstTryValid": true
+    }
+   ]
+  },
+  {
+   "id": "LV-SMOKE-04",
+   "category": "menu",
+   "severity": "critical",
+   "run": 1,
+   "passed": true,
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "intent",
+     "ok": true,
+     "detail": "case: intent faq ∉ faq"
+    },
+    {
+     "key": "mustIncludeValues",
+     "ok": true,
+     "detail": "case: reply lacks "
+    },
+    {
+     "key": "answer",
+     "ok": true,
+     "detail": "case: abstained"
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "case: reply does not match /Mango Sorbet/: \"Our vegan desserts are Mango Sorbet at ₹245 and Coconut Jaggery Payasam at ₹265. Both are gluten-fre\""
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Kulfi/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Gulab Jamun/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Shahi Tukda/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /Mousse/"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "kind": "guest",
+     "input": "Which desserts are vegan, and how much are they?",
+     "reply": "Our vegan desserts are Mango Sorbet at ₹245 and Coconut Jaggery Payasam at ₹265. Both are gluten-free and contain no dairy, egg, or honey.",
+     "blocks": [
+      "info menu-cat:desserts, faq:vegan-options, menu:mango-sorbet, menu:coconut-jaggery-payasam"
+     ],
+     "cited": [
+      "menu-cat:desserts",
+      "faq:vegan-options",
+      "menu:mango-sorbet",
+      "menu:coconut-jaggery-payasam"
+     ],
+     "outcome": "faq_answer",
+     "intent": "faq",
+     "retrievalMode": "hybrid",
+     "latencyMs": 4281,
+     "modelMs": 4239,
+     "promptTokens": 3918,
+     "cachedTokens": 3244,
+     "outputTokens": 117,
+     "firstTryValid": true
+    }
+   ]
+  }
+ ]
+}

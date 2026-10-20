@@ -135,6 +135,8 @@ export type TraceEntry =
   | { action: "model_call"; attempt: 1 | 2; result: "ok" | string }
   | { action: "check_availability"; args: { branch: string; date: string; partySize: number; time: string | null; window: string | null }; result: string; slots: number; alternatives: number }
   | { action: "ask_field"; field: Field; reason?: string }
+  /** A model value the guest's latest message doesn't state, dropped before the merge (§5.7). */
+  | { action: "ignore_field"; field: Field; reason: "not_stated" }
   | { action: "confirm"; branch: string; startsAt: number }
   | { action: "answer_faq"; ids: string[]; rendered: boolean }
   | { action: "fallback_unknown"; reason: string }

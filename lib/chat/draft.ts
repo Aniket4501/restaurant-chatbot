@@ -74,10 +74,17 @@ export type MergeResult = {
 /** Merge the model's extracted booking fields into the draft. */
 export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldCtx): MergeResult {
   let ambiguity: MergeResult["ambiguity"] = null;
+  let unusable: { field: Field; issue: FieldIssue } | null = null;
   if (booking.ambiguity) {
     const field = booking.ambiguity.field as Field;
-    const candidates = [...new Set(booking.ambiguity.candidates)].filter((c) => validateField(field, c, ctx).ok);
+    const unique = [...new Set(booking.ambiguity.candidates)];
+    const checked = unique.map((c) => validateField(field, c, ctx));
+    const candidates = unique.filter((_, i) => checked[i].ok);
     if (candidates.length >= 2) ambiguity = { field, candidates };
+    // No reading is usable ("30 December", past the horizon in either year): treat it like one bad value, so the guest
+    // hears why (D2 LV-INV-004). With exactly one usable reading the flow asks plainly rather than guessing.
+    const first = checked[0];
+    if (candidates.length === 0 && first && !first.ok) unusable = { field, issue: first.issue };
   }
   const next: Draft = { ...draft };
   const issues: MergeResult["issues"] = [];
@@ -98,9 +105,23 @@ export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldC
       changed.push(field);
     }
   }
+  if (unusable && !changed.includes(unusable.field) && !issues.some((i) => i.field === unusable.field)) {
+    if (unusable.issue === "large_party") largeParty = true;
+    else issues.push(unusable);
+  }
   const rejected: Field[] = [...issues.map((i) => i.field), ...(largeParty ? (["partySize"] as Field[]) : [])];
   return { draft: withSelection(draft, latestWins(draft, next, booking.time !== null, rejected)), issues, ambiguity, largeParty, changed };
 }
+
+// A digit, a number word, or a named time. Masked phones and emails ("[phone]") carry none.
+const CLOCK_RE = /\p{Nd}|\b(?:noon|midday|midnight|half|quarter|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/iu;
+
+/**
+ * Whether a guest message states a clock time at all (§5.7: values come only from the latest message). The turn drops
+ * a model time from a message without one (D2 LV-CONF-001: "make it lunch instead" came back as 12:00); a meal alone
+ * then replaces the old time preference as usual.
+ */
+export const statesClockTime = (text: string) => CLOCK_RE.test(text);
 
 /** A chip or form action. Unlike model extraction, an explicit null clears the field ("change date"). */
 export function applySetField(draft: Draft, field: Field, value: Value, ctx: FieldCtx): MergeResult {

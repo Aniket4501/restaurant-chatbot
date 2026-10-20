@@ -494,6 +494,38 @@ function sh(cmd: string, args: string[]): string | null {
   }
 }
 
+type OllamaModelState = { name: string; digest: string | null; loaded: boolean; sizeBytes: number | null; vramBytes: number | null; gpuShare: number | null; contextLength: number | null };
+
+/** Run metadata from Ollama (§6.6 model digest and Ollama version; §6.5 `ollama ps` size and GPU share). Never throws. */
+async function ollamaState(baseUrl: string, names: string[]): Promise<{ version: string | null; models: OllamaModelState[] }> {
+  type Listed = { name?: string; model?: string; digest?: string; size?: number; size_vram?: number; context_length?: number };
+  const get = async <T,>(p: string): Promise<T | null> => {
+    try {
+      const r = await fetch(`${baseUrl}${p}`, { signal: AbortSignal.timeout(5000) });
+      return r.ok ? ((await r.json()) as T) : null;
+    } catch {
+      return null;
+    }
+  };
+  const [version, tags, ps] = await Promise.all([get<{ version?: string }>("/api/version"), get<{ models?: Listed[] }>("/api/tags"), get<{ models?: Listed[] }>("/api/ps")]);
+  const find = (list: { models?: Listed[] } | null, name: string) => list?.models?.find((m) => m.name === name || m.model === name);
+  return {
+    version: version?.version ?? null,
+    models: names.map((name) => {
+      const p = find(ps, name);
+      return {
+        name,
+        digest: find(tags, name)?.digest?.slice(0, 12) ?? null,
+        loaded: !!p,
+        sizeBytes: p?.size ?? null,
+        vramBytes: p?.size_vram ?? null,
+        gpuShare: p?.size ? (p.size_vram ?? 0) / p.size : null,
+        contextLength: p?.context_length ?? null,
+      };
+    }),
+  };
+}
+
 async function main(): Promise<number> {
   const mode = arg("mode");
   if (mode !== "scripted" && mode !== "live") {
@@ -526,10 +558,12 @@ async function main(): Promise<number> {
   }
   let model: ModelClient | undefined;
   let embedder: Embedder | null = null;
+  let ollama: { baseUrl: string; names: string[] } | null = null;
   if (mode === "live") {
     const config = loadConfig({ ...process.env, LLM_PROVIDER: "ollama", EMBED_PROVIDER: "ollama", E2E_TEST_MODE: undefined });
     model = modelFor(config);
     embedder = embedderFor(config);
+    ollama = { baseUrl: config.ollamaBaseUrl, names: [config.chatModel, config.embedModel] };
   }
   const results: CaseResult[] = [];
   const started = new Date();
@@ -555,6 +589,7 @@ async function main(): Promise<number> {
       console.log(`${r.passed ? "PASS" : "FAIL"} ${c.id} ${c.category}${runs > 1 ? ` run ${run}` : ""}${why.length ? `\n     ${why.join("\n     ")}` : ""}`);
     }
   const retrieval = mode === "live" ? await measureRetrieval(template, embedder) : null;
+  const ollamaMeta = ollama ? await ollamaState(ollama.baseUrl, ollama.names) : null; // after the runs, so `ps` shows what was loaded
   fs.rmSync(path.dirname(template), { recursive: true, force: true });
   const passed = results.filter((r) => r.passed).length;
   const metrics = computeMetrics(results, retrieval);
@@ -564,6 +599,10 @@ async function main(): Promise<number> {
   if (mode === "live") {
     console.log(`latency booking p50/p95 ${fmt(metrics.latency.booking.p50)}/${fmt(metrics.latency.booking.p95)} ms (run 1: ${fmt(metrics.latency.firstRunBooking.p50)}/${fmt(metrics.latency.firstRunBooking.p95)}), faq ${fmt(metrics.latency.faq.p50)}/${fmt(metrics.latency.faq.p95)} ms (run 1: ${fmt(metrics.latency.firstRunFaq.p50)}/${fmt(metrics.latency.firstRunFaq.p95)}); prompt max ${fmt(metrics.tokens.promptMax)} tokens`);
     if (retrieval) console.log(`retrieval (${retrieval.queries} labelled queries): hybrid hit@8 ${fmt(retrieval.hybrid?.hitAt8 ?? null)} recall@8 ${fmt(retrieval.hybrid?.recallAt8 ?? null)}; lexical hit@8 ${fmt(retrieval.lexical.hitAt8)} recall@8 ${fmt(retrieval.lexical.recallAt8)}`);
+    if (ollamaMeta)
+      console.log(
+        `ollama ${ollamaMeta.version ?? "?"}: ${ollamaMeta.models.map((m) => `${m.name} ${m.digest ?? "?"} ${m.loaded ? `${((m.sizeBytes ?? 0) / 2 ** 30).toFixed(1)} GiB, ${Math.round((m.gpuShare ?? 0) * 100)}% GPU, ctx ${m.contextLength ?? "?"}` : "not loaded"}`).join("; ")}`,
+      );
     if (subset) console.log("subset run (--case/--category): thresholds not applied");
     for (const l of thresholdLines) console.log(`${l.ok ? "✓" : "✗"} ${l.metric.padEnd(30)} ${fmt(l.value).padStart(7)}  (${l.want})${l.override ? `  override: ${l.override}` : ""}`);
   }
@@ -576,6 +615,8 @@ async function main(): Promise<number> {
     kind: `eval-${mode}`,
     startedAt: started.toISOString(),
     gitSha: sh("git", ["rev-parse", "--short", "HEAD"]),
+    // Uncommitted changes outside evals/results mean gitSha alone does not identify the code that ran.
+    gitDirty: (sh("git", ["status", "--porcelain"]) ?? "").split("\n").some((l) => l.trim() && !l.includes("evals/results/")),
     promptVersion: PROMPT_VERSION,
     dataset: { dir: path.relative(ROOT, casesDir), hash: datasetHash, cases: cases.length },
     node: process.version,
@@ -586,6 +627,7 @@ async function main(): Promise<number> {
     seed: MODEL.seed,
     runs,
     model: model?.model ?? "fake-sequence",
+    ollama: ollamaMeta,
     warmup,
     loadAverage: os.loadavg(),
   };

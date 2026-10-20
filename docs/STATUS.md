@@ -12,7 +12,7 @@ Done in Phase 6:
 - T-19 eval metrics and thresholds (evals/metrics.ts), D2 dataset (evals/cases/live-d2.jsonl, 76 cases + 5 smoke), single-run trial and 3-run baseline committed
 For Phase 7 (T-20) — the 6 cases that fail in every run (details in docs/MODEL_SELECTION.md):
 - LV-SMOKE-04 kulfi called vegan (model, non-numeric claim; grounding can't see it)
-- LV-BK-007 "the 28th" → 4 Nov (model extraction); LV-CONF-001 meal change re-extracted from history (model); LV-CONF-002 "make that 4 people" → manage_booking (model)
+- LV-BK-007 "the 28th" → 4 Nov (model extraction); LV-CONF-001 meal change classified manage_booking (model; first misdescribed as re-extraction from history); LV-CONF-002 "make that 4 people" → manage_booking (model)
 - LV-INV-004 out-of-horizon date gets a reasonless "Which date?" (prompt/app design)
 - LV-FAQ-006 correct cake answer replaced by the fallback (D-15 verbatim rule for booking words; its measured precision cost)
 - Latency: p95 4.43 s booking / 4.91 s FAQ under shared-machine load (target 4 s, AC-12 is a target); run 1 booking p95 3.63 s
