@@ -394,7 +394,11 @@ export async function recommendTurn(
   const anchorId = previous[0] ?? (input.context?.lastCitedIds ?? []).find((id) => byId.has(id)) ?? null;
   const last = anchorId ? byId.get(anchorId)! : null;
   const cheaperThan = relation === "cheaper" && last ? last.price : null;
-  const exclude = relation === "another" || relation === "cheaper" ? previous : [];
+  // A new constraint ("make it vegan") narrows the search: dishes shown before that meet it are fair game again, so
+  // they are not excluded as "already suggested" (D-21 held-out LV-HOLD-012: the vegan alternatives were excluded).
+  const before = input.context?.prefs ?? null;
+  const tightened = !!before && (prefs.diet.some((d) => !before.diet.includes(d)) || prefs.avoid.some((a) => !before.avoid.includes(a)) || (prefs.maxPrice !== null && (before.maxPrice === null || prefs.maxPrice < before.maxPrice)) || (prefs.mild && !before.mild));
+  const exclude = (relation === "another" || relation === "cheaper") && !tightened ? previous : [];
   const allergyNote: Block[] = prefs.avoid.length || prefs.allergy ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
   const keep = (shown: string[]) => [...new Set([...shown, ...previous])].slice(0, 6);
   const done = (text: string, blocks: Block[]): RecommendResult => ({ text, blocks, cited: [], prefs, recommended: previous });

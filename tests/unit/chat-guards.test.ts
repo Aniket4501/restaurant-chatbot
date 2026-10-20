@@ -160,6 +160,8 @@ describe("D-21 audit and baseline: dates, party sizes and times the guards read 
     expect(largePartyStated("We were going to be 10 people but now it's just 6 of us, can we book Hauz Khas tomorrow at 8pm?")).toBeNull();
     expect(largePartyStated("Can I book a table for twenty people tomorrow?")).toBe(20);
     expect(largePartyStated("a dozen of us want to book for Saturday")).toBe(12);
+    expect(largePartyStated("Can my 12 colleagues and I get a table on Friday at 8?")).toBe(13);
+    expect(largePartyStated("table for my 7 friends and me")).toBeNull(); // 8: online
   });
   it("counts more ways of writing a clock time", () => {
     for (const [text, h] of [["table for 2 tomorrow 7 30 pm", 7], ["dinner tomorrow 8 o clock for 2", 8], ["kal raat 8 baje 4 log", 8], ["table for 2, 8 in the evening", 8]] as const) expect(clockHours(text).has(h), text).toBe(true);

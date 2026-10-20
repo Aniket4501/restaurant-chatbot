@@ -390,3 +390,18 @@ describe("FAQ claim checks (D-21 after-run)", () => {
     expect(claimProblems("The Chana Pindi is a vegan chickpea curry.", [e("menu:chana-pindi")], entries)).toEqual([]);
   });
 });
+
+describe("a new constraint on a follow-up (D-21 held-out LV-HOLD-012)", () => {
+  it("doesn't exclude earlier suggestions that meet it, even when the model calls it 'another'", async () => {
+    const seen: string[][] = [];
+    const call: ChooserCall = async (_a, messages) => {
+      seen.push([...messages[1].content.matchAll(/^([a-z0-9-]+) \|/gm)].map((m) => m[1]));
+      return { choice: null, code: "MODEL_UNAVAILABLE", content: "" };
+    };
+    const ctx = { lastCitedIds: [], prefs: P({ diet: ["vegetarian"], course: "small-plates" }), recommended: ["menu:dahi-puri-shots", "menu:beetroot-peanut-tikki", "menu:kale-pakoda"] };
+    const res = await recommendTurn({ turn: recTurn({ diet: ["vegan"], course: "small-plates", relation: "another" }), text: "make it vegan", history: [], context: ctx, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
+    expect(seen[0].sort()).toEqual(["beetroot-peanut-tikki", "kale-pakoda"]);
+    expect(res.blocks.some((b) => b.type === "recommendation")).toBe(true);
+  });
+});
+

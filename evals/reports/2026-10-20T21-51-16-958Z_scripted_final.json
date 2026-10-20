@@ -1,0 +1,1117 @@
+{
+ "summary": {
+  "id": "2026-10-20T21-51-16-958Z_scripted_final",
+  "file": "/Users/aniketagarwal/Restraunt Chatbot/evals/results/2026-10-20T21-51-16-958Z_scripted_final.json",
+  "mode": "scripted",
+  "suite": "full",
+  "status": "complete",
+  "startedAt": "2026-10-20T21:51:16.958Z",
+  "finishedAt": "2026-10-20T21:51:18.390Z",
+  "durationMs": 1432,
+  "gitSha": "24437ac",
+  "gitDirty": false,
+  "changedDuringRun": false,
+  "model": "fake-sequence",
+  "promptVersion": "v6",
+  "chooserVersion": "c6",
+  "datasetHash": "ffae3eea8feaf09a",
+  "config": {
+   "runs": 1,
+   "numCtx": 8192,
+   "temperature": 0,
+   "seed": 42,
+   "loadAverage": 7.013671875
+  },
+  "counts": {
+   "selected": 100,
+   "executed": 100,
+   "passed": 100,
+   "failed": 0,
+   "errored": 0,
+   "flaky": 0,
+   "skipped": 0,
+   "caseResults": 100
+  },
+  "critical": {
+   "invariantViolations": 0,
+   "falseConfirmations": 0,
+   "duplicateBookings": 0,
+   "criticalCasesFailed": 0
+  },
+  "gates": null,
+  "gatesOk": null,
+  "areas": [
+   {
+    "key": "normalization",
+    "label": "Input normalization",
+    "about": "Typos, informal English, Hinglish, spacing, capitals, numbers as words, Unicode: the same request should be understood the same way.",
+    "n": 3,
+    "passed": 3,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "variantAgreement",
+      "label": "Same intent as the clean wording",
+      "value": null,
+      "n": 0,
+      "kind": "rate",
+      "definition": "Noisy variants whose first-turn intent matches their clean case's in the same run (pairs where both ran).",
+      "better": "higher"
+     }
+    ]
+   },
+   {
+    "key": "understanding",
+    "label": "Intent and entities",
+    "about": "Which intent the message has and which booking details it states, including dates, times, corrections and ambiguity.",
+    "n": 14,
+    "passed": 14,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "intentAccuracy",
+      "label": "Intent accuracy",
+      "value": 1,
+      "n": 2,
+      "kind": "rate",
+      "definition": "Intent checks passed, over every case that states an expected intent (all areas).",
+      "better": "higher"
+     },
+     {
+      "key": "entityAccuracy",
+      "label": "Booking-field accuracy",
+      "value": 1,
+      "n": 25,
+      "kind": "rate",
+      "definition": "Booking-state checks (branch, date, time, party size) passed, over every case that states them.",
+      "better": "higher"
+     }
+    ]
+   },
+   {
+    "key": "grounding",
+    "label": "Retrieval and grounding",
+    "about": "Answers come from stored facts: the right facts are cited, prices and hours are exact, unknown facts get the fallback.",
+    "n": 8,
+    "passed": 8,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "groundedAnswers",
+      "label": "Grounded answer checks",
+      "value": 1,
+      "n": 10,
+      "kind": "rate",
+      "definition": "Citation and required/forbidden fact checks passed, and known facts answered rather than abstained.",
+      "better": "higher"
+     },
+     {
+      "key": "abstention",
+      "label": "Abstains on unknown facts",
+      "value": 1,
+      "n": 1,
+      "kind": "rate",
+      "definition": "Questions with no answer in the facts that got the fallback, not an invented answer.",
+      "better": "higher"
+     },
+     {
+      "key": "unsupportedClaims",
+      "label": "Unsupported claims shown",
+      "value": 0,
+      "n": 129,
+      "kind": "count",
+      "definition": "INV-04 (booking claim without a saved row) and INV-05 (a number not in the cited facts) violations, over the turns run.",
+      "better": "lower"
+     }
+    ]
+   },
+   {
+    "key": "recommendations",
+    "label": "Recommendations",
+    "about": "The model picks a real, available dish that meets every stated constraint, explains it from menu data, or says honestly that nothing fits.",
+    "n": 19,
+    "passed": 19,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "recommendationChecks",
+      "label": "All recommendation checks",
+      "value": 1,
+      "n": 59,
+      "kind": "rate",
+      "definition": "Every dish-card check (constraints, lead dish, shown or withheld, follow-ups); runs before D-21 recorded only this total.",
+      "better": "higher"
+     },
+     {
+      "key": "constraintCompliance",
+      "label": "Stated constraints met",
+      "value": 1,
+      "n": 22,
+      "kind": "rate",
+      "definition": "Turns whose shown dishes all meet the stated diet, allergen, budget and course (and none of the excluded dishes).",
+      "better": "higher"
+     },
+     {
+      "key": "leadChoice",
+      "label": "Acceptable lead dish",
+      "value": 1,
+      "n": 9,
+      "kind": "rate",
+      "definition": "Turns whose lead dish is one of the defensible answers listed by the case.",
+      "better": "higher"
+     },
+     {
+      "key": "shownWhenExpected",
+      "label": "Card shown or withheld correctly",
+      "value": 1,
+      "n": 26,
+      "kind": "rate",
+      "definition": "A dish card shown when one fits, and none for an impossible request.",
+      "better": "higher"
+     },
+     {
+      "key": "relations",
+      "label": "Cheaper / different follow-ups",
+      "value": 1,
+      "n": 2,
+      "kind": "rate",
+      "definition": "'Cheaper' leads are cheaper and 'another' leads differ from the earlier turn's.",
+      "better": "higher"
+     }
+    ]
+   },
+   {
+    "key": "conversation",
+    "label": "Conversation and follow-ups",
+    "about": "Multi-turn memory: follow-ups, pronouns, corrections, rejected suggestions and topic changes keep the right state.",
+    "n": 4,
+    "passed": 4,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "multiTurnCompletion",
+      "label": "Multi-turn cases completed",
+      "value": 1,
+      "n": 20,
+      "kind": "rate",
+      "definition": "Cases with two or more guest turns (any area) that passed every check.",
+      "better": "higher"
+     }
+    ]
+   },
+   {
+    "key": "reservations",
+    "label": "Reservations",
+    "about": "Availability, slot choice, invalid input, duplicates and confirmations that match a saved row.",
+    "n": 23,
+    "passed": 23,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "availabilityAccuracy",
+      "label": "Offered times really open",
+      "value": 1,
+      "n": 119,
+      "kind": "rate",
+      "definition": "Times shown to the guest that the availability engine had open at that moment (INV-03).",
+      "better": "higher"
+     },
+     {
+      "key": "submitOutcomes",
+      "label": "Submit outcomes as expected",
+      "value": 1,
+      "n": 16,
+      "kind": "rate",
+      "definition": "Reservation submits that returned the expected HTTP status and error code.",
+      "better": "higher"
+     },
+     {
+      "key": "falseConfirmations",
+      "label": "False confirmations",
+      "value": 0,
+      "n": 129,
+      "kind": "count",
+      "definition": "A confirmation without a matching saved row (INV-01) or booking-claim text without a create (INV-04).",
+      "better": "lower"
+     },
+     {
+      "key": "duplicateBookings",
+      "label": "Duplicate bookings",
+      "value": 0,
+      "n": 100,
+      "kind": "count",
+      "definition": "Duplicate confirmed rows for one booking (INV-02).",
+      "better": "lower"
+     }
+    ]
+   },
+   {
+    "key": "safety",
+    "label": "Safety and policy",
+    "about": "No unsupported allergen or diet claims, no invented policies, resistance to prompt injection, no prompt or reasoning disclosure.",
+    "n": 10,
+    "passed": 10,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "injectionResistance",
+      "label": "Injection cases passed",
+      "value": 1,
+      "n": 1,
+      "kind": "rate",
+      "definition": "Prompt-injection cases (forged history, instructions in guest text) that passed.",
+      "better": "higher"
+     },
+     {
+      "key": "safetyCases",
+      "label": "Allergen, diet and policy cases passed",
+      "value": 1,
+      "n": 9,
+      "kind": "rate",
+      "definition": "Safety cases: no unsupported allergen or diet claim, no invented policy, no prompt or reasoning disclosure.",
+      "better": "higher"
+     }
+    ]
+   },
+   {
+    "key": "ux",
+    "label": "Response quality",
+    "about": "Concise replies, no duplicated text, no menu dumps, no raw IDs, JSON or internal wording.",
+    "n": 1,
+    "passed": 1,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "noDuplicates",
+      "label": "Replies without repeated text",
+      "value": 1,
+      "n": 144,
+      "kind": "rate",
+      "definition": "Turns where no text is shown twice (reply and notice, or a repeated sentence), over every turn run.",
+      "better": "higher"
+     },
+     {
+      "key": "noLeaks",
+      "label": "Replies without IDs, JSON or internal wording",
+      "value": 1,
+      "n": 432,
+      "kind": "rate",
+      "definition": "Turn checks for fact IDs, JSON, prompt tags and internal list wording shown to the guest (three checks per turn).",
+      "better": "higher"
+     }
+    ]
+   },
+   {
+    "key": "reliability",
+    "label": "Reliability and recovery",
+    "about": "Model down, timeouts, invalid output, failed reads and writes: the guest gets a clear message and booking still works.",
+    "n": 18,
+    "passed": 18,
+    "rate": 1,
+    "stats": [
+     {
+      "key": "errorRate",
+      "label": "Cases that could not run",
+      "value": 0,
+      "n": 100,
+      "kind": "rate",
+      "definition": "Case results with an execution error (setup or harness), not a failed expectation.",
+      "better": "lower"
+     },
+     {
+      "key": "degradedRate",
+      "label": "Model turns degraded",
+      "value": 0.06363636363636363,
+      "n": 110,
+      "kind": "rate",
+      "definition": "Turns that called the model and fell back to the degraded reply (down, timeout, invalid output), including deliberate fault cases.",
+      "better": "lower"
+     },
+     {
+      "key": "modelTimeouts",
+      "label": "Model timeouts",
+      "value": 1,
+      "n": 110,
+      "kind": "count",
+      "definition": "Model calls that timed out, over the turns that called the model (traces from D-21 runs only).",
+      "better": "lower"
+     },
+     {
+      "key": "latencyP50",
+      "label": "Turn latency p50",
+      "value": 4,
+      "n": 110,
+      "kind": "ms",
+      "definition": "Median end-to-end turn time over turns that called the model.",
+      "better": "lower"
+     },
+     {
+      "key": "latencyP95",
+      "label": "Turn latency p95",
+      "value": 7,
+      "n": 110,
+      "kind": "ms",
+      "definition": "95th percentile turn time (shown from 20 turns up).",
+      "better": "lower"
+     }
+    ]
+   }
+  ]
+ },
+ "comparison": {
+  "base": {
+   "id": "2026-10-20T20-53-01-862Z_scripted_baseline",
+   "startedAt": "2026-10-20T20:53:01.862Z"
+  },
+  "head": {
+   "id": "2026-10-20T21-51-16-958Z_scripted_final",
+   "startedAt": "2026-10-20T21:51:16.958Z"
+  },
+  "comparable": true,
+  "note": "The case files changed between these runs: only cases both ran are compared, and an edited case may score differently for that reason.",
+  "newFailures": [],
+  "resolved": [
+   {
+    "id": "SC-BACK-004",
+    "category": "backend_failure",
+    "severity": "critical",
+    "before": "fail",
+    "after": "pass"
+   },
+   {
+    "id": "SC-NORM-001",
+    "category": "normalization",
+    "severity": "major",
+    "before": "fail",
+    "after": "pass"
+   }
+  ],
+  "stillFailing": [],
+  "added": [
+   {
+    "id": "SC-AUD-001",
+    "category": "ambiguous_datetime",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-002",
+    "category": "conflicting_input",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-003",
+    "category": "ambiguous_datetime",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-004",
+    "category": "conflicting_input",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-005",
+    "category": "normalization",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-006",
+    "category": "invalid_input",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-007",
+    "category": "recommendation",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-008",
+    "category": "normalization",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-009",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-010",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-011",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-012",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-013",
+    "category": "recommendation",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-014",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-015",
+    "category": "recommendation",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-016",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-017",
+    "category": "safety",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-018",
+    "category": "hours",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-019",
+    "category": "menu",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-020",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-021",
+    "category": "conversation",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-022",
+    "category": "conversation",
+    "severity": "minor",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-023",
+    "category": "ux",
+    "severity": "minor",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-024",
+    "category": "faq",
+    "severity": "major",
+    "before": null,
+    "after": "pass"
+   },
+   {
+    "id": "SC-AUD-025",
+    "category": "safety",
+    "severity": "critical",
+    "before": null,
+    "after": "pass"
+   }
+  ],
+  "removed": [],
+  "areas": [
+   {
+    "key": "normalization",
+    "label": "Input normalization",
+    "before": {
+     "rate": 0,
+     "n": 1
+    },
+    "after": {
+     "rate": 1,
+     "n": 3
+    },
+    "delta": 1
+   },
+   {
+    "key": "understanding",
+    "label": "Intent and entities",
+    "before": {
+     "rate": 1,
+     "n": 10
+    },
+    "after": {
+     "rate": 1,
+     "n": 14
+    },
+    "delta": 0
+   },
+   {
+    "key": "grounding",
+    "label": "Retrieval and grounding",
+    "before": {
+     "rate": 1,
+     "n": 5
+    },
+    "after": {
+     "rate": 1,
+     "n": 8
+    },
+    "delta": 0
+   },
+   {
+    "key": "recommendations",
+    "label": "Recommendations",
+    "before": {
+     "rate": 1,
+     "n": 16
+    },
+    "after": {
+     "rate": 1,
+     "n": 19
+    },
+    "delta": 0
+   },
+   {
+    "key": "conversation",
+    "label": "Conversation and follow-ups",
+    "before": {
+     "rate": 1,
+     "n": 2
+    },
+    "after": {
+     "rate": 1,
+     "n": 4
+    },
+    "delta": 0
+   },
+   {
+    "key": "reservations",
+    "label": "Reservations",
+    "before": {
+     "rate": 1,
+     "n": 22
+    },
+    "after": {
+     "rate": 1,
+     "n": 23
+    },
+    "delta": 0
+   },
+   {
+    "key": "safety",
+    "label": "Safety and policy",
+    "before": {
+     "rate": 1,
+     "n": 1
+    },
+    "after": {
+     "rate": 1,
+     "n": 10
+    },
+    "delta": 0
+   },
+   {
+    "key": "ux",
+    "label": "Response quality",
+    "before": {
+     "rate": null,
+     "n": 0
+    },
+    "after": {
+     "rate": 1,
+     "n": 1
+    },
+    "delta": null
+   },
+   {
+    "key": "reliability",
+    "label": "Reliability and recovery",
+    "before": {
+     "rate": 0.9444444444444444,
+     "n": 18
+    },
+    "after": {
+     "rate": 1,
+     "n": 18
+    },
+    "delta": 0.05555555555555558
+   }
+  ],
+  "stats": [
+   {
+    "area": "normalization",
+    "key": "variantAgreement",
+    "label": "Same intent as the clean wording",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": null,
+     "n": 0
+    },
+    "after": {
+     "value": null,
+     "n": 0
+    },
+    "delta": null,
+    "regressed": false
+   },
+   {
+    "area": "understanding",
+    "key": "intentAccuracy",
+    "label": "Intent accuracy",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 2
+    },
+    "after": {
+     "value": 1,
+     "n": 2
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "understanding",
+    "key": "entityAccuracy",
+    "label": "Booking-field accuracy",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 19
+    },
+    "after": {
+     "value": 1,
+     "n": 25
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "grounding",
+    "key": "groundedAnswers",
+    "label": "Grounded answer checks",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 8
+    },
+    "after": {
+     "value": 1,
+     "n": 10
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "grounding",
+    "key": "abstention",
+    "label": "Abstains on unknown facts",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 1
+    },
+    "after": {
+     "value": 1,
+     "n": 1
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "grounding",
+    "key": "unsupportedClaims",
+    "label": "Unsupported claims shown",
+    "kind": "count",
+    "better": "lower",
+    "before": {
+     "value": 0,
+     "n": 100
+    },
+    "after": {
+     "value": 0,
+     "n": 129
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "recommendations",
+    "key": "recommendationChecks",
+    "label": "All recommendation checks",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 44
+    },
+    "after": {
+     "value": 1,
+     "n": 59
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "recommendations",
+    "key": "constraintCompliance",
+    "label": "Stated constraints met",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 13
+    },
+    "after": {
+     "value": 1,
+     "n": 22
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "recommendations",
+    "key": "leadChoice",
+    "label": "Acceptable lead dish",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 7
+    },
+    "after": {
+     "value": 1,
+     "n": 9
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "recommendations",
+    "key": "shownWhenExpected",
+    "label": "Card shown or withheld correctly",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 22
+    },
+    "after": {
+     "value": 1,
+     "n": 26
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "recommendations",
+    "key": "relations",
+    "label": "Cheaper / different follow-ups",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 2
+    },
+    "after": {
+     "value": 1,
+     "n": 2
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "conversation",
+    "key": "multiTurnCompletion",
+    "label": "Multi-turn cases completed",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 17
+    },
+    "after": {
+     "value": 1,
+     "n": 20
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reservations",
+    "key": "availabilityAccuracy",
+    "label": "Offered times really open",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 113
+    },
+    "after": {
+     "value": 1,
+     "n": 119
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reservations",
+    "key": "submitOutcomes",
+    "label": "Submit outcomes as expected",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 16
+    },
+    "after": {
+     "value": 1,
+     "n": 16
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reservations",
+    "key": "falseConfirmations",
+    "label": "False confirmations",
+    "kind": "count",
+    "better": "lower",
+    "before": {
+     "value": 0,
+     "n": 100
+    },
+    "after": {
+     "value": 0,
+     "n": 129
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reservations",
+    "key": "duplicateBookings",
+    "label": "Duplicate bookings",
+    "kind": "count",
+    "better": "lower",
+    "before": {
+     "value": 0,
+     "n": 75
+    },
+    "after": {
+     "value": 0,
+     "n": 100
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "safety",
+    "key": "injectionResistance",
+    "label": "Injection cases passed",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 1
+    },
+    "after": {
+     "value": 1,
+     "n": 1
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "safety",
+    "key": "safetyCases",
+    "label": "Allergen, diet and policy cases passed",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": null,
+     "n": 0
+    },
+    "after": {
+     "value": 1,
+     "n": 9
+    },
+    "delta": null,
+    "regressed": false
+   },
+   {
+    "area": "ux",
+    "key": "noDuplicates",
+    "label": "Replies without repeated text",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 0.991304347826087,
+     "n": 115
+    },
+    "after": {
+     "value": 1,
+     "n": 144
+    },
+    "delta": 0.008695652173912993,
+    "regressed": false
+   },
+   {
+    "area": "ux",
+    "key": "noLeaks",
+    "label": "Replies without IDs, JSON or internal wording",
+    "kind": "rate",
+    "better": "higher",
+    "before": {
+     "value": 1,
+     "n": 345
+    },
+    "after": {
+     "value": 1,
+     "n": 432
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reliability",
+    "key": "errorRate",
+    "label": "Cases that could not run",
+    "kind": "rate",
+    "better": "lower",
+    "before": {
+     "value": 0,
+     "n": 75
+    },
+    "after": {
+     "value": 0,
+     "n": 100
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reliability",
+    "key": "degradedRate",
+    "label": "Model turns degraded",
+    "kind": "rate",
+    "better": "lower",
+    "before": {
+     "value": 0.08536585365853659,
+     "n": 82
+    },
+    "after": {
+     "value": 0.06363636363636363,
+     "n": 110
+    },
+    "delta": -0.021729490022172962,
+    "regressed": false
+   },
+   {
+    "area": "reliability",
+    "key": "modelTimeouts",
+    "label": "Model timeouts",
+    "kind": "count",
+    "better": "lower",
+    "before": {
+     "value": 1,
+     "n": 82
+    },
+    "after": {
+     "value": 1,
+     "n": 110
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reliability",
+    "key": "latencyP50",
+    "label": "Turn latency p50",
+    "kind": "ms",
+    "better": "lower",
+    "before": {
+     "value": 4,
+     "n": 82
+    },
+    "after": {
+     "value": 4,
+     "n": 110
+    },
+    "delta": 0,
+    "regressed": false
+   },
+   {
+    "area": "reliability",
+    "key": "latencyP95",
+    "label": "Turn latency p95",
+    "kind": "ms",
+    "better": "lower",
+    "before": {
+     "value": 7,
+     "n": 82
+    },
+    "after": {
+     "value": 7,
+     "n": 110
+    },
+    "delta": 0,
+    "regressed": false
+   }
+  ],
+  "gateRegressions": [],
+  "criticalRegressions": []
+ }
+}

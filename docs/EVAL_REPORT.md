@@ -278,3 +278,29 @@ Phase 7 iteration runs are committed in `evals/results/`:
 - `*_review-fixes`, `*_seating-check`;
 - the release at `ab5d2b5` (`2026-10-20T12-16-30-311Z`);
 - `*_final-check`.
+
+## D-21: evaluation framework, baseline and improvements (2026-10-21)
+
+The sections above describe the Phase 7 release (T-20). D-21 extended the harness (quality areas, suites, per-case traces, response-shape checks, baseline comparison, reports, the `/admin/evals` dashboard; `evals/README.md`), measured a baseline, audited the app, fixed what the evidence showed and measured again. All live numbers: `qwen3.5:9b` (digest d63f830f28d5), temperature 0, seed 42, context 8192, Ollama 0.40.5, one run per case, on a shared M4 Pro (load average 5–10 during the runs). Runs: baseline `2026-10-20T20-53-0*_baseline` (commit 56297b8), after-fix `…21-28-*_after` (b6e57e6), final `…21-51-*_final` (24437ac); reports in `evals/reports/`.
+
+| Set | Baseline | Final | Change | Cases |
+|---|---|---|---|---|
+| Live cases present in both runs | 173/187 (92.5%) | 186/187 (99.5%) | +13 | 187 |
+| Live audit cases (on the baseline commit vs final) | 2/12 | 11/12 | +9 | 12 |
+| Live held-out cases (written after the fixes, not tuned on) | 7/12 | 9/12 | +2 | 12 |
+| Scripted cases present in both runs | 73/75 | 75/75 | +2 | 75 |
+| Scripted audit cases | 0/24 | 25/25 | +24 (+1 case) | 24–25 |
+| Critical invariant violations (live) | 0 | 0 | 0 | 187 / 211 cases |
+| Release gates met (full live run) | 15/16 (recovery 0.80) | 16/16 | +1 | thresholds.json |
+| Booking-field accuracy | 98.3% | 100% | +1.7 pts | 58 → 65 checks |
+| Grounded answer checks | 94.7% | 96.8% | +2.1 pts | 114 → 125 checks |
+| Stated recommendation constraints met | 90.9% | 96.6% | +5.7 pts | 22 → 29 turns |
+| Cheaper / different follow-ups | 60% | 100% | +40 pts | 5 turns |
+| Multi-turn cases completed | 88.0% | 96.2% | +8.2 pts | 25 → 26 cases |
+| Allergen, diet and policy cases | 70.0% | 88.2% | +18.2 pts | 10 → 17 cases |
+| Replies without repeated text | 99.6% | 100% | +0.4 pts | 225 → 250 turns |
+| Turn latency p50 / p95 (model turns) | 3.4 s / 8.7 s | 3.5 s / 8.1 s | ~0 / −0.6 s | 215 → 240 turns |
+
+Caveats: the final run has more cases than the baseline (audit and held-out sets), so whole-run rates are not like for like; the first row is. The held-out set is small (12) and two of its failures were fixed after it was scored (LV-HOLD-009 "12 colleagues and I", LV-HOLD-012 "make it vegan"); those fixes were verified live on 11 targeted cases (11/11) but not in a full run. Latency depends on machine load. One run per case: stochastic variation is not measured here (the release runs three).
+
+**Remaining failures in the final run (5 of 211):** LV-SAFE-008 and LV-HOLD-010 (a meta request plus a restaurant question is read as off-topic; nothing is disclosed, but the question goes unanswered; prompt v6 did not change this), LV-AUD-008 (for a group-size question the chooser asked a question twice and the guest got options instead of one pick), LV-HOLD-009 and LV-HOLD-012 (fixed afterwards, see above). `eval:report` marks the release check not met because LV-HOLD-010 is a critical case.

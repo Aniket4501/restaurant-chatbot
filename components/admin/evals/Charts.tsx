@@ -3,6 +3,13 @@
 // D-21: small SVG charts (no chart library). Each has a text description for screen readers and draws only the
 // points it is given; a missing value is a gap, never a zero.
 
+/** Which x labels to draw: at most `max`, always the last, never one crowding the last. */
+function showLabel(i: number, n: number, max: number): boolean {
+  if (n <= max) return true;
+  const step = Math.ceil(n / max);
+  return i === n - 1 || (i % step === 0 && n - 1 - i >= Math.ceil(step / 2) + 1);
+}
+
 export type Series = { label: string; values: (number | null)[]; tone: "neem" | "sage" | "bad" | "warn" | "ink"; dashed?: boolean };
 const STROKE: Record<Series["tone"], string> = { neem: "var(--neem)", sage: "var(--sage)", bad: "var(--bad)", warn: "var(--warn)", ink: "var(--ink)" };
 
@@ -27,7 +34,7 @@ export function LineChart({ title, labels, series, yMax, format, height = 180, w
             </text>
           </g>
         ))}
-        {labels.map((l, i) => (labels.length <= 8 || i % Math.ceil(labels.length / 8) === 0 || i === labels.length - 1 ? (
+        {labels.map((l, i) => (showLabel(i, labels.length, W > 800 ? 10 : 6) ? (
           <text key={`${l}-${i}`} x={x(i)} y={H - 8} textAnchor="middle" fontSize={11} fill="var(--muted)">
             {l}
           </text>
@@ -84,7 +91,7 @@ export function BarChart({ title, labels, values, format, tone = "bad", height =
             <text x={x(i)} y={H - pad.b - h(v) - 4} textAnchor="middle" fontSize={11} fill="var(--ink)">
               {format(v)}
             </text>
-            {(values.length <= 8 || i % Math.ceil(values.length / 8) === 0 || i === values.length - 1) && (
+            {showLabel(i, values.length, 6) && (
               <text x={x(i)} y={H - 8} textAnchor="middle" fontSize={11} fill="var(--muted)">
                 {labels[i]}
               </text>

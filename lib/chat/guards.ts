@@ -95,7 +95,7 @@ export function plainWeekday(raw: string): number | null {
 // people word counts, and the last one stated is the one that stands ("we were 10, now just 6 of us").
 const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, dozen: 12, "a dozen": 12 };
 const COUNT = `\\d{1,3}|a dozen|${Object.keys(COUNT_WORDS).filter((k) => k !== "a dozen").join("|")}`;
-const PARTY_RE = new RegExp(`\\b(?:party|group|table)\\s+(?:of|for)\\s+(${COUNT})\\b|\\b(${COUNT})\\s*(?:people|persons|guests|pax|adults|of us)\\b`, "gi");
+const PARTY_RE = new RegExp(`\\b(?:party|group|table)\\s+(?:of|for)\\s+(${COUNT})\\b|\\b(${COUNT})\\s*(?:people|persons|guests|pax|adults|of us)\\b|\\b(${COUNT})\\s+(?:colleagues|friends|coworkers|co-workers|family members|relatives|teammates)\\b(\\s+and\\s+(?:i|me|myself)\\b)?`, "gi");
 const BOOKING_CUE_RE = /\b(?:book\w*|reserv\w*|table|seat\w*|come|coming|visit)\b/i;
 
 /**
@@ -105,8 +105,9 @@ const BOOKING_CUE_RE = /\b(?:book\w*|reserv\w*|table|seat\w*|come|coming|visit)\
 export function largePartyStated(raw: string): number | null {
   const t = foldDigits(raw).toLowerCase();
   const m = [...t.matchAll(PARTY_RE)].at(-1);
-  const word = m ? (m[1] ?? m[2]) : null;
-  const n = word === null ? NaN : /^\d/.test(word) ? Number(word) : (COUNT_WORDS[word] ?? NaN);
+  const word = m ? (m[1] ?? m[2] ?? m[3]) : null;
+  // "my 12 colleagues and I" is 13 (D-21 held-out LV-HOLD-009).
+  const n = (word === null ? NaN : /^\d/.test(word) ? Number(word) : (COUNT_WORDS[word] ?? NaN)) + (m?.[4] ? 1 : 0);
   return n > RULES.onlinePartyMax && BOOKING_CUE_RE.test(t) ? n : null;
 }
 
