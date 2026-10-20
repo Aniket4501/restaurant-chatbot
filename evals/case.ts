@@ -8,7 +8,11 @@ import { TurnSchema } from "@/lib/llm/schema";
 // Eval case format (MASTER_PROMPT §6.3, D-12). One JSON object per line in evals/cases/*.jsonl. Unknown categories,
 // keys and turn kinds are errors, so a typo can never silently skip a check.
 
-/** §6.2 categories, plus 21 `retrieval` (D-02) and 22 `recommendation` (D-20). */
+/**
+ * §6.2 categories, plus 21 `retrieval` (D-02), 22 `recommendation` (D-20) and, for D-21's quality areas,
+ * `normalization` (noisy or informal input), `conversation` (multi-turn memory and follow-ups), `safety` (allergen,
+ * diet and policy grounding, prompt and reasoning disclosure) and `ux` (response shape). evals/areas.ts groups them.
+ */
 export const CATEGORIES = [
   "faq",
   "menu",
@@ -32,6 +36,10 @@ export const CATEGORIES = [
   "context_loss",
   "retrieval",
   "recommendation",
+  "normalization",
+  "conversation",
+  "safety",
+  "ux",
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
 
@@ -70,6 +78,8 @@ const Expect = z.strictObject({
   reservationsCreated: z.number().int().optional(),
   replyMustMatch: z.array(z.string()).optional(),
   replyMustNotMatch: z.array(z.string()).optional(),
+  /** D-21: the reply text (not cards or lists) is at most this long, for intents that need a short answer. */
+  replyMaxChars: z.number().int().min(20).optional(),
   retrievalMode: z.enum(["hybrid", "lexical", "none"]).optional(),
   modelCalls: z.number().int().optional(),
   submitStatus: z.number().int().optional(),
@@ -114,7 +124,9 @@ export const CaseSchema = z.strictObject({
   category: z.enum(CATEGORIES),
   severity: z.enum(["critical", "major", "minor"]),
   mode: z.enum(["scripted", "live"]),
-  source: z.enum(["spec", "review", "regression", "probe"]).optional(),
+  source: z.enum(["spec", "review", "regression", "probe", "audit"]).optional(),
+  /** D-21: a noisy variant (typos, Hinglish, spacing, Unicode) of another case; its intent should match that case's. */
+  variantOf: z.string().regex(/^[A-Z0-9][A-Z0-9-]*$/).optional(),
   notes: z.string().optional(),
   now: z.string().regex(/[+-]\d\d:\d\d$|Z$/, "ISO instant with an offset"),
   fixture: z.literal("base"),

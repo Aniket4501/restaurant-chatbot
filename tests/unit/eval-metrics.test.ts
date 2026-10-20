@@ -6,8 +6,8 @@ import type { CaseResult } from "@/evals/run";
 
 const thresholds = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../evals/thresholds.json"), "utf8")) as Thresholds;
 type Turn = CaseResult["turns"][number];
-const turn = (o: Partial<Turn>): Turn => ({ kind: "guest", input: "x", reply: "", blocks: [], cited: [], outcome: "faq_answer", intent: "faq", retrievalMode: "hybrid", latencyMs: 1000, modelMs: 900, promptTokens: 3600, cachedTokens: 3500, outputTokens: 50, firstTryValid: true, ...o });
-const result = (o: Partial<CaseResult>): CaseResult => ({ id: "X", category: "faq", severity: "critical", run: 1, passed: true, failures: [], violations: [], checks: [], offered: { total: 0, open: 0 }, modelCalls: 1, turns: [turn({})], ...o });
+const turn = (o: Partial<Turn>): Turn => ({ index: 0, kind: "guest", input: "x", reply: "", blocks: [], cited: [], outcome: "faq_answer", intent: "faq", retrievalMode: "hybrid", latencyMs: 1000, modelMs: 900, promptTokens: 3600, cachedTokens: 3500, outputTokens: 50, firstTryValid: true, ...o });
+const result = (o: Partial<CaseResult>): CaseResult => ({ id: "X", category: "faq", severity: "critical", run: 1, passed: true, status: "pass", durationMs: 10, expect: { expect: null, forbidden: [], notes: null, variantOf: null }, failures: [], violations: [], checks: [], offered: { total: 0, open: 0 }, modelCalls: 1, turns: [turn({})], ...o });
 
 describe("computeMetrics (§6.5)", () => {
   it("scores each metric from its expectation keys and categories", () => {

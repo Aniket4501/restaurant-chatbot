@@ -1,0 +1,21 @@
+{
+ "notes": "D-21: the smoke suite, a few cases per quality area (evals/areas.ts), run by npm run eval:smoke and the dashboard. Every case is in the full suite.",
+ "smoke": [
+  "SC-REC-001",
+  "SC-REC-014",
+  "SC-REC-015",
+  "SC-MENU-003",
+  "SC-BACK-003",
+  "SC-BACK-004",
+  "SC-MALF-002",
+  "LV-SMOKE-01",
+  "LV-SMOKE-04",
+  "LV-FAQ-001",
+  "LV-MENU-006",
+  "LV-REC-001",
+  "LV-REC-005",
+  "LV-REC-009",
+  "LV-REC-013",
+  "LV-REG-007"
+ ]
+}

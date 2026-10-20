@@ -31,6 +31,7 @@ import { TURN_JSON_SCHEMA } from "@/lib/llm/schema";
 import { maskText } from "@/lib/llm/redact";
 import { modelFor, OLLAMA_CHAT_READY } from "@/lib/llm/provider";
 import { toInstant } from "@/lib/time/tz";
+import { AREAS, areaOf } from "@/evals/areas";
 import { CATEGORIES, loadCases, type EvalCase, type Expectation } from "@/evals/case";
 import { checkCase, offeredStarts, snapshotRows, type CaseRecord, type TurnRecord, type Violation } from "@/evals/invariants";
 import { checkThresholds, computeMetrics, type RetrievalMetrics, type Thresholds } from "@/evals/metrics";
@@ -41,6 +42,8 @@ import { checkThresholds, computeMetrics, type RetrievalMetrics, type Thresholds
 // submitOutcome mapping as the UI. Exits non-zero if any case fails or any invariant is violated (INV-08).
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** Where runs are kept (D-21: the dashboard reads them). EVALS_RESULTS_DIR points tests and side runs elsewhere. */
+export const RESULTS_DIR = process.env.EVALS_RESULTS_DIR ? path.resolve(process.env.EVALS_RESULTS_DIR) : path.join(ROOT, "evals/results");
 const ZONE = "Asia/Kolkata";
 
 export type CaseResult = {
@@ -49,6 +52,11 @@ export type CaseResult = {
   severity: string;
   run: number;
   passed: boolean;
+  /** D-21: "fail" = an expectation or invariant failed; "error" = the case could not run (setup or harness error). */
+  status: "pass" | "fail" | "error";
+  durationMs: number;
+  /** What the case was scored against (case-level expect and forbidden outcomes), for the report and dashboard. */
+  expect: { expect: Expectation | null; forbidden: string[]; notes: string | null; variantOf: string | null };
   failures: string[];
   violations: Violation[];
   /** Every expectation result, for the §6.5 metrics. */
@@ -57,6 +65,8 @@ export type CaseResult = {
   offered: { total: number; open: number };
   modelCalls: number;
   turns: {
+    /** The case turn this entry belongs to (0-based). */
+    index: number;
     kind: string;
     /** Masked guest text, the action, or "submit" (the transcript, §6.7). */
     input: string;
@@ -72,6 +82,13 @@ export type CaseResult = {
     cachedTokens: number | null;
     outputTokens: number | null;
     firstTryValid: boolean | null;
+    /** D-21 debugging detail: the turn's trace (tool calls, validation results), booking state, retrieved fact IDs,
+     * its own expectations and their results. Eval inputs are synthetic; names and phones are masked. */
+    trace?: TraceEntry[];
+    draft?: Omit<Draft, "selected"> & { selected: number | null };
+    retrieved?: string[];
+    expect?: Expectation | null;
+    checks?: Check[];
   }[];
 };
 
@@ -118,6 +135,33 @@ function unmetShown(i: MenuView, s: NonNullable<NonNullable<Expectation["recomme
   if (s.course !== undefined && i.course !== s.course) return `is ${i.course}, not ${s.course}`;
   if (s.mild && (i.spice === null || i.spice > 1)) return "is not mild";
   return null;
+}
+
+/**
+ * D-21 response-shape checks on every reply, whatever the case: fact IDs, JSON, prompt tags or internal list wording
+ * shown to the guest, and the same text shown twice (the D-20 duplicate card, the degraded notice). These fail the case.
+ */
+const LEAK_ID = /\b(?:menu|faq|branch|hours|exception|restaurant):[a-z0-9][a-z0-9-]+/i;
+const LEAK_JSON = /[{}]|"[a-zA-Z_]+"\s*:/;
+const INTERNAL = /cheapest first|\(\d+ available\)|(?:^|\n)\s*[QA]:\s|citedFactIds|answerable|<\/?(?:guest_message|history)>|\bmodel_call\b|\bprefs\b/i;
+export function checkUx(t: Pick<TurnView, "index" | "shown" | "kind">): Check[] {
+  if (!t.shown) return [];
+  const blocks = t.shown.blocks ?? [];
+  const visible = [t.shown.text, ...blocks.flatMap((b) => (b.type === "notice" ? [b.text] : []))].filter(Boolean);
+  const out: Check[] = [];
+  const check = (key: string, ok: boolean, detail: string) => out.push({ key: `ux.${key}`, ok, detail: `turn ${t.index + 1}: ${detail}` });
+  const leak = visible.map((s) => LEAK_ID.exec(s)?.[0] ?? null).find(Boolean);
+  check("leak", !leak, `shows an internal fact ID (${leak})`);
+  const json = visible.find((s) => LEAK_JSON.test(s));
+  check("json", !json, `shows JSON or braces: "${json?.slice(0, 60)}"`);
+  const internal = visible.map((s) => INTERNAL.exec(s)?.[0] ?? null).find(Boolean);
+  check("internal", !internal, `shows internal wording (${internal})`);
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const texts = visible.map(norm).filter((s) => s.length >= 20);
+  const sentences = norm(t.shown.text).split(/(?<=[.!?])\s+/).filter((s) => s.length >= 20);
+  const dup = texts.find((s, i) => texts.indexOf(s) !== i) ?? sentences.find((s, i) => sentences.indexOf(s) !== i);
+  check("duplicate", !dup, `shows the same text twice: "${dup?.slice(0, 60)}"`);
+  return out;
 }
 
 function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs: () => string[]; refOfTurn: (i: number) => string | null; leadOfTurn?: (i: number) => MenuView | null }): Check[] {
@@ -171,6 +215,7 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
   if (e.reservationsCreated !== undefined) check("reservationsCreated", ctx.createdRefs().length === e.reservationsCreated, `reservations created ${ctx.createdRefs().length} ≠ ${e.reservationsCreated}`);
   for (const re of e.replyMustMatch ?? []) check("replyMustMatch", new RegExp(re, "i").test(text), `reply does not match /${re}/: "${text.slice(0, 100)}"`);
   for (const re of e.replyMustNotMatch ?? []) check("replyMustNotMatch", !new RegExp(re, "i").test(text), `reply matches /${re}/`);
+  if (e.replyMaxChars !== undefined) check("replyLength", (t.shown?.text ?? "").length <= e.replyMaxChars, `reply is ${(t.shown?.text ?? "").length} characters (at most ${e.replyMaxChars})`);
   if (e.retrievalMode !== undefined) check("retrievalMode", t.retrievalMode === e.retrievalMode, `retrieval ${t.retrievalMode} ≠ ${e.retrievalMode}`);
   if (e.modelCalls !== undefined) check("modelCalls", t.modelCalls === e.modelCalls, `model calls ${t.modelCalls} ≠ ${e.modelCalls}`);
   if (e.submitStatus !== undefined) check("submitStatus", t.submit?.status === e.submitStatus, `submit status ${t.submit?.status} ≠ ${e.submitStatus}`);
@@ -179,25 +224,25 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
     const r = e.recommend;
     const items = dishes; // every dish on screen, in cards and lists (review)
     const lead = leadOf(t.shown?.blocks);
-    if (r.shown !== undefined) check("recommend", (lead !== null) === r.shown, r.shown ? "no recommendation shown" : `a recommendation was shown (${lead?.id})`);
+    if (r.shown !== undefined) check("recommend.shown", (lead !== null) === r.shown, r.shown ? "no recommendation shown" : `a recommendation was shown (${lead?.id})`);
     if (r.satisfies) {
       // One check per turn, whatever the number of dishes shown (review: recommendationValidity was weighted by dishes).
       const bad = items.flatMap((i) => {
         const why = unmetShown(i, r.satisfies!);
         return why ? [`${i.id} ${why}`] : [];
       });
-      check("recommend", items.length > 0 && !bad.length, items.length ? bad.join("; ") : "no dish shown to check");
+      check("recommend.constraints", items.length > 0 && !bad.length, items.length ? bad.join("; ") : "no dish shown to check");
     }
-    if (r.anyOf) check("recommend", !!lead && r.anyOf.includes(lead.id), `lead dish ${lead?.id ?? "none"} not in ${r.anyOf.join(", ")}`);
-    if (r.leadIfShown && lead) check("recommend", r.leadIfShown.includes(lead.id), `lead dish ${lead.id} not in ${r.leadIfShown.join(", ")}`);
-    if (r.notIds) check("recommend", !items.some((i) => r.notIds!.includes(i.id)), `shows one of ${r.notIds.join(", ")}`);
+    if (r.anyOf) check("recommend.lead", !!lead && r.anyOf.includes(lead.id), `lead dish ${lead?.id ?? "none"} not in ${r.anyOf.join(", ")}`);
+    if (r.leadIfShown && lead) check("recommend.lead", r.leadIfShown.includes(lead.id), `lead dish ${lead.id} not in ${r.leadIfShown.join(", ")}`);
+    if (r.notIds) check("recommend.constraints", !items.some((i) => r.notIds!.includes(i.id)), `shows one of ${r.notIds.join(", ")}`);
     if (r.cheaperThanTurn !== undefined) {
       const prev = ctx.leadOfTurn?.(r.cheaperThanTurn - 1) ?? null;
-      check("recommend", !!lead && !!prev && lead.price < prev.price, `lead ${lead?.id ?? "none"} (₹${lead?.price}) is not cheaper than turn ${r.cheaperThanTurn}'s ${prev?.id ?? "none"} (₹${prev?.price})`);
+      check("recommend.relation", !!lead && !!prev && lead.price < prev.price, `lead ${lead?.id ?? "none"} (₹${lead?.price}) is not cheaper than turn ${r.cheaperThanTurn}'s ${prev?.id ?? "none"} (₹${prev?.price})`);
     }
     if (r.differentFromTurn !== undefined) {
       const prev = ctx.leadOfTurn?.(r.differentFromTurn - 1) ?? null;
-      check("recommend", !!lead && !!prev && lead.id !== prev.id, `lead ${lead?.id ?? "none"} repeats turn ${r.differentFromTurn}'s ${prev?.id ?? "none"}`);
+      check("recommend.relation", !!lead && !!prev && lead.id !== prev.id, `lead ${lead?.id ?? "none"} repeats turn ${r.differentFromTurn}'s ${prev?.id ?? "none"}`);
     }
   }
   if (e.menuShown !== undefined) check("menuShown", (t.shown?.blocks.some((x) => x.type === "menu_list") ?? false) === e.menuShown, e.menuShown ? "no menu list shown" : "a menu list was shown");
@@ -253,7 +298,24 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
   const saved = { log: console.log, warn: console.warn, error: console.error, info: console.info };
   const capture = (...a: unknown[]) => void logs.push(a.map(String).join(" "));
   let db: DB | null = null;
-  const result: CaseResult = { id: c.id, category: c.category, severity: c.severity, run: opts.run ?? 1, passed: false, failures, violations: [], checks: [], offered: { total: 0, open: 0 }, modelCalls: 0, turns: [] };
+  const t0 = Date.now();
+  const result: CaseResult = {
+    id: c.id,
+    category: c.category,
+    severity: c.severity,
+    run: opts.run ?? 1,
+    passed: false,
+    status: "fail",
+    durationMs: 0,
+    expect: { expect: c.expect ?? null, forbidden: c.forbidden ?? [], notes: c.notes ?? null, variantOf: c.variantOf ?? null },
+    failures,
+    violations: [],
+    checks: [],
+    offered: { total: 0, open: 0 },
+    modelCalls: 0,
+    turns: [],
+  };
+  let errored = false;
   try {
     console.log = console.warn = console.error = console.info = capture;
     const now = Date.parse(c.now);
@@ -378,6 +440,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         else if (!r.draft.selected) lastConfirm = null;
         const last = input.messages.at(-1);
         result.turns.push({
+          index,
           kind,
           input: input.action ? JSON.stringify(input.action) : maskText(last?.content ?? ""),
           reply: r.reply.text,
@@ -422,7 +485,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         shown = { text: r.outcome.text, blocks: r.outcome.blocks };
         outcome = "submit";
         lastSubmit = { key, body, card }; // remembered so a lost response or reload can replay it
-        result.turns.push({ kind, input: `submit (HTTP ${r.status})`, reply: r.outcome.text, blocks: r.outcome.blocks.map(blockLine), cited: [], outcome: "submit", intent: null, retrievalMode: null, latencyMs: null, modelMs: null, promptTokens: null, cachedTokens: null, outputTokens: null, firstTryValid: null });
+        result.turns.push({ index, kind, input: `submit (HTTP ${r.status})`, reply: r.outcome.text, blocks: r.outcome.blocks.map(blockLine), cited: [], outcome: "submit", intent: null, retrievalMode: null, latencyMs: null, modelMs: null, promptTokens: null, cachedTokens: null, outputTokens: null, firstTryValid: null });
         if (r.outcome.clearDraft) {
           draft = emptyDraft();
           lastConfirm = null;
@@ -438,6 +501,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
           trace = [{ action: "create_reservation", result: submit }];
           shown = { text: r.outcome.text, blocks: r.outcome.blocks };
           outcome = "submit";
+          result.turns.push({ index, kind, input: `${turn.simulate}: replay (HTTP ${r.status})`, reply: r.outcome.text, blocks: r.outcome.blocks.map(blockLine), cited: [], outcome: "submit", intent: null, retrievalMode: null, latencyMs: null, modelMs: null, promptTokens: null, cachedTokens: null, outputTokens: null, firstTryValid: null });
           if (r.outcome.clearDraft) {
             draft = emptyDraft();
             lastConfirm = null;
@@ -448,6 +512,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         const r = bookAs(turn.book.branch, turn.book.start, turn.book.party, turn.book.phone ?? syntheticPhone(500 + index), "Other Guest");
         if (!("reservation" in r)) throw new Error(`turn ${index + 1}: {book} failed: ${r.code}`);
         bookTurnRefs.add(r.reservation.ref);
+        result.turns.push({ index, kind, input: `another guest books ${turn.book.branch} ${turn.book.start} for ${turn.book.party}`, reply: "", blocks: [], cited: [], outcome: null, intent: null, retrievalMode: null, latencyMs: null, modelMs: null, promptTokens: null, cachedTokens: null, outputTokens: null, firstTryValid: null });
       }
 
       const rec: TurnView = {
@@ -473,9 +538,17 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
       result.modelCalls += rec.modelCalls;
       result.offered.total += rec.offered.length;
       result.offered.open += rec.offered.filter((o) => o.open).length;
-      const turnChecks = checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks) });
+      const turnChecks = [...checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks) }), ...checkUx(rec)];
       result.checks.push(...turnChecks);
       failures.push(...turnChecks.filter((x) => !x.ok).map((x) => x.detail));
+      const entry = result.turns.findLast((x) => x.index === index);
+      if (entry) {
+        entry.trace = trace;
+        entry.draft = { ...draft, selected: draft.selected?.startsAt ?? null };
+        entry.retrieved = trace.flatMap((x) => (x.action === "retrieve" ? x.ids : []));
+        entry.expect = turn.expect ?? null;
+        entry.checks = turnChecks;
+      }
     }
 
     const last = records.at(-1)!;
@@ -501,13 +574,21 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
     for (const [fb, inv] of [["booking_claim_text", "INV-04"], ["slot_not_in_engine_output", "INV-03"]] as const)
       if (c.forbidden?.includes(fb) && result.violations.some((v) => v.inv === inv)) failures.push(`forbidden: ${fb}`);
   } catch (e) {
-    failures.push(`error: ${(e as Error).message}`);
+    // A scripted case whose model script ran out means the app called the model more than the case expects: that is
+    // the app's behaviour (a failure), not a harness error.
+    if ((e as { name?: string })?.name === "ScriptExhaustedError") failures.push(`unexpected model call: ${(e as Error).message}`);
+    else {
+      errored = true;
+      failures.push(`error: ${(e as Error).message}`);
+    }
   } finally {
     Object.assign(console, saved);
     db?.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
   result.passed = failures.length === 0 && result.violations.length === 0;
+  result.status = errored ? "error" : result.passed ? "pass" : "fail";
+  result.durationMs = Date.now() - t0;
   return result;
 }
 
@@ -589,7 +670,17 @@ async function ollamaState(baseUrl: string, names: string[]): Promise<{ version:
 async function main(): Promise<number> {
   const mode = arg("mode");
   if (mode !== "scripted" && mode !== "live") {
-    console.error("usage: tsx evals/run.ts --mode scripted|live [--case ID,ID] [--category slug] [--runs N] [--cases DIR] [--out FILE]");
+    console.error("usage: tsx evals/run.ts --mode scripted|live [--suite smoke|full] [--case ID,ID] [--category slug] [--area key] [--runs N] [--save] [--label L] [--cases DIR] [--out FILE]");
+    return 2;
+  }
+  const suite = arg("suite") ?? "full";
+  if (suite !== "smoke" && suite !== "full") {
+    console.error(`unknown suite ${suite} (smoke|full)`);
+    return 2;
+  }
+  const area = arg("area");
+  if (area && !AREAS.some((a) => a.key === area)) {
+    console.error(`unknown area ${area} (${AREAS.map((a) => a.key).join("|")})`);
     return 2;
   }
   const casesDir = path.resolve(arg("cases") ?? path.join(ROOT, "evals/cases"));
@@ -622,11 +713,20 @@ async function main(): Promise<number> {
       .slice(0, 16),
   });
   const atStart = provenance();
-  cases = cases.filter((c) => c.mode === mode && (!category || c.category === category) && (!only || only.includes(c.id)));
+  // D-21 suites: "smoke" is the short list in evals/suites.json (a few cases per area); "full" is every case.
+  const smoke = new Set((JSON.parse(fs.readFileSync(path.join(ROOT, "evals/suites.json"), "utf8")) as { smoke: string[] }).smoke);
+  const unknown = only?.filter((id) => !cases.some((c) => c.id === id)) ?? [];
+  if (unknown.length) {
+    console.error(`eval: unknown case ${unknown.join(", ")}`);
+    return 2;
+  }
+  cases = cases.filter((c) => c.mode === mode && (suite === "full" || smoke.has(c.id)) && (!category || c.category === category) && (!area || areaOf(c.category) === area) && (!only || only.includes(c.id)));
   if (!cases.length) {
     console.error(`eval: no ${mode} cases selected`);
     return 2;
   }
+  // The first line says how much will run (the dashboard's progress bar reads it).
+  console.log(`eval:${mode} ${suite}: ${cases.length} cases${runs > 1 ? ` x ${runs} runs` : ""}`);
   let model: ModelClient | undefined;
   let embedder: Embedder | null = null;
   let ollama: { baseUrl: string; names: string[] } | null = null;
@@ -638,7 +738,12 @@ async function main(): Promise<number> {
   }
   const results: CaseResult[] = [];
   const started = new Date();
-  const partial = mode === "live" ? path.join(ROOT, "evals/results", `${started.toISOString().replace(/[:.]/g, "-")}_${mode}.partial.jsonl`) : null;
+  // Progress, one line per case, so an interrupted run can still be inspected (D-21: shown as incomplete, never as a
+  // finished run). The first line is the run's header.
+  const save = mode === "live" || process.argv.includes("--save");
+  const partial = save ? path.join(RESULTS_DIR, `${started.toISOString().replace(/[:.]/g, "-")}_${mode}${suite === "smoke" ? "_smoke" : ""}.partial.jsonl`) : null;
+  if (partial) fs.mkdirSync(RESULTS_DIR, { recursive: true });
+  if (partial) fs.writeFileSync(partial, `${JSON.stringify({ header: { mode, suite, selection: { case: only ?? null, category: category ?? null, area: area ?? null }, startedAt: started.toISOString(), gitSha: atStart.gitSha, gitDirty: atStart.gitDirty, datasetHash: atStart.datasetHash, selected: cases.map((c) => c.id), runs, pid: process.pid } })}\n`);
   const template = await prepareTemplate(mode === "live" ? embedder : fakeEmbedder(), Date.parse(cases[0].now));
   let warmup: unknown = null;
   if (mode === "live") {
@@ -670,7 +775,7 @@ async function main(): Promise<number> {
   fs.rmSync(path.dirname(template), { recursive: true, force: true });
   const passed = results.filter((r) => r.passed).length;
   const metrics = computeMetrics(results, retrieval);
-  const subset = !!(only || category);
+  const subset = !!(only || category || area) || suite !== "full";
   const thresholdLines = mode === "live" && !subset ? checkThresholds(metrics, JSON.parse(fs.readFileSync(path.join(ROOT, "evals/thresholds.json"), "utf8")) as Thresholds) : [];
   const fmt = (v: number | null) => (v === null ? "n/a" : Number.isInteger(v) ? String(v) : v.toFixed(3));
   if (mode === "live") {
@@ -682,14 +787,21 @@ async function main(): Promise<number> {
       console.log(
         `ollama ${ollamaMeta.version ?? "?"}: ${ollamaMeta.models.map((m) => `${m.name} ${m.digest ?? "?"} ${m.loaded ? `${((m.sizeBytes ?? 0) / 2 ** 30).toFixed(1)} GiB, ${Math.round((m.gpuShare ?? 0) * 100)}% GPU, ctx ${m.contextLength ?? "?"}` : "not loaded"}`).join("; ")}`,
       );
-    if (subset) console.log("subset run (--case/--category): thresholds not applied");
+    if (subset) console.log("subset run (--suite smoke, --case, --category or --area): thresholds not applied");
     for (const l of thresholdLines) console.log(`${l.ok ? "✓" : "✗"} ${l.metric.padEnd(30)} ${fmt(l.value).padStart(7)}  (${l.want})${l.override ? `  override: ${l.override}` : ""}`);
   }
   const violations = results.reduce((n, r) => n + r.violations.length, 0);
   const atEnd = provenance();
+  const finished = new Date();
   const meta = {
     kind: `eval-${mode}`,
+    formatVersion: 2,
+    mode,
+    suite,
+    selection: { case: only ?? null, category: category ?? null, area: area ?? null },
     startedAt: started.toISOString(),
+    finishedAt: finished.toISOString(),
+    durationMs: finished.getTime() - started.getTime(),
     gitSha: atStart.gitSha,
     gitDirty: atStart.gitDirty,
     // True if the commit, the tree or the cases changed while the run was going.
@@ -710,9 +822,14 @@ async function main(): Promise<number> {
     loadAverage: os.loadavg(),
   };
   const label = arg("label") ? `_${arg("label")!.replace(/[^a-z0-9-]+/gi, "-")}` : "";
-  const out = path.resolve(arg("out") ?? (mode === "live" ? path.join(ROOT, "evals/results", `${started.toISOString().replace(/[:.]/g, "-")}_${(model?.model ?? "model").replace(/[^a-z0-9.]+/gi, "-")}${label}.json`) : path.join(ROOT, "test-results/evals/scripted-latest.json")));
+  // Live runs are always kept; a scripted run is kept with --save (the dashboard and eval:smoke/full do), else it goes
+  // to test-results/ only (verify runs it on every change).
+  const stamp = started.toISOString().replace(/[:.]/g, "-");
+  const out = path.resolve(arg("out") ?? (save ? path.join(RESULTS_DIR, `${stamp}_${mode === "live" ? (model?.model ?? "model").replace(/[^a-z0-9.]+/gi, "-") : "scripted"}${suite === "smoke" ? "_smoke" : ""}${label}.json`) : path.join(ROOT, "test-results/evals/scripted-latest.json")));
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, `${JSON.stringify({ meta, summary: { cases: results.length, passed, failed: results.length - passed, invariantViolations: violations }, metrics, thresholds: thresholdLines, results }, null, 1)}\n`);
+  const errored = results.filter((r) => r.status === "error").length;
+  fs.writeFileSync(out, `${JSON.stringify({ meta, summary: { cases: results.length, passed, failed: results.length - passed - errored, errored, invariantViolations: violations }, metrics, thresholds: thresholdLines, results }, null, 1)}\n`);
+  if (partial) fs.rmSync(partial, { force: true }); // complete: the full file replaces the progress file
   console.log(`eval:${mode} ${passed}/${results.length} passed, ${violations} invariant violations → ${path.relative(ROOT, out)}`);
   // Scripted (D1) gates on 100% and no violations; a full live run gates on evals/thresholds.json (§6.5).
   if (mode === "live") return subset ? (violations === 0 ? 0 : 1) : thresholdLines.every((l) => l.ok) ? 0 : 1;

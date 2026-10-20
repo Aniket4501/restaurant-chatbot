@@ -33,8 +33,9 @@ const RECOVERY = new Set(["malformed_output", "backend_failure", "retry_after_ti
 const GROUNDED_KEYS = new Set(["mustCite", "mustCiteAny", "mustIncludeValues", "mustNotIncludeValues", "answer"]);
 
 const rate = (ok: number, n: number): Rate => ({ value: n ? ok / n : null, n });
-const checksRate = (results: CaseResult[], keys: Set<string>): Rate => {
-  const cs = results.flatMap((r) => r.checks).filter((c) => keys.has(c.key));
+const checksRate = (results: CaseResult[], keys: Set<string> | ((key: string) => boolean)): Rate => {
+  const has = typeof keys === "function" ? keys : (k: string) => keys.has(k);
+  const cs = results.flatMap((r) => r.checks).filter((c) => has(c.key));
   return rate(cs.filter((c) => c.ok).length, cs.length);
 };
 function percentile(xs: number[], p: number): number | null {
@@ -86,7 +87,7 @@ export function computeMetrics(results: CaseResult[], retrieval: RetrievalMetric
       firstTrySchemaValidity: rate(modelTurns.filter((t) => t.firstTryValid).length, modelTurns.length),
     },
     latency: { booking: lat(timed("booking", false)), faq: lat(timed("faq", false)), recommend: lat(timed("recommend", false)), firstRunBooking: lat(timed("booking", true)), firstRunFaq: lat(timed("faq", true)) },
-    recommendationValidity: checksRate(results, new Set(["recommend"])),
+    recommendationValidity: checksRate(results, (k) => k === "recommend" || k.startsWith("recommend.")),
     tokens: {
       promptMax: modelTurns.length ? Math.max(...modelTurns.map((t) => t.promptTokens ?? 0)) : null,
       promptMean: mean(modelTurns.flatMap((t) => (t.promptTokens === null ? [] : [t.promptTokens]))),

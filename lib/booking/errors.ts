@@ -11,7 +11,9 @@ export type ErrorCode =
   | "IDEMPOTENCY_MISMATCH"
   | "UNAVAILABLE"
   | "UNAUTHENTICATED"
-  | "NOT_FOUND";
+  | "NOT_FOUND"
+  /** D-21: an eval run is already going (admin evals dashboard). */
+  | "BUSY";
 
 export type UnavailableReason = "lead_time" | "closed" | "past_horizon" | "off_grid" | "party_size" | "branch_inactive";
 
