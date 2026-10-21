@@ -11,6 +11,7 @@ import type { BenchSummary, RunSummary } from "@/components/admin/evals/types";
 const delta = (before: number | null | undefined, after: number | null | undefined) => {
   if (before == null || after == null) return null;
   const d = after - before;
+  if (Math.abs(d) < 1) return null; // no change worth showing
   return { text: `${d <= 0 ? "−" : "+"}${ms(Math.abs(d))}`, better: d < 0 };
 };
 

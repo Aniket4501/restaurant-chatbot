@@ -137,7 +137,7 @@ const STAGE_LABELS: [string, string][] = [
   ["chooserMs", "Recommendation chooser"],
   ["otherMs", "Validation and formatting"],
 ];
-const INTENT_LABEL: Record<string, string> = { faq: "Questions (FAQ)", recommend: "Recommendations", menu: "Menu", booking: "Booking", smalltalk: "Small talk", off_topic: "Off topic", unclear: "Unclear", none: "Degraded or no intent" };
+const INTENT_LABEL: Record<string, string> = { faq: "Questions (FAQ)", recommend: "Recommendations", menu: "Menu", booking: "Booking", manage_booking: "Change or cancel", smalltalk: "Small talk", off_topic: "Off topic", unclear: "Unclear", none: "Degraded or no intent" };
 
 /** D-24: latency of a run's guest turns, split into turns that called the model and turns that didn't. */
 export function latencySummary(results: CaseResult[]): LatencySummary {
