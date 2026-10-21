@@ -244,5 +244,31 @@ export type TurnReply = {
     promptTokens: number | null;
     cachedTokens: number | null;
     outputTokens: number | null;
+    /** Where the turn's time went (D-24), in ms. `otherMs` is the rest: validation, routing and formatting. */
+    timing: TurnTiming;
   };
+};
+
+export type TurnTiming = {
+  setupMs: number;
+  retrievalMs: number | null;
+  promptMs: number | null;
+  /** Waiting for the model gate (another session's call, or a warm-up step). */
+  queueMs: number | null;
+  /** The Ollama /api/ps check (D-23). */
+  statusMs: number | null;
+  /** The turn model's calls, including a corrective retry. */
+  turnModelMs: number | null;
+  /** The recommendation chooser's calls (D-20). */
+  chooserMs: number | null;
+  otherMs: number;
+  /** Model calls made (turn, retries, chooser). */
+  calls: number;
+  /** Ollama's split, summed over the calls (null with the fake model). */
+  loadMs: number | null;
+  promptEvalMs: number | null;
+  evalMs: number | null;
+  /** Tokens generated and prompt tokens read (not cached), summed over the calls. */
+  evalTokens: number | null;
+  uncachedPromptTokens: number | null;
 };

@@ -18,13 +18,13 @@ describe("ollamaModel (stubbed fetch)", () => {
       model: "qwen3.5:9b",
       fetch: async (url, init) => {
         sent = { url: String(url), body: JSON.parse(String(init?.body)) };
-        return json(200, { message: { role: "assistant", content: JSON.stringify(turn) }, done_reason: "stop", prompt_eval_count: 3500, prompt_eval_cached_count: 3400, eval_count: 40, total_duration: 950_000_000 });
+        return json(200, { message: { role: "assistant", content: JSON.stringify(turn) }, done_reason: "stop", prompt_eval_count: 3500, prompt_eval_cached_count: 3400, eval_count: 40, total_duration: 950_000_000, load_duration: 2_000_000, prompt_eval_duration: 300_000_000, eval_duration: 640_000_000 });
       },
     });
     const env = await m.chat(req());
     expect(sent!.url).toBe(`${BASE}/api/chat`);
     expect(sent!.body).toEqual({ model: "qwen3.5:9b", messages: req().messages, stream: false, format: TURN_JSON_SCHEMA, think: false, truncate: false, keep_alive: "30m", options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: 400 } });
-    expect(env).toEqual({ status: 200, error: null, content: JSON.stringify(turn), done_reason: "stop", thinking: null, prompt_eval_count: 3500, prompt_eval_cached_count: 3400, eval_count: 40, total_ms: 950 });
+    expect(env).toEqual({ status: 200, error: null, content: JSON.stringify(turn), done_reason: "stop", thinking: null, prompt_eval_count: 3500, prompt_eval_cached_count: 3400, eval_count: 40, total_ms: 950, load_ms: 2, prompt_eval_ms: 300, eval_ms: 640 }); // D-24: Ollama's split, in ms
     expect(interpretEnvelope(env)).toMatchObject({ ok: true, turn: { intent: "smalltalk" } });
   });
 

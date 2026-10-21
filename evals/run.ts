@@ -11,7 +11,7 @@ import { noTurnLimit, openGate } from "@/lib/chat/ratelimit";
 import { historyContent, submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import { branchInfo } from "@/lib/chat/templates";
 import { runTurn, systemInputFor } from "@/lib/chat/turn";
-import { emptyDraft, type Action, type Block, type ChatMessage, type Draft, type TraceEntry, type TurnContext } from "@/lib/chat/types";
+import { emptyDraft, type Action, type Block, type ChatMessage, type Draft, type TraceEntry, type TurnContext, type TurnTiming } from "@/lib/chat/types";
 import { loadConfig, MODEL } from "@/lib/config";
 import { openDb, type DB } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
@@ -81,6 +81,8 @@ export type CaseResult = {
     promptTokens: number | null;
     cachedTokens: number | null;
     outputTokens: number | null;
+    /** D-24 stage timings (absent in runs before D-24). */
+    timing?: TurnTiming | null;
     firstTryValid: boolean | null;
     /** D-21 debugging detail: the turn's trace (tool calls, validation results), booking state, retrieved fact IDs,
      * its own expectations and their results. Eval inputs are synthetic; names and phones are masked. */
@@ -469,6 +471,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
           promptTokens: r.meta.promptTokens,
           cachedTokens: r.meta.cachedTokens,
           outputTokens: r.meta.outputTokens,
+          timing: r.meta.timing,
           firstTryValid: r.trace.some((x) => x.action === "model_call") ? (r.trace.find((x) => x.action === "model_call") as { result: string }).result === "ok" : null,
         });
         return r;

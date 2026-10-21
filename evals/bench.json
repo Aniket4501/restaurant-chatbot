@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "about": "D-24 latency benchmark scenarios. Fixed so runs compare; facts from data/seed. Warm scenarios run round-robin for --trials rounds; cold runs unload both models first.",
+  "warm": [
+    { "id": "L-hours", "kind": "lookup", "turns": [{ "text": "What time do you close tonight at Hauz Khas?" }] },
+    { "id": "L-price", "kind": "lookup", "turns": [{ "text": "How much is the Old Delhi Butter Chicken?" }] },
+    { "id": "L-wifi", "kind": "lookup", "turns": [{ "text": "Do you have wifi?" }] },
+    { "id": "L-address", "kind": "lookup", "turns": [{ "text": "Where is the Golf Course Road branch?" }] },
+    { "id": "R-veg-400", "kind": "recommend", "turns": [{ "text": "What's the best vegetarian option under ₹400?" }] },
+    { "id": "R-light", "kind": "recommend", "turns": [{ "text": "I want something light." }] },
+    { "id": "R-filling", "kind": "recommend", "turns": [{ "text": "Suggest something filling but affordable." }] },
+    { "id": "R-cheaper", "kind": "recommend", "turns": [{ "text": "Recommend a vegetarian main" }, { "text": "Something similar, but cheaper" }] },
+    { "id": "M-menu", "kind": "menu", "turns": [{ "action": { "type": "menu", "course": null }, "label": "Show me the menu" }] },
+    { "id": "B-typed", "kind": "booking", "turns": [{ "text": "Table for 2 tomorrow at 8 pm at Hauz Khas" }] },
+    { "id": "B-flow", "kind": "reservation", "turns": [{ "text": "Table for {party} tomorrow at {time} at Hauz Khas" }], "submit": true }
+  ],
+  "cold": { "id": "C-wifi", "kind": "cold", "turns": [{ "text": "Do you have wifi?" }] },
+  "browser": [
+    { "id": "UI-wifi", "kind": "lookup", "type": "Do you have wifi?" },
+    { "id": "UI-veg-400", "kind": "recommend", "type": "What's the best vegetarian option under ₹400?" },
+    { "id": "UI-menu", "kind": "menu", "click": "Show me the menu" }
+  ]
+}

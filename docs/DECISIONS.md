@@ -378,3 +378,10 @@ Decision:
 - The chat's "Checking…" becomes "Still working on it, one moment…" after 8 seconds.
 Tests: `tests/unit/warmth.test.ts` (timeout choice, `/api/ps` parsing and failures; a warm-up round skips while an eval runs and queues each step behind a guest's call), integration (the loaded check runs once per model turn, not for chip turns or a fixed timeout), E2E (a reply held for 10 s shows the still-working text, then the answer).
 
+## D-24 End-to-end testing, quality and latency campaign (2026-10-21, status: requested by the user, 2026-10-21)
+Context: The user asked for a full audit and test cycle with measured quality and latency improvements: baseline first, then root-cause fixes with regression tests, latency experiments one variable at a time, a latency section in the evals dashboard, and a before/after report. Recorded here as it lands.
+Decision (measurement, before any behaviour change):
+- **Stage timings** (`meta.timing` on every turn, `lib/chat/types.ts` TurnTiming): setup, retrieval, prompt build, model-gate queue, the Ollama status check (D-23), the turn model's calls, the chooser's calls, and the rest (validation, routing, formatting); the number of model calls; Ollama's own load, prompt-reading and generation times and tokens, summed over the calls. Also sent as a `Server-Timing` header and in the `chat_turn` log line (no guest text), and kept per turn in eval results.
+- **Browser timing:** the chat marks send, response and paint per request (`performance.measure`), for the benchmark; no visible change.
+- **Benchmark** (`npm run bench`, `scripts/bench.ts`, scenarios in `evals/bench.json`): an isolated `next start` on port 3107 with a temporary database seeded from `data/seed` and indexed with the real embedder (data/app.db untouched); warm turns round-robin (lookups, recommendations, a follow-up, the menu chip, a typed booking, the booking flow with its save), a real Chromium for send → painted, and cold starts after `ollama stop` of both models. Requests are paced under the app's 20 turns/min limit, outside the timers. p95 only from 20 samples. Results in `evals/results/bench/`.
+

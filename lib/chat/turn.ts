@@ -20,7 +20,7 @@ import { claimProblems, explicitPrefs, recommendTurn, resolvePrefs, type Chooser
 import { GateFullError, openGate, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
 import { blankStep, degradedStep, handleAction, routeTurn, type FlowCtx, type Prepared, type Step } from "@/lib/chat/router";
 import { branchInfo } from "@/lib/chat/templates";
-import { emptyDraft, noPrefs, type Action, type ChatMessage, type Draft, type Prefs, type TraceEntry, type TurnContext, type TurnReply } from "@/lib/chat/types";
+import { emptyDraft, noPrefs, type Action, type ChatMessage, type Draft, type Prefs, type TraceEntry, type TurnContext, type TurnReply, type TurnTiming } from "@/lib/chat/types";
 
 // runTurn (§5.7, ARCHITECTURE "Chat turn pipeline"): the single entry point for POST /api/chat and the eval runner.
 // The body is validated by the caller (ChatBodySchema). Nothing here reads the clock: `now` is an input, and
@@ -73,8 +73,26 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   let prefsOut: Prefs | null = input.context?.prefs ?? null;
   let recommendedOut: string[] = input.context?.recommended ?? [];
   const metrics = { retrievalMode: "none" as "hybrid" | "lexical" | "none", retrievalReason: null as string | null, modelMs: null as number | null, retrievalMs: null as number | null, promptTokens: null as number | null, cachedTokens: null as number | null, outputTokens: null as number | null, promptVersion: null as string | null };
+  // Stage timings (D-24): measurement only.
+  const t = { setupMs: 0, promptMs: null as number | null, queueMs: null as number | null, statusMs: null as number | null, turnModelMs: null as number | null, chooserMs: null as number | null, calls: 0, loadMs: null as number | null, promptEvalMs: null as number | null, evalMs: null as number | null, evalTokens: null as number | null, uncachedPromptTokens: null as number | null };
+  const add = (k: "turnModelMs" | "chooserMs" | "loadMs" | "promptEvalMs" | "evalMs" | "evalTokens" | "uncachedPromptTokens", v: number | null | undefined) => {
+    if (typeof v === "number") t[k] = (t[k] ?? 0) + v;
+  };
+  const countCall = (env: { load_ms?: number | null; prompt_eval_ms?: number | null; eval_ms?: number | null; eval_count: number | null; prompt_eval_count: number | null; prompt_eval_cached_count: number | null }) => {
+    add("loadMs", env.load_ms);
+    add("promptEvalMs", env.prompt_eval_ms);
+    add("evalMs", env.eval_ms);
+    add("evalTokens", env.eval_count);
+    if (env.prompt_eval_count !== null) add("uncachedPromptTokens", env.prompt_eval_count - (env.prompt_eval_cached_count ?? 0));
+  };
+  const round = (v: number | null) => (v === null ? null : Math.round(v));
+  const timing = (latencyMs: number): TurnTiming => {
+    const known = [t.setupMs, metrics.retrievalMs, t.promptMs, t.queueMs, t.statusMs, t.turnModelMs, t.chooserMs].reduce<number>((n, v) => n + (v ?? 0), 0);
+    return { setupMs: Math.round(t.setupMs), retrievalMs: round(metrics.retrievalMs), promptMs: round(t.promptMs), queueMs: round(t.queueMs), statusMs: round(t.statusMs), turnModelMs: round(t.turnModelMs), chooserMs: round(t.chooserMs), otherMs: Math.max(0, Math.round(latencyMs - known)), calls: t.calls, loadMs: round(t.loadMs), promptEvalMs: round(t.promptEvalMs), evalMs: round(t.evalMs), evalTokens: t.evalTokens, uncachedPromptTokens: t.uncachedPromptTokens };
+  };
 
   const finish = (step: Step, intent: Intent | null, status: TurnReply["status"] = "ok", retryAfterMs?: number): TurnReply => {
+    const latencyMs = elapsed() - started;
     const reply: TurnReply = {
       status,
       ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
@@ -92,12 +110,13 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
         citedFactIds: step.citedFactIds ?? [],
         model: deps.model.model,
         promptVersion: metrics.promptVersion,
-        latencyMs: Math.round(elapsed() - started),
+        latencyMs: Math.round(latencyMs),
         modelMs: metrics.modelMs === null ? null : Math.round(metrics.modelMs),
         retrievalMs: metrics.retrievalMs === null ? null : Math.round(metrics.retrievalMs),
         promptTokens: metrics.promptTokens,
         cachedTokens: metrics.cachedTokens,
         outputTokens: metrics.outputTokens,
+        timing: timing(latencyMs),
       },
     };
     writeMetrics(deps.db, input, reply);
@@ -152,6 +171,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const kbFacts = renderKbFacts(src);
   const kbById = new Map(kbFacts.map((f) => [f.id, f]));
   const r0 = elapsed();
+  t.setupMs = r0 - started;
   const retrieval = await retrieveFacts(retrievalQuery(latest, previousGuest), { carry: input.context?.lastCitedIds }, { db: deps.db, facts: kbFacts, embedder: deps.embedder });
   metrics.retrievalMs = elapsed() - r0;
   metrics.retrievalMode = retrieval.mode;
@@ -160,6 +180,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const retrieved = retrieval.hits.map((h) => kbById.get(h.factId)!);
 
   // 5. Build the prompt, within the character budget (D-15): trim history to 2 messages once, else degrade.
+  const p0 = elapsed();
   const byId = new Map(entries.map((e) => [e.id, e]));
   const suggested = recommendedOut.filter((id) => byId.has(id)).slice(0, 3).map((id) => `${byId.get(id)!.name} (₹${byId.get(id)!.price})`).join(", ") || null;
   const promptFor = (h: typeof history) =>
@@ -171,18 +192,30 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     prompt = promptFor(usedHistory);
   }
   metrics.promptVersion = PROMPT_VERSION;
+  t.promptMs = elapsed() - p0;
   if (promptChars(prompt) > PROMPT_CHAR_BUDGET) return finish(degradedStep(draft0, ctx, "CONTEXT_TOO_LARGE"), null);
 
   // How long a model call may take: longer when Ollama reports the model unloaded, so a reload is a slow reply rather
   // than a failed one (D-23). Asked once per turn, inside the gate, so a warm-up the turn waited behind is counted.
   let timeout: number | null = null;
-  const timeoutMs = async () => (timeout ??= modelTimeout(deps.modelTimeoutMs === undefined && deps.modelLoaded ? await deps.modelLoaded() : null, deps.modelTimeoutMs));
+  const timeoutMs = async () => {
+    if (timeout === null) {
+      const s0 = elapsed();
+      const loaded = deps.modelTimeoutMs === undefined && deps.modelLoaded ? await deps.modelLoaded() : null;
+      if (deps.modelTimeoutMs === undefined && deps.modelLoaded) t.statusMs = elapsed() - s0;
+      timeout = modelTimeout(loaded, deps.modelTimeoutMs);
+    }
+    return timeout;
+  };
 
   // 6–7. Call the model through the gate; one corrective retry for invalid output, one trimmed retry for context.
   const call = async (attempt: 1 | 2, messages: LlmMessage[]): Promise<{ result: Interpreted; content: string }> => {
+    const limit = await timeoutMs();
     const m0 = elapsed();
+    t.calls++;
     try {
-      const env = await deps.model.chat({ messages, format: TURN_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(await timeoutMs()) });
+      const env = await deps.model.chat({ messages, format: TURN_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(limit) });
+      countCall(env);
       const result = interpretEnvelope(env);
       metrics.promptTokens = env.prompt_eval_count;
       metrics.cachedTokens = env.prompt_eval_cached_count;
@@ -196,6 +229,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       return { result: { ok: false, code, detail: "", metrics: { prompt_eval_count: null, prompt_eval_cached_count: null, eval_count: null, total_ms: null, thinking_present: false } }, content: "" };
     } finally {
       metrics.modelMs = (metrics.modelMs ?? 0) + (elapsed() - m0);
+      add("turnModelMs", elapsed() - m0);
     }
   };
 
@@ -206,9 +240,12 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // The recommendation chooser (D-20): the second model call of a recommend turn, in the same gate slot as the first,
   // so another session can't take the slot in between.
   const chooser: ChooserCall = async (attempt, messages) => {
+    const limit = await timeoutMs();
     const m0 = elapsed();
+    t.calls++;
     try {
-      const env = await deps.model.chat({ messages, format: CHOOSER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(await timeoutMs()) });
+      const env = await deps.model.chat({ messages, format: CHOOSER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(limit) });
+      countCall(env);
       const r = interpretJson(env, ChooserSchema);
       return r.ok ? { choice: r.value, code: "ok", content: env.content } : { choice: null, code: r.code, content: env.content };
     } catch (e) {
@@ -217,6 +254,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       return { choice: null, code, content: "" };
     } finally {
       metrics.modelMs = (metrics.modelMs ?? 0) + (elapsed() - m0);
+      add("chooserMs", elapsed() - m0);
     }
   };
   const recommended: { result: RecommendResult | null } = { result: null }; // set inside the gate closure
@@ -226,8 +264,10 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   };
 
   let outcome: { result: Interpreted; content: string };
+  const q0 = elapsed();
   try {
     outcome = await (deps.gate ?? openGate).run(async () => {
+      t.queueMs = elapsed() - q0;
       deps.onPrompt?.(prompt);
       const base: LlmMessage[] = [
         { role: "system", content: prompt.system },

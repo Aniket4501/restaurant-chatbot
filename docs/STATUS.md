@@ -1,6 +1,6 @@
 # Status
 Phase: 7 — QA and AI evaluation (DONE) + D-19 demo scope + D-20 + D-21 (eval framework, dashboard, improvements)   Gate pending: none (G1, G2, G2-M approved 2026-10-19; G3 not triggered)   Updated: 2026-10-21
-Current task: D-22 (no staff password) and D-23 (model kept warm; cold timeout; still-working hint), 2026-10-21   Branch: build/reservation-bot   Last commit: see `git log -1`
+Current task: D-24 end-to-end testing, quality and latency campaign (user, 2026-10-21). Step 1: measurement (stage timings, benchmark), then baseline   Branch: build/reservation-bot   Last commit: see `git log -1`
 D-20 (user, 2026-10-20): LLM-chosen recommendations validated by code, preference memory, menu browsing, one reply per action, no duplicate fact card. 46955af = D-20 (1/2)
 D-20 review (docs/research/2026-10-20-d20-review.json): 48 confirmed findings, 42 fixed with a test, 6 partly fixed or deliberately unchanged (listed in the file and in DECISIONS D-20 amendment)
 D-21 (user, 2026-10-21): eval framework (9 quality areas, suites, reports, baseline comparison), /admin/evals dashboard, +85 framework cases and +36 audit cases (24 scripted, 12 live), improvements measured against the baseline

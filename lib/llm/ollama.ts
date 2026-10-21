@@ -30,6 +30,9 @@ type ChatJson = {
   prompt_eval_cached_count?: number;
   eval_count?: number;
   total_duration?: number;
+  load_duration?: number;
+  prompt_eval_duration?: number;
+  eval_duration?: number;
   error?: string;
 };
 
@@ -70,6 +73,9 @@ export function ollamaModel(opts: { baseUrl: string; model: string; fetch?: type
         prompt_eval_cached_count: j.prompt_eval_cached_count ?? null,
         eval_count: j.eval_count ?? null,
         total_ms: ns2ms(j.total_duration),
+        load_ms: ns2ms(j.load_duration),
+        prompt_eval_ms: ns2ms(j.prompt_eval_duration),
+        eval_ms: ns2ms(j.eval_duration),
       } satisfies RawEnvelope;
     },
   };

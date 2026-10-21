@@ -106,6 +106,17 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
       .filter((m) => m.content)
       .slice(-7);
 
+  // User-timing marks per chat turn (D-24): send → response → painted, read by the latency benchmark. No guest text.
+  const timeTurn = (id: string, phase: "send" | "response" | "painted", serverMs?: number) => {
+    try {
+      performance.mark(`chat:${phase}:${id}`);
+      if (phase === "response") performance.measure(`chat-network:${id}`, { start: `chat:send:${id}`, end: `chat:response:${id}`, detail: { serverMs } });
+      if (phase === "painted") performance.measure(`chat-total:${id}`, `chat:send:${id}`, `chat:painted:${id}`);
+    } catch {
+      /* timing is best effort */
+    }
+  };
+
   const send = useCallback(
     async (req: ChatRequest) => {
       // Synchronous guards (D-20): one chat turn at a time, and never while a booking is being submitted, so a late
@@ -117,6 +128,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
       setFailed(null);
       update((p) => ({ ...p, chatPending: req }));
       const cur = ref.current;
+      timeTurn(req.requestId, "send");
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -131,6 +143,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         }
         if (!res.ok || !j?.reply) throw new Error(`chat ${res.status}`);
         const r = j as Omit<TurnReply, "status" | "trace">;
+        timeTurn(req.requestId, "response", r.meta?.latencyMs);
         const newCard = r.reply.blocks.some((b) => b.type === "confirm");
         if (newCard && !ref.current.pending) setCard(NO_CARD); // a pending or locked submit keeps its card state
         update((p) => ({
@@ -141,6 +154,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
           selected: r.draft.selected?.startsAt ?? (newCard ? p.selected : null),
           chatPending: null,
         }));
+        requestAnimationFrame(() => requestAnimationFrame(() => timeTurn(req.requestId, "painted")));
       } catch {
         if (gen === generation.current) setFailed(req);
       } finally {

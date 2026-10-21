@@ -108,7 +108,7 @@ export function caseStatuses(results: CaseResult[]): Map<string, { status: CaseS
 }
 
 const rate = (ok: number, n: number) => (n ? ok / n : null);
-const pct = (xs: number[], p: number) => {
+export const pct = (xs: number[], p: number) => {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)];

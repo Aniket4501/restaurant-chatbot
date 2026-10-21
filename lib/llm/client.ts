@@ -42,6 +42,10 @@ export type RawEnvelope = {
   prompt_eval_cached_count: number | null;
   eval_count: number | null;
   total_ms: number | null;
+  /** Ollama's own split of total_ms (D-24): loading the model, reading the prompt, generating. Null from the fake. */
+  load_ms?: number | null;
+  prompt_eval_ms?: number | null;
+  eval_ms?: number | null;
 };
 
 export interface ModelClient {

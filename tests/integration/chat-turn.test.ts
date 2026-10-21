@@ -395,6 +395,25 @@ describe("POST /api/chat handler (D-15 caps, 429)", () => {
     const j = await res.json();
     expect(Object.keys(j).sort()).toEqual(["context", "draft", "intent", "meta", "reply"]);
   });
+  it("reports where the turn's time went, in meta.timing and a Server-Timing header (D-24)", async () => {
+    make();
+    const res = await post(ok);
+    const j = await res.json();
+    const tm = j.meta.timing;
+    expect(tm.calls).toBe(1);
+    expect(tm.turnModelMs).not.toBeNull();
+    expect(tm.chooserMs).toBeNull();
+    for (const k of ["setupMs", "retrievalMs", "promptMs", "queueMs", "turnModelMs", "otherMs"]) expect(tm[k]).toBeGreaterThanOrEqual(0);
+    const known = ["setupMs", "retrievalMs", "promptMs", "queueMs", "statusMs", "turnModelMs", "chooserMs", "otherMs"].reduce((n, k) => n + (tm[k] ?? 0), 0);
+    expect(Math.abs(known - j.meta.latencyMs)).toBeLessThanOrEqual(4); // the stages add up to the turn (rounding)
+    expect(tm.evalTokens).toBe(j.meta.outputTokens); // one call: its tokens
+    expect(res.headers.get("server-timing")).toMatch(/^setup;dur=\d+, retrieval;dur=\d+, prompt;dur=\d+, queue;dur=\d+, model;dur=\d+, other;dur=\d+$/);
+  });
+  it("a chip turn makes no model call and its timing says so (D-24)", async () => {
+    make();
+    const j = await (await post({ ...ok, action: { type: "set_field", field: "branch", value: "hauz-khas" } })).json();
+    expect(j.meta.timing).toMatchObject({ calls: 0, retrievalMs: null, turnModelMs: null, chooserMs: null, evalTokens: null });
+  });
   it("refuses oversized and malformed bodies", async () => {
     make();
     expect((await post("x".repeat(17_000), true)).status).toBe(413);

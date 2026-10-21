@@ -5,6 +5,13 @@ import { runTurn } from "@/lib/chat/turn";
 import { ChatBodySchema } from "@/lib/chat/types";
 import { errorResponse, okResponse, readJson } from "@/lib/http/json";
 import type { ApiDeps } from "@/lib/api/deps";
+import type { TurnTiming } from "@/lib/chat/types";
+
+/** The turn's stages as a Server-Timing header value (D-24). */
+export function serverTiming(t: TurnTiming, duplicate = false): string {
+  const parts: [string, number | null][] = [["setup", t.setupMs], ["retrieval", t.retrievalMs], ["prompt", t.promptMs], ["queue", t.queueMs], ["status", t.statusMs], ["model", t.turnModelMs], ["chooser", t.chooserMs], ["other", t.otherMs]];
+  return [...parts.filter(([, v]) => v !== null).map(([k, v]) => `${k};dur=${v}`), ...(duplicate ? ["duplicate"] : [])].join(", ");
+}
 
 /**
  * POST /api/chat → 200 { reply, draft, intent, context, meta } / 400 / 413 / 429 (§5.9, D-15). The trace is included
@@ -61,9 +68,14 @@ export function chatHandler(deps: ApiDeps, dedup = dedupe) {
     if (process.env.NODE_ENV !== "test" && !config.testMode) {
       // One line per guest action for debugging (D-20): ids, timings and outcomes, never guest text.
       const m = r.json.meta as Record<string, unknown> | undefined;
-      console.info(JSON.stringify({ event: "chat_turn", requestId: requestId ?? null, session: sessionId.slice(0, 8), duplicate, status: r.status, intent: r.json.intent ?? null, outcome: m?.outcome ?? null, latencyMs: m?.latencyMs ?? null, modelMs: m?.modelMs ?? null, retrieval: m?.retrievalMode ?? null, cited: m?.citedFactIds ?? [] }));
+      console.info(JSON.stringify({ event: "chat_turn", requestId: requestId ?? null, session: sessionId.slice(0, 8), duplicate, status: r.status, intent: r.json.intent ?? null, outcome: m?.outcome ?? null, latencyMs: m?.latencyMs ?? null, modelMs: m?.modelMs ?? null, retrieval: m?.retrievalMode ?? null, cited: m?.citedFactIds ?? [], timing: m?.timing ?? null }));
     }
-    return r.status === 200 ? okResponse(200, r.json) : errorResponse(r.status, "RATE_LIMITED", String((r.json as { text?: string }).text ?? ""), {}, r.headers);
+    if (r.status !== 200) return errorResponse(r.status, "RATE_LIMITED", String((r.json as { text?: string }).text ?? ""), {}, r.headers);
+    const res = okResponse(200, r.json);
+    // Stage timings for the browser's network panel and the benchmark (D-24); a duplicate shares the first request's.
+    const tm = (r.json.meta as { timing?: TurnTiming } | undefined)?.timing;
+    if (tm) res.headers.set("server-timing", serverTiming(tm, duplicate));
+    return res;
   };
 }
 
