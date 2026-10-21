@@ -708,7 +708,7 @@ describe("meal plans keep what the guest says about allergies (D-28 review)", ()
     expect(block(first, "notice")).toMatchObject({ text: expect.stringContaining("can't guarantee") });
     expect(first.context.prefs).toMatchObject({ avoid: ["nuts"], allergy: true, maxPrice: null });
     // The planner's first proposal has a nut dish: it isn't on the list it was given, so it is refused.
-    const model = sequenceModel([{ dishes: ["paneer-lababdar", "butter-naan"], note: "" }, { dishes: ["dal-ember", "butter-naan"], note: "A smoky dal with soft naan." }]);
+    const model = sequenceModel([{ sum: "", dishes: ["paneer-lababdar", "butter-naan"], note: "" }, { sum: "", dishes: ["dal-ember", "butter-naan"], note: "A smoky dal with soft naan." }]);
     const second = await runTurn({ ...say("We eat everything", {}, [{ role: "guest", content: "Can 2 of us eat here under ₹1,000? My wife is allergic to nuts" }, { role: "assistant", content: first.reply.text }]), context: first.context }, deps({ model }));
     expect(block(second, "meal_plan")!.items.map((i) => [i.id, i.qty])).toEqual([["menu:dal-ember", 1], ["menu:butter-naan", 2]]);
     expect(second.trace.find((x) => x.action === "plan")).toMatchObject({ result: "rejected", rejected: expect.arrayContaining([expect.stringMatching(/"paneer-lababdar" is not one of the listed dishes/)]) });

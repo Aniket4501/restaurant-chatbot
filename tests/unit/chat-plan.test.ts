@@ -115,17 +115,17 @@ describe("checking a plan", () => {
   it("checks every dish, the sum, the budget, the mains and that everyone eats", () => {
     const f = focus({});
     const dishes = planDishes(entries, f, noPrefs(), null);
-    const ok = validatePlan({ dishes: ["dal-ember", "butter-naan", "menu:butter-naan"], note: "" }, dishes, f, null);
+    const ok = validatePlan({ sum: "", dishes: ["dal-ember", "butter-naan", "menu:butter-naan"], note: "" }, dishes, f, null);
     expect(ok).toMatchObject({ reasons: [], subtotal: 445 + 110 * 2 });
     expect(ok.items.map((i) => [i.d.id, i.qty])).toEqual([["menu:dal-ember", 1], ["menu:butter-naan", 2]]);
-    expect(validatePlan({ dishes: ["old-delhi-butter-chicken", "butter-naan"], note: "" }, dishes, f, null).reasons).toContain('"old-delhi-butter-chicken" is not one of the listed dishes');
-    expect(validatePlan({ dishes: ["paneer-lababdar", "dal-ember", "butter-naan"], note: "" }, dishes, f, null).reasons.join("; ")).toMatch(/come to ₹1190 for the group \(Paneer Lababdar ₹525, Dal Ember ₹445, Butter Naan ₹220\), more than the ₹1000 budget/);
-    expect(validatePlan({ dishes: ["butter-naan"], note: "" }, dishes, f, null).reasons.join("; ")).toMatch(/at least 1 main dishes/);
-    expect(validatePlan({ dishes: ["dal-ember"], note: "" }, dishes, f, null).reasons.join("; ")).toMatch(/so all 2 people eat/);
-    expect(validatePlan({ dishes: ["dal-ember", "butter-naan"], note: "" }, dishes, focus({ subtotal: 500 }), "cheaper").reasons.join("; ")).toMatch(/cheaper than ₹500/);
+    expect(validatePlan({ sum: "", dishes: ["old-delhi-butter-chicken", "butter-naan"], note: "" }, dishes, f, null).reasons).toContain('"old-delhi-butter-chicken" is not one of the listed dishes');
+    expect(validatePlan({ sum: "", dishes: ["paneer-lababdar", "dal-ember", "butter-naan"], note: "" }, dishes, f, null).reasons.join("; ")).toMatch(/come to ₹1190 for the group \(Paneer Lababdar ₹525, Dal Ember ₹445, Butter Naan ₹220\), ₹190 more than the ₹1000 budget/);
+    expect(validatePlan({ sum: "", dishes: ["butter-naan"], note: "" }, dishes, f, null).reasons.join("; ")).toMatch(/at least 1 main dishes/);
+    expect(validatePlan({ sum: "", dishes: ["dal-ember"], note: "" }, dishes, f, null).reasons.join("; ")).toMatch(/so all 2 people eat/);
+    expect(validatePlan({ sum: "", dishes: ["dal-ember", "butter-naan"], note: "" }, dishes, focus({ subtotal: 500 }), "cheaper").reasons.join("; ")).toMatch(/cheaper than ₹500/);
     // A vegan member needs a vegan main: a dairy main doesn't count.
     const mv = focus({ diet: "mixed_vegan" });
-    expect(validatePlan({ dishes: ["paneer-lababdar", "old-delhi-butter-chicken", "butter-naan"], note: "" }, planDishes(entries, mv, noPrefs(), null), { ...mv, budget: 3000 }, null).reasons).toContain("include a vegan main dish for the vegan guest");
+    expect(validatePlan({ sum: "", dishes: ["paneer-lababdar", "old-delhi-butter-chicken", "butter-naan"], note: "" }, planDishes(entries, mv, noPrefs(), null), { ...mv, budget: 3000 }, null).reasons).toContain("include a vegan main dish for the vegan guest");
   });
   it("review: plans use only dishes that meet every stated need (allergens, gluten-free, exclusions)", () => {
     const f = focus({ diet: "any" });
@@ -137,7 +137,7 @@ describe("checking a plan", () => {
 });
 
 describe("a planning turn", () => {
-  const VEG_PLAN: Plan = { dishes: ["dal-ember", "yellow-dal-tadka", "tandoori-roti"], note: "Two lentil dishes, one smoky and one bright, with rotis to share." };
+  const VEG_PLAN: Plan = { sum: "", dishes: ["dal-ember", "yellow-dal-tadka", "tandoori-roti"], note: "Two lentil dishes, one smoky and one bright, with rotis to share." };
   it("asks once what the group eats when it isn't said, with no model call", async () => {
     const { res, calls, trace } = await run("Can two people eat here under ₹1,000?", []);
     expect(calls).toEqual([]);
@@ -156,8 +156,8 @@ describe("a planning turn", () => {
     expect(res.text).toBe("Here's a vegetarian meal for two people that comes to ₹970, within your ₹1,000. Two lentil dishes, one smoky and one bright, with rotis to share.");
   });
   it("never shows a plan over the budget: one retry with the group costs, then an honest line", async () => {
-    const over: Plan = { dishes: ["paneer-lababdar", "dal-ember", "butter-naan"], note: "A rich pairing." };
-    const fits: Plan = { dishes: ["yellow-dal-tadka", "chana-pindi", "tandoori-roti"], note: "Two hearty curries with rotis." };
+    const over: Plan = { sum: "", dishes: ["paneer-lababdar", "dal-ember", "butter-naan"], note: "A rich pairing." };
+    const fits: Plan = { sum: "", dishes: ["yellow-dal-tadka", "chana-pindi", "tandoori-roti"], note: "Two hearty curries with rotis." };
     const retried = await run("There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?", [over, fits]);
     expect(retried.calls).toEqual([1, 2]);
     expect(retried.plan?.subtotal).toBe(375 + 395 + 150);
@@ -165,6 +165,19 @@ describe("a planning turn", () => {
     const failed = await run("There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?", [over, over]);
     expect(failed.plan).toBeUndefined();
     expect(failed.res.text).toMatch(/^I couldn't put a meal plan together/);
+  });
+  it("leaves out the extras that alone push a plan over budget, and says so; never trims the meal itself", async () => {
+    const withChai: Plan = { sum: "", dishes: ["yellow-dal-tadka", "baingan-bharta", "tandoori-roti", "masala-chai"], note: "A comforting meal with chai." };
+    const t = await run("There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?", [withChai]);
+    expect(t.calls).toEqual([1]);
+    expect(t.plan?.items.map((i) => i.id)).toEqual(["menu:yellow-dal-tadka", "menu:baingan-bharta", "menu:tandoori-roti"]);
+    expect(t.res.text).toBe("Here's a vegetarian meal for two people that comes to ₹950, within your ₹1,000. I left out the Masala Chai to stay within your budget.");
+    expect(t.trace.find((x) => x.action === "plan")).toMatchObject({ result: "trimmed", subtotal: 950 });
+    // Over budget without any extras: nothing is trimmed; the model is asked again with how much it was over.
+    const mains: Plan = { sum: "", dishes: ["dal-ember", "baingan-bharta", "tandoori-roti"], note: "" };
+    const m = await run("There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?", [mains, "down"]);
+    expect(m.plan).toBeUndefined();
+    expect(m.trace.find((x) => x.action === "plan")).toMatchObject({ result: "rejected", rejected: [expect.stringMatching(/₹20 more than the ₹1000 budget/)] });
   });
   it("says plainly when the budget can't cover a meal, with no model call and no figure that isn't on the menu", async () => {
     const { res, plan, calls } = await run("Can 4 people eat here for ₹300 in total? We eat everything.", []);
@@ -175,7 +188,7 @@ describe("a planning turn", () => {
   });
   it("makes a follow-up plan cheaper than the last; says so when it already is the cheapest; drops a note with numbers or hype", async () => {
     const prev = focus({ subtotal: 1040, items: ["menu:dal-ember", "menu:yellow-dal-tadka", "menu:butter-naan"] });
-    const cheaper: Plan = { dishes: ["yellow-dal-tadka", "tandoori-roti"], note: "Our most popular dal for just ₹375." };
+    const cheaper: Plan = { sum: "", dishes: ["yellow-dal-tadka", "tandoori-roti"], note: "Our most popular dal for just ₹375." };
     const { res, plan } = await run("Can you make it cheaper?", [cheaper], { prev });
     expect(plan?.subtotal).toBe(525);
     expect(res.text).toBe("Here's a vegetarian meal for two people that comes to ₹525, within your ₹1,000.");

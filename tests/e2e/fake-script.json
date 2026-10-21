@@ -101,6 +101,7 @@
     "answerable": true
   },
   "planner:There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?": {
+    "sum": "",
     "dishes": [
       "dal-ember",
       "yellow-dal-tadka",

@@ -1,0 +1,2080 @@
+{
+ "meta": {
+  "kind": "eval-live",
+  "formatVersion": 2,
+  "mode": "live",
+  "suite": "full",
+  "selection": {
+   "case": [
+    "LV-PLAN-001",
+    "LV-PLAN-002",
+    "LV-PLAN-003",
+    "LV-PLAN-004",
+    "LV-PLAN-005",
+    "LV-PLAN-006",
+    "LV-PLAN-007"
+   ],
+   "category": null,
+   "area": null
+  },
+  "startedAt": "2026-10-21T14:17:18.848Z",
+  "finishedAt": "2026-10-21T14:18:27.386Z",
+  "durationMs": 68538,
+  "gitSha": "d8281e2",
+  "gitDirty": true,
+  "changedDuringRun": false,
+  "promptVersion": "v8",
+  "chooserVersion": "c6",
+  "dataset": {
+   "dir": "evals/cases",
+   "hash": "2850247172cab088",
+   "cases": 7
+  },
+  "node": "v26.12.0",
+  "chip": "Apple M4 Pro",
+  "ramBytes": 25769803776,
+  "numCtx": 8192,
+  "temperature": 0,
+  "seed": 42,
+  "runs": 1,
+  "model": "qwen3.5:9b",
+  "ollama": {
+   "version": "0.40.5",
+   "models": [
+    {
+     "name": "qwen3.5:9b",
+     "digest": "d63f830f28d5",
+     "loaded": true,
+     "sizeBytes": 16434949216,
+     "vramBytes": 16434949216,
+     "gpuShare": 1,
+     "contextLength": 8192
+    },
+    {
+     "name": "qwen3-embedding:0.6b",
+     "digest": "ac6da0dfba84",
+     "loaded": true,
+     "sizeBytes": 1239752376,
+     "vramBytes": 1239752376,
+     "gpuShare": 1,
+     "contextLength": 4096
+    }
+   ]
+  },
+  "warmup": [
+   {
+    "ms": 3152,
+    "prompt": 4056,
+    "cached": 4051
+   },
+   {
+    "ms": 163,
+    "prompt": 4056,
+    "cached": 4051
+   },
+   {
+    "ms": 158,
+    "prompt": 682,
+    "cached": 677
+   },
+   {
+    "ms": 78,
+    "prompt": 682,
+    "cached": 677
+   }
+  ],
+  "warmupByDay": [
+   {
+    "day": "2026-10-16",
+    "shots": [
+     {
+      "ms": 3152,
+      "prompt": 4056,
+      "cached": 4051
+     },
+     {
+      "ms": 163,
+      "prompt": 4056,
+      "cached": 4051
+     },
+     {
+      "ms": 158,
+      "prompt": 682,
+      "cached": 677
+     },
+     {
+      "ms": 78,
+      "prompt": 682,
+      "cached": 677
+     }
+    ]
+   }
+  ],
+  "loadAverage": [
+   5.6591796875,
+   6.3212890625,
+   5.4716796875
+  ]
+ },
+ "summary": {
+  "cases": 7,
+  "passed": 6,
+  "failed": 1,
+  "errored": 0,
+  "invariantViolations": 0
+ },
+ "metrics": {
+  "cases": 7,
+  "runs": 1,
+  "passRate": {
+   "value": 0.8571428571428571,
+   "n": 7
+  },
+  "byCategory": {
+   "recommendation": {
+    "results": 7,
+    "passed": 6
+   }
+  },
+  "gates": {
+   "criticalInvariantViolations": 0,
+   "duplicateBookingRate": {
+    "value": 0,
+    "n": 7
+   },
+   "availabilityAccuracy": {
+    "value": null,
+    "n": 0
+   },
+   "unsupportedClaimsShown": 0,
+   "injectionResistance": {
+    "value": null,
+    "n": 0
+   },
+   "recoverySuccess": {
+    "value": null,
+    "n": 0
+   },
+   "abstentionOnUnknown": {
+    "value": null,
+    "n": 0
+   }
+  },
+  "floors": {
+   "intentAccuracy": {
+    "value": null,
+    "n": 0
+   },
+   "bookingFieldExtractionExact": {
+    "value": null,
+    "n": 0
+   },
+   "backendActionCorrectness": {
+    "value": null,
+    "n": 0
+   },
+   "groundedAnswerCorrectness": {
+    "value": null,
+    "n": 0
+   },
+   "firstTrySchemaValidity": {
+    "value": null,
+    "n": 0
+   }
+  },
+  "latency": {
+   "booking": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   },
+   "faq": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   },
+   "recommend": {
+    "n": 10,
+    "p50": 6784,
+    "p95": 12111
+   },
+   "firstRunBooking": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   },
+   "firstRunFaq": {
+    "n": 0,
+    "p50": null,
+    "p95": null
+   }
+  },
+  "recommendationValidity": {
+   "value": 1,
+   "n": 1
+  },
+  "tokens": {
+   "promptMax": null,
+   "promptMean": null,
+   "cachedMean": null,
+   "outputMean": null
+  },
+  "repeatability": {
+   "flaky": [],
+   "alwaysFail": [
+    "LV-PLAN-004"
+   ]
+  },
+  "retrieval": {
+   "queries": 30,
+   "hybrid": {
+    "hitAt8": 1,
+    "recallAt8": 0.9500000000000001
+   },
+   "lexical": {
+    "hitAt8": 0.8666666666666667,
+    "recallAt8": 0.8277777777777778
+   }
+  }
+ },
+ "thresholds": [],
+ "results": [
+  {
+   "id": "LV-PLAN-001",
+   "category": "recommendation",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 7402,
+   "expect": {
+    "expect": {
+     "mealPlan": {
+      "shown": true,
+      "maxTotal": 1000,
+      "minItems": 2,
+      "satisfies": {
+       "diet": [
+        "vegetarian"
+       ]
+      }
+     },
+     "pricesConsistent": true
+    },
+    "forbidden": [
+     "booking_claim_text",
+     "slot_not_in_engine_output"
+    ],
+    "notes": "D-28: a total budget for two; diet asked once, then a plan that fits, with real prices.",
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "turn 1: reply does not match /\\?/: \"Happy to plan a meal for two people within ₹1,000. Is everyone vegetarian, do you eat meat too, or i\""
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "turn 1: reply does not match /vegetarian|non-veg|meat|mix/: \"Happy to plan a meal for two people within ₹1,000. Is everyone vegetarian, do you eat meat too, or i\""
+    },
+    {
+     "key": "recommend.shown",
+     "ok": true,
+     "detail": "turn 1: a recommendation was shown (undefined)"
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "turn 1: a meal plan was shown"
+    },
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 1: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 1: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 1: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 1: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 2: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 2: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 2: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 2: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "case: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.prices",
+     "ok": true,
+     "detail": "case: subtotal ₹595 ≠ items ₹595"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": true,
+     "detail": "case: subtotal ₹595 > ₹1000"
+    },
+    {
+     "key": "mealPlan.items",
+     "ok": true,
+     "detail": "case: 2 items < 2"
+    },
+    {
+     "key": "mealPlan.constraints",
+     "ok": true,
+     "detail": "case: "
+    },
+    {
+     "key": "pricesConsistent",
+     "ok": true,
+     "detail": "case: the reply quotes , which is no price on screen, the plan total or a budget the guest gave"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "Can two people eat here under ₹1,000?",
+     "reply": "Happy to plan a meal for two people within ₹1,000. Is everyone vegetarian, do you eat meat too, or is it a mix?",
+     "blocks": [
+      "chips: All vegetarian / We eat everything / A mix"
+     ],
+     "cited": [],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 23,
+     "modelMs": null,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": null,
+      "otherMs": 23,
+      "calls": 0,
+      "loadMs": null,
+      "promptEvalMs": null,
+      "evalMs": null,
+      "evalTokens": null,
+      "uncachedPromptTokens": null
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "up to ₹1000"
+       ]
+      },
+      {
+       "action": "ask_pref",
+       "args": {
+        "field": "plan_diet"
+       }
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": {
+      "replyMustMatch": [
+       "\\?",
+       "vegetarian|non-veg|meat|mix"
+      ],
+      "recommend": {
+       "shown": false
+      },
+      "mealPlan": {
+       "shown": false
+      }
+     },
+     "checks": [
+      {
+       "key": "replyMustMatch",
+       "ok": true,
+       "detail": "turn 1: reply does not match /\\?/: \"Happy to plan a meal for two people within ₹1,000. Is everyone vegetarian, do you eat meat too, or i\""
+      },
+      {
+       "key": "replyMustMatch",
+       "ok": true,
+       "detail": "turn 1: reply does not match /vegetarian|non-veg|meat|mix/: \"Happy to plan a meal for two people within ₹1,000. Is everyone vegetarian, do you eat meat too, or i\""
+      },
+      {
+       "key": "recommend.shown",
+       "ok": true,
+       "detail": "turn 1: a recommendation was shown (undefined)"
+      },
+      {
+       "key": "mealPlan.shown",
+       "ok": true,
+       "detail": "turn 1: a meal plan was shown"
+      },
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 1: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 1: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 1: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 1: shows the same text twice: \"undefined\""
+      }
+     ]
+    },
+    {
+     "index": 1,
+     "kind": "guest",
+     "input": "Vegetarian",
+     "reply": "Here's a vegetarian meal for two people that comes to ₹595, within your ₹1,000.",
+     "blocks": [
+      "plan 1x menu:dal-ember ₹445, 2x menu:tandoori-roti ₹75 = ₹595 (budget ₹1000)",
+      "chips: Make it cheaper / Show me the menu / Find a table"
+     ],
+     "cited": [
+      "menu:dal-ember",
+      "menu:tandoori-roti"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 7360,
+     "modelMs": 7346,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 7346,
+      "otherMs": 14,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 6159,
+      "evalMs": 1179,
+      "evalTokens": 63,
+      "uncachedPromptTokens": 2677
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [
+         "vegetarian"
+        ],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "vegetarian"
+       ]
+      },
+      {
+       "action": "plan_scope",
+       "party": 2,
+       "budget": 1000,
+       "diet": "vegetarian",
+       "dishes": 35,
+       "least": 525
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "ok",
+       "items": [
+        "menu:dal-ember×1",
+        "menu:tandoori-roti×2"
+       ],
+       "subtotal": 595,
+       "rejected": []
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 2: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 2: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 2: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 2: shows the same text twice: \"undefined\""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-PLAN-002",
+   "category": "recommendation",
+   "severity": "critical",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 7845,
+   "expect": {
+    "expect": {
+     "replyMustNotMatch": [
+      "(?:GST|tax(?:es)?) (?:of|is|at) \\d",
+      "\\d+ ?% (?:tax|GST|service)"
+     ],
+     "mealPlan": {
+      "shown": true,
+      "maxTotal": 1000,
+      "minItems": 2,
+      "satisfies": {
+       "diet": [
+        "vegetarian"
+       ]
+      }
+     },
+     "pricesConsistent": true
+    },
+    "forbidden": [
+     "booking_claim_text",
+     "slot_not_in_engine_output"
+    ],
+    "notes": "D-28: subtotal from menu prices within the budget; no invented tax or service charge.",
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 1: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 1: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 1: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 1: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /(?:GST|tax(?:es)?) (?:of|is|at) \\d/"
+    },
+    {
+     "key": "replyMustNotMatch",
+     "ok": true,
+     "detail": "case: reply matches /\\d+ ?% (?:tax|GST|service)/"
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "case: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.prices",
+     "ok": true,
+     "detail": "case: subtotal ₹595 ≠ items ₹595"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": true,
+     "detail": "case: subtotal ₹595 > ₹1000"
+    },
+    {
+     "key": "mealPlan.items",
+     "ok": true,
+     "detail": "case: 2 items < 2"
+    },
+    {
+     "key": "mealPlan.constraints",
+     "ok": true,
+     "detail": "case: "
+    },
+    {
+     "key": "pricesConsistent",
+     "ok": true,
+     "detail": "case: the reply quotes , which is no price on screen, the plan total or a budget the guest gave"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?",
+     "reply": "Here's a vegetarian meal for two people that comes to ₹595, within your ₹1,000.",
+     "blocks": [
+      "plan 1x menu:dal-ember ₹445, 2x menu:tandoori-roti ₹75 = ₹595 (budget ₹1000)",
+      "chips: Make it cheaper / Show me the menu / Find a table"
+     ],
+     "cited": [
+      "menu:dal-ember",
+      "menu:tandoori-roti"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 7840,
+     "modelMs": 7834,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 7834,
+      "otherMs": 6,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 5992,
+      "evalMs": 1833,
+      "evalTokens": 65,
+      "uncachedPromptTokens": 2563
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [
+         "vegetarian"
+        ],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "vegetarian",
+        "up to ₹1000"
+       ]
+      },
+      {
+       "action": "plan_scope",
+       "party": 2,
+       "budget": 1000,
+       "diet": "vegetarian",
+       "dishes": 35,
+       "least": 525
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "ok",
+       "items": [
+        "menu:dal-ember×1",
+        "menu:tandoori-roti×2"
+       ],
+       "subtotal": 595,
+       "rejected": []
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 1: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 1: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 1: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 1: shows the same text twice: \"undefined\""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-PLAN-003",
+   "category": "recommendation",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 10049,
+   "expect": {
+    "expect": {
+     "mealPlan": {
+      "shown": true,
+      "maxTotal": 1500,
+      "minItems": 2
+     },
+     "pricesConsistent": true
+    },
+    "forbidden": [
+     "booking_claim_text",
+     "slot_not_in_engine_output"
+    ],
+    "notes": "D-28: a mixed meal within the total.",
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 1: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 1: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 1: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 1: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "case: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.prices",
+     "ok": true,
+     "detail": "case: subtotal ₹1220 ≠ items ₹1220"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": true,
+     "detail": "case: subtotal ₹1220 > ₹1500"
+    },
+    {
+     "key": "mealPlan.items",
+     "ok": true,
+     "detail": "case: 3 items < 2"
+    },
+    {
+     "key": "pricesConsistent",
+     "ok": true,
+     "detail": "case: the reply quotes , which is no price on screen, the plan total or a budget the guest gave"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 1,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "Dinner for two under ₹1500: one of us is vegetarian and the other eats chicken.",
+     "reply": "Here's a meal for two people that comes to ₹1,220, within your ₹1,500.",
+     "blocks": [
+      "plan 1x menu:tandoori-chicken-half ₹625, 1x menu:dal-ember ₹445, 2x menu:tandoori-roti ₹75 = ₹1220 (budget ₹1500)",
+      "chips: Make it cheaper / Show me the menu / Find a table"
+     ],
+     "cited": [
+      "menu:tandoori-chicken-half",
+      "menu:dal-ember",
+      "menu:tandoori-roti"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 10037,
+     "modelMs": 10028,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 10028,
+      "otherMs": 9,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 7809,
+      "evalMs": 2211,
+      "evalTokens": 87,
+      "uncachedPromptTokens": 3275
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [
+         "vegetarian"
+        ],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "vegetarian",
+        "up to ₹1500"
+       ]
+      },
+      {
+       "action": "plan_scope",
+       "party": 2,
+       "budget": 1500,
+       "diet": "mixed",
+       "dishes": 47,
+       "least": 525
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "ok",
+       "items": [
+        "menu:tandoori-chicken-half×1",
+        "menu:dal-ember×1",
+        "menu:tandoori-roti×2"
+       ],
+       "subtotal": 1220,
+       "rejected": []
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 1: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 1: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 1: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 1: shows the same text twice: \"undefined\""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-PLAN-004",
+   "category": "recommendation",
+   "severity": "major",
+   "run": 1,
+   "passed": false,
+   "status": "fail",
+   "durationMs": 12124,
+   "expect": {
+    "expect": {
+     "mealPlan": {
+      "shown": true,
+      "maxTotal": 1200,
+      "minItems": 3
+     },
+     "pricesConsistent": true
+    },
+    "forbidden": [
+     "booking_claim_text",
+     "slot_not_in_engine_output"
+    ],
+    "notes": "D-28: a per-person budget is 3 × ₹400 in total.",
+    "variantOf": null
+   },
+   "failures": [
+    "case: no meal plan shown",
+    "case: no meal plan to check"
+   ],
+   "violations": [],
+   "checks": [
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 1: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 1: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 1: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 1: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": false,
+     "detail": "case: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": false,
+     "detail": "case: no meal plan to check"
+    },
+    {
+     "key": "pricesConsistent",
+     "ok": true,
+     "detail": "case: the reply quotes , which is no price on screen, the plan total or a budget the guest gave"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 2,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "We're 3 people with a budget of ₹400 per person and we eat everything. What can we get?",
+     "reply": "I couldn't put a meal plan together just now. You can browse the menu, or ask again in a moment.",
+     "blocks": [
+      "chips: Show me the menu"
+     ],
+     "cited": [],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 12111,
+     "modelMs": 12107,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 12107,
+      "otherMs": 5,
+      "calls": 2,
+      "loadMs": 11,
+      "promptEvalMs": 8441,
+      "evalMs": 3643,
+      "evalTokens": 170,
+      "uncachedPromptTokens": 3470
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "up to ₹400"
+       ]
+      },
+      {
+       "action": "plan_scope",
+       "party": 3,
+       "budget": 1200,
+       "diet": "any",
+       "dishes": 47,
+       "least": 995
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "rejected",
+       "items": [
+        "menu:dal-ember×1",
+        "menu:old-delhi-butter-chicken×1",
+        "menu:tandoori-roti×3"
+       ],
+       "subtotal": 1315,
+       "rejected": [
+        "these dishes come to ₹1315 for the group (Dal Ember ₹445, Old Delhi Butter Chicken ₹645, Tandoori Roti ₹225), ₹115 more than the ₹1200 budget: leave out a dish or choose cheaper ones"
+       ]
+      },
+      {
+       "action": "plan",
+       "attempt": 2,
+       "result": "rejected",
+       "items": [
+        "menu:dal-ember×1",
+        "menu:old-delhi-butter-chicken×1",
+        "menu:tandoori-roti×3"
+       ],
+       "subtotal": 1315,
+       "rejected": [
+        "these dishes come to ₹1315 for the group (Dal Ember ₹445, Old Delhi Butter Chicken ₹645, Tandoori Roti ₹225), ₹115 more than the ₹1200 budget: leave out a dish or choose cheaper ones"
+       ]
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 1: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 1: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 1: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 1: shows the same text twice: \"undefined\""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-PLAN-005",
+   "category": "recommendation",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 15,
+   "expect": {
+    "expect": {
+     "replyMustMatch": [
+      "(?:can't|cannot|won't|not enough|isn't enough|too (?:low|little|tight)|less than|over)"
+     ],
+     "mealPlan": {
+      "shown": false
+     },
+     "pricesConsistent": true
+    },
+    "forbidden": [
+     "booking_claim_text",
+     "slot_not_in_engine_output"
+    ],
+    "notes": "D-28: no sensible meal for four fits ₹300: say so honestly.",
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 1: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 1: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 1: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 1: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "replyMustMatch",
+     "ok": true,
+     "detail": "case: reply does not match /(?:can't|cannot|won't|not enough|isn't enough|too (?:low|little|tight)|less than|over)/: \"₹300 isn't enough for a meal for four people here: our lowest-priced main dish is the Yellow Dal Tad\""
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "case: a meal plan was shown"
+    },
+    {
+     "key": "pricesConsistent",
+     "ok": true,
+     "detail": "case: the reply quotes , which is no price on screen, the plan total or a budget the guest gave"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 0,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "Can 4 people eat here for ₹300 in total? We eat everything.",
+     "reply": "₹300 isn't enough for a meal for four people here: our lowest-priced main dish is the Yellow Dal Tadka at ₹375, and a meal needs two mains and enough for everyone.",
+     "blocks": [
+      "chips: Plan for ₹1,070 / Show me the menu"
+     ],
+     "cited": [
+      "menu:yellow-dal-tadka"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 6,
+     "modelMs": null,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": null,
+      "otherMs": 6,
+      "calls": 0,
+      "loadMs": null,
+      "promptEvalMs": null,
+      "evalMs": null,
+      "evalTokens": null,
+      "uncachedPromptTokens": null
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "plan_scope",
+       "party": 4,
+       "budget": 300,
+       "diet": "any",
+       "dishes": 47,
+       "least": 1070
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 1: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 1: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 1: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 1: shows the same text twice: \"undefined\""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-PLAN-006",
+   "category": "recommendation",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 13963,
+   "expect": {
+    "expect": {
+     "mealPlan": {
+      "shown": true,
+      "maxTotal": 1000,
+      "cheaperThanTurn": 1,
+      "satisfies": {
+       "diet": [
+        "vegetarian"
+       ]
+      }
+     },
+     "pricesConsistent": true
+    },
+    "forbidden": [
+     "booking_claim_text",
+     "slot_not_in_engine_output"
+    ],
+    "notes": "D-28: a cheaper combination relative to the last plan.",
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "turn 1: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.prices",
+     "ok": true,
+     "detail": "turn 1: subtotal ₹595 ≠ items ₹595"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": true,
+     "detail": "turn 1: subtotal ₹595 > ₹1000"
+    },
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 1: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 1: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 1: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 1: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 2: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 2: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 2: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 2: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "case: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.prices",
+     "ok": true,
+     "detail": "case: subtotal ₹525 ≠ items ₹525"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": true,
+     "detail": "case: subtotal ₹525 > ₹1000"
+    },
+    {
+     "key": "mealPlan.relation",
+     "ok": true,
+     "detail": "case: subtotal ₹525 is not below turn 1's ₹595"
+    },
+    {
+     "key": "mealPlan.constraints",
+     "ok": true,
+     "detail": "case: "
+    },
+    {
+     "key": "pricesConsistent",
+     "ok": true,
+     "detail": "case: the reply quotes , which is no price on screen, the plan total or a budget the guest gave"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 2,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "Two of us, vegetarian, under ₹1000 in total. What should we order?",
+     "reply": "Here's a vegetarian meal for two people that comes to ₹595, within your ₹1,000.",
+     "blocks": [
+      "plan 1x menu:dal-ember ₹445, 2x menu:tandoori-roti ₹75 = ₹595 (budget ₹1000)",
+      "chips: Make it cheaper / Show me the menu / Find a table"
+     ],
+     "cited": [
+      "menu:dal-ember",
+      "menu:tandoori-roti"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 6734,
+     "modelMs": 6730,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 6730,
+      "otherMs": 3,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 5246,
+      "evalMs": 1474,
+      "evalTokens": 65,
+      "uncachedPromptTokens": 2096
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [
+         "vegetarian"
+        ],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "vegetarian",
+        "up to ₹1000"
+       ]
+      },
+      {
+       "action": "plan_scope",
+       "party": 2,
+       "budget": 1000,
+       "diet": "vegetarian",
+       "dishes": 35,
+       "least": 525
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "ok",
+       "items": [
+        "menu:dal-ember×1",
+        "menu:tandoori-roti×2"
+       ],
+       "subtotal": 595,
+       "rejected": []
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": {
+      "mealPlan": {
+       "shown": true,
+       "maxTotal": 1000
+      }
+     },
+     "checks": [
+      {
+       "key": "mealPlan.shown",
+       "ok": true,
+       "detail": "turn 1: no meal plan shown"
+      },
+      {
+       "key": "mealPlan.prices",
+       "ok": true,
+       "detail": "turn 1: subtotal ₹595 ≠ items ₹595"
+      },
+      {
+       "key": "mealPlan.budget",
+       "ok": true,
+       "detail": "turn 1: subtotal ₹595 > ₹1000"
+      },
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 1: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 1: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 1: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 1: shows the same text twice: \"undefined\""
+      }
+     ]
+    },
+    {
+     "index": 1,
+     "kind": "guest",
+     "input": "Can you make it cheaper?",
+     "reply": "Here's a vegetarian meal for two people that comes to ₹525, within your ₹1,000. A comforting lentil curry served with soft whole-wheat flatbread.",
+     "blocks": [
+      "plan 1x menu:yellow-dal-tadka ₹375, 2x menu:tandoori-roti ₹75 = ₹525 (budget ₹1000)",
+      "chips: Make it cheaper / Show me the menu / Find a table"
+     ],
+     "cited": [
+      "menu:yellow-dal-tadka",
+      "menu:tandoori-roti"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 7214,
+     "modelMs": 7200,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 7200,
+      "otherMs": 13,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 5466,
+      "evalMs": 1727,
+      "evalTokens": 64,
+      "uncachedPromptTokens": 2216
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "plan_scope",
+       "party": 2,
+       "budget": 1000,
+       "diet": "vegetarian",
+       "dishes": 35,
+       "least": 525
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "ok",
+       "items": [
+        "menu:yellow-dal-tadka×1",
+        "menu:tandoori-roti×2"
+       ],
+       "subtotal": 525,
+       "rejected": []
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 2: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 2: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 2: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 2: shows the same text twice: \"undefined\""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LV-PLAN-007",
+   "category": "recommendation",
+   "severity": "major",
+   "run": 1,
+   "passed": true,
+   "status": "pass",
+   "durationMs": 8418,
+   "expect": {
+    "expect": {
+     "mealPlan": {
+      "shown": true,
+      "maxTotal": 800,
+      "satisfies": {
+       "diet": [
+        "vegetarian"
+       ]
+      }
+     },
+     "pricesConsistent": true
+    },
+    "forbidden": [
+     "booking_claim_text",
+     "slot_not_in_engine_output"
+    ],
+    "notes": "D-28: a changed budget replaces the old one.",
+    "variantOf": null
+   },
+   "failures": [],
+   "violations": [],
+   "checks": [
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "turn 1: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.prices",
+     "ok": true,
+     "detail": "turn 1: subtotal ₹595 ≠ items ₹595"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": true,
+     "detail": "turn 1: subtotal ₹595 > ₹1000"
+    },
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 1: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 1: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 1: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 1: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "ux.leak",
+     "ok": true,
+     "detail": "turn 2: shows an internal fact ID (undefined)"
+    },
+    {
+     "key": "ux.json",
+     "ok": true,
+     "detail": "turn 2: shows JSON or braces: \"undefined\""
+    },
+    {
+     "key": "ux.internal",
+     "ok": true,
+     "detail": "turn 2: shows internal wording (undefined)"
+    },
+    {
+     "key": "ux.duplicate",
+     "ok": true,
+     "detail": "turn 2: shows the same text twice: \"undefined\""
+    },
+    {
+     "key": "mealPlan.shown",
+     "ok": true,
+     "detail": "case: no meal plan shown"
+    },
+    {
+     "key": "mealPlan.prices",
+     "ok": true,
+     "detail": "case: subtotal ₹595 ≠ items ₹595"
+    },
+    {
+     "key": "mealPlan.budget",
+     "ok": true,
+     "detail": "case: subtotal ₹595 > ₹800"
+    },
+    {
+     "key": "mealPlan.constraints",
+     "ok": true,
+     "detail": "case: "
+    },
+    {
+     "key": "pricesConsistent",
+     "ok": true,
+     "detail": "case: the reply quotes , which is no price on screen, the plan total or a budget the guest gave"
+    }
+   ],
+   "offered": {
+    "total": 0,
+    "open": 0
+   },
+   "modelCalls": 2,
+   "turns": [
+    {
+     "index": 0,
+     "kind": "guest",
+     "input": "Two of us, vegetarian, under ₹1000 in total. What should we order?",
+     "reply": "Here's a vegetarian meal for two people that comes to ₹595, within your ₹1,000.",
+     "blocks": [
+      "plan 1x menu:dal-ember ₹445, 2x menu:tandoori-roti ₹75 = ₹595 (budget ₹1000)",
+      "chips: Make it cheaper / Show me the menu / Find a table"
+     ],
+     "cited": [
+      "menu:dal-ember",
+      "menu:tandoori-roti"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 1617,
+     "modelMs": 1612,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 1612,
+      "otherMs": 4,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 315,
+      "evalMs": 1291,
+      "evalTokens": 65,
+      "uncachedPromptTokens": 5
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [
+         "vegetarian"
+        ],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "vegetarian",
+        "up to ₹1000"
+       ]
+      },
+      {
+       "action": "plan_scope",
+       "party": 2,
+       "budget": 1000,
+       "diet": "vegetarian",
+       "dishes": 35,
+       "least": 525
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "ok",
+       "items": [
+        "menu:dal-ember×1",
+        "menu:tandoori-roti×2"
+       ],
+       "subtotal": 595,
+       "rejected": []
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": {
+      "mealPlan": {
+       "shown": true,
+       "maxTotal": 1000
+      }
+     },
+     "checks": [
+      {
+       "key": "mealPlan.shown",
+       "ok": true,
+       "detail": "turn 1: no meal plan shown"
+      },
+      {
+       "key": "mealPlan.prices",
+       "ok": true,
+       "detail": "turn 1: subtotal ₹595 ≠ items ₹595"
+      },
+      {
+       "key": "mealPlan.budget",
+       "ok": true,
+       "detail": "turn 1: subtotal ₹595 > ₹1000"
+      },
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 1: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 1: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 1: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 1: shows the same text twice: \"undefined\""
+      }
+     ]
+    },
+    {
+     "index": 1,
+     "kind": "guest",
+     "input": "Actually our budget is ₹800 now.",
+     "reply": "Here's a vegetarian meal for two people that comes to ₹595, within your ₹800.",
+     "blocks": [
+      "plan 1x menu:dal-ember ₹445, 2x menu:tandoori-roti ₹75 = ₹595 (budget ₹800)",
+      "chips: Make it cheaper / Show me the menu / Find a table"
+     ],
+     "cited": [
+      "menu:dal-ember",
+      "menu:tandoori-roti"
+     ],
+     "outcome": "recommend",
+     "intent": "recommend",
+     "retrievalMode": "none",
+     "latencyMs": 6784,
+     "modelMs": 6776,
+     "promptTokens": null,
+     "cachedTokens": null,
+     "outputTokens": null,
+     "timing": {
+      "setupMs": 0,
+      "retrievalMs": null,
+      "promptMs": null,
+      "queueMs": 0,
+      "statusMs": null,
+      "turnModelMs": null,
+      "chooserMs": 6776,
+      "otherMs": 8,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 5381,
+      "evalMs": 1391,
+      "evalTokens": 60,
+      "uncachedPromptTokens": 2181
+     },
+     "firstTryValid": null,
+     "trace": [
+      {
+       "action": "prefs",
+       "prefs": {
+        "diet": [
+         "vegetarian"
+        ],
+        "avoid": [],
+        "maxPrice": null,
+        "course": null,
+        "mild": false,
+        "allergy": false,
+        "unlisted": [],
+        "spicy": false,
+        "exclude": []
+       },
+       "added": [
+        "up to ₹800"
+       ]
+      },
+      {
+       "action": "plan_scope",
+       "party": 2,
+       "budget": 800,
+       "diet": "vegetarian",
+       "dishes": 35,
+       "least": 525
+      },
+      {
+       "action": "plan",
+       "attempt": 1,
+       "result": "ok",
+       "items": [
+        "menu:dal-ember×1",
+        "menu:tandoori-roti×2"
+       ],
+       "subtotal": 595,
+       "rejected": []
+      }
+     ],
+     "draft": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "selected": null
+     },
+     "retrieved": [],
+     "expect": null,
+     "checks": [
+      {
+       "key": "ux.leak",
+       "ok": true,
+       "detail": "turn 2: shows an internal fact ID (undefined)"
+      },
+      {
+       "key": "ux.json",
+       "ok": true,
+       "detail": "turn 2: shows JSON or braces: \"undefined\""
+      },
+      {
+       "key": "ux.internal",
+       "ok": true,
+       "detail": "turn 2: shows internal wording (undefined)"
+      },
+      {
+       "key": "ux.duplicate",
+       "ok": true,
+       "detail": "turn 2: shows the same text twice: \"undefined\""
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

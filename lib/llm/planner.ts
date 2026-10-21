@@ -9,6 +9,7 @@ import { neutralise } from "@/lib/llm/redact";
 // total. The system message is fully static, so Ollama can keep its prefix cached.
 
 export const PlannerSchema = z.object({
+  sum: z.string().max(300),
   dishes: z.array(z.string().max(100)).max(8),
   note: z.string().max(240),
 });
@@ -16,14 +17,16 @@ export type Plan = z.infer<typeof PlannerSchema>;
 export const PLANNER_JSON_SCHEMA = z.toJSONSchema(PlannerSchema) as Record<string, unknown>;
 // p1: dishes and quantities (the 9b model ordered two of every main and four breads for two people, twice over budget);
 // p2: dishes only, each line with what it costs for this group (the app's portions), so the model only adds up.
-export const PLANNER_VERSION = "p2";
+// p3: it writes the sum first ("dal-ember 445 + tandoori-roti 150 = 595"): in the live run p2 still went ₹20–₹310 over
+// and kept two mains when one fitted. The sum is never shown; code adds everything up again.
+export const PLANNER_VERSION = "p3";
 
 export function buildPlannerSystem(restaurant: string): string {
   return `You plan a shared meal at ${restaurant} for a group with a budget. You get the group, the budget, what they eat, the dishes they can choose from (one per line, each with what it costs for this group), and the guest's latest message. Reply with one compact JSON object on a single line that matches the schema below.
 
 Rules:
-1. dishes lists the IDs of the dishes to order, each once, copied exactly from the list (for example "dal-ember"). The app orders the portions shown on each line ("for this group"): a main dish is shared by two, a bread is one each.
-2. The meal's total is the sum of the "for this group" amounts of the dishes you list. Add them up: the total must not be more than the budget. Leave some room rather than going over.
+1. First write sum: the "for this group" amount of each dish you choose, added up (for example "dal-ember 445 + tandoori-roti 150 = 595"). If the total is more than the budget, drop or swap a dish in sum until it fits. The app orders the portions shown on each line ("for this group"): a main dish is shared by two, a bread is one each.
+2. Then dishes lists the IDs from your final sum, each once, copied exactly from the list. The total must not be more than the budget; one main dish per two people is enough when the budget is tight.
 3. Plan a real meal: at least the number of main dishes asked for (mains, tandoor dishes or a biryani), with bread or rice to go with curries. Add a starter, dessert or drink only if the budget allows.
 4. Respect what they eat: a vegetarian group gets only listed vegetarian dishes; for a mixed group, include a main for the vegetarian (or vegan) guest as well as dishes for the others.
 5. note is one short sentence, under 25 words, saying why this meal suits them, from the dishes' descriptions. No prices, numbers, totals, dietary or allergy words: the app shows them. Never call a dish popular, a favourite or a bestseller, and never mention tables or bookings.

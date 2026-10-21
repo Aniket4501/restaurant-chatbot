@@ -191,7 +191,7 @@ export function validatePlan(raw: Plan, dishes: MenuEntry[], focus: PlanFocus, r
   const count = items.reduce((n, i) => n + i.qty, 0);
   const mains = items.filter((i) => isMain(i.d)).length;
   if (!items.length) reasons.push("the plan has no dishes");
-  if (subtotal > focus.budget) reasons.push(`these dishes come to ₹${subtotal} for the group (${items.map((i) => `${i.d.name} ₹${i.d.price * i.qty}`).join(", ")}), more than the ₹${focus.budget} budget: leave out a dish or choose cheaper ones`);
+  if (subtotal > focus.budget) reasons.push(`these dishes come to ₹${subtotal} for the group (${items.map((i) => `${i.d.name} ₹${i.d.price * i.qty}`).join(", ")}), ₹${subtotal - focus.budget} more than the ₹${focus.budget} budget: leave out a dish or choose cheaper ones`);
   if (mains < mainsNeeded(focus.party)) reasons.push(`include at least ${mainsNeeded(focus.party)} main dishes (mains, tandoor or a biryani)`);
   if (items.length && count < focus.party) reasons.push(`add bread, rice or another dish so all ${focus.party} people eat`);
   const member = memberMain(focus.diet);
@@ -199,6 +199,29 @@ export function validatePlan(raw: Plan, dishes: MenuEntry[], focus: PlanFocus, r
   if (relation === "cheaper" && focus.subtotal !== null && subtotal >= focus.subtotal) reasons.push(`the guest wants it cheaper than ₹${focus.subtotal}`);
   if (relation === "another" && focus.items.length && items.every((i) => focus.items.includes(i.d.id))) reasons.push("the guest wants different dishes from the last plan");
   return { reasons, items, subtotal };
+}
+
+/** Drinks, desserts and starters: what a meal can do without. */
+const isExtra = (d: MenuEntry) => d.course === "drinks" || d.course === "desserts" || d.course === "small-plates";
+
+/**
+ * A plan over the budget only because of its extras: the model's meal without them, last added first, until it fits
+ * and still passes every check; null otherwise. The guest is told what was left out. Nothing is added or swapped, and
+ * the budget is never stretched.
+ */
+export function withoutExtras(raw: Plan, dishes: MenuEntry[], focus: PlanFocus, relation: "cheaper" | "another" | null): { v: ReturnType<typeof validatePlan>; left: MenuEntry[] } | null {
+  const byId = new Map(dishes.map((d) => [d.id, d]));
+  const ids = raw.dishes.map((x) => (x.startsWith("menu:") ? x.trim() : `menu:${x.trim()}`));
+  const left: MenuEntry[] = [];
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const d = byId.get(ids[i]);
+    if (!d || !isExtra(d)) continue;
+    left.push(d);
+    const kept = ids.filter((id) => !left.some((l) => l.id === id));
+    const v = validatePlan({ ...raw, dishes: kept }, dishes, focus, relation);
+    if (!v.reasons.length) return { v, left };
+  }
+  return null;
 }
 
 /**
@@ -216,6 +239,7 @@ function safeNote(note: string, planned: MenuEntry[], menu: MenuEntry[]): string
   return n;
 }
 
+const join = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 const rupees = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 const groupWord = (n: number) => NUMBER[n] ?? String(n);
 
@@ -287,7 +311,7 @@ export async function planTurn(
   if (relation === "cheaper" && plan.subtotal !== null && floor.total >= plan.subtotal) return { text: `That's already about the lowest-priced meal for ${group} on our menu.`, blocks: [{ type: "quick_replies", chips: [menuChip] }], focus: plan, asked: false, cited: [] };
 
   const relationLine =
-    relation === "cheaper" && plan.subtotal !== null ? `The last plan came to ₹${plan.subtotal}; the guest wants a cheaper one (a total below that).` : relation === "another" && plan.items.length ? `The guest wants a different combination from the last plan (${plan.items.map((id) => id.slice(5)).join(", ")}).` : null;
+    relation === "cheaper" && plan.subtotal !== null ? `The last plan came to ₹${plan.subtotal} (${plan.items.map((id) => id.slice(5)).join(", ")}); the guest wants a cheaper one: a total below ₹${plan.subtotal}, with a cheaper main or fewer dishes.` : relation === "another" && plan.items.length ? `The guest wants a different combination from the last plan (${plan.items.map((id) => id.slice(5)).join(", ")}).` : null;
   const lines: PlannerDish[] = dishes.map((d) => ({ id: d.id, name: d.name, courseLabel: d.courseLabel, price: d.price, labels: d.labels, contains: d.contains, spice: d.spice, description: d.description, scope: d.scope, qty: portions(d, plan.party) }));
   const needs = [...input.prefs.avoid, ...input.prefs.diet.filter((d) => d === "gluten-free" || d === "jain").map((d) => (d === "jain" ? "non-Jain dishes" : "gluten")), ...(input.prefs.exclude ?? [])];
   const messages: LlmMessage[] = [
@@ -305,8 +329,11 @@ export async function planTurn(
       if (r.code === "MODEL_UNAVAILABLE" || r.code === "MODEL_TIMEOUT") break;
       continue;
     }
-    const v = validatePlan(r.plan, dishes, plan, relation);
-    input.trace.push({ action: "plan", attempt, result: v.reasons.length ? "rejected" : "ok", items: v.items.map((i) => `${i.d.id}×${i.qty}`), subtotal: v.subtotal, rejected: v.reasons });
+    const proposed = validatePlan(r.plan, dishes, plan, relation);
+    // Over the budget only because of drinks, desserts or starters: the meal without them (said in the reply).
+    const trimmed = proposed.reasons.length ? withoutExtras(r.plan, dishes, plan, relation) : null;
+    const v = trimmed?.v ?? proposed;
+    input.trace.push({ action: "plan", attempt, result: v.reasons.length ? "rejected" : trimmed ? "trimmed" : "ok", items: v.items.map((i) => `${i.d.id}×${i.qty}`), subtotal: v.subtotal, rejected: proposed.reasons });
     if (!v.reasons.length) {
       const note = safeNote(r.plan.note, v.items.map((i) => i.d), input.entries);
       const charge = chargeNote(input.src, input.branch);
@@ -314,8 +341,9 @@ export async function planTurn(
       // What's left of the budget is on the card; the line gives the total and the budget only.
       const lead = `Here's a ${DIET_WORD[plan.diet!]}meal for ${group} that comes to ${rupees(v.subtotal)}, within your ${rupees(plan.budget)}.`;
       const items = v.items.map((i) => ({ ...view(i.d), qty: i.qty }));
+      const leftOut = trimmed ? ` I left out the ${join(trimmed.left.reverse().map((d) => d.name))} to stay within your budget.` : "";
       return {
-        text: note ? `${lead} ${note}` : lead,
+        text: `${lead}${leftOut}${note && !trimmed ? ` ${note}` : ""}`,
         blocks: [{ type: "meal_plan", party: plan.party, budget: plan.budget, budgetBasis: plan.basis, items, subtotal: v.subtotal, caveats }, AFTER_CHIPS()],
         focus: { ...plan, subtotal: v.subtotal, items: v.items.map((i) => i.d.id) },
         asked: false,
