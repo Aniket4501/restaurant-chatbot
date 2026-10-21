@@ -75,6 +75,22 @@ report and the dashboard print the exact rerun command.
   recovery and abstention, and intent, field, action, grounding and schema floors. `eval:report` also exits 1 on
   critical failures and on any case that passed in the comparison run and fails now.
 
+## Failure-mode register (D-29)
+
+- `evals/failure-modes.json` lists every way the chatbot was found to fail (the 20 given scenarios, FM-001 to FM-020,
+  and those found in this code, FM-021 on): category, severity (P0–P3) with likelihood and impact, the verdict
+  (confirmed, code-level, not reproduced, not applicable), the fix status, trigger, expected and actual behaviour, root
+  cause, resolution, remaining risk, and the test files. A test belongs to an entry when its name carries the entry's
+  ID; `tests/unit/failure-modes-register.test.ts` checks the register against the test names.
+- `npm run eval:failure-modes [-- --e2e] [--only FM-021] [--label L]` runs those tests (vitest; with `--e2e` also the
+  Playwright specs after a build) and writes `evals/results/failure-modes/<timestamp>_failure-modes[_label].json`: each
+  entry's status (pass, fail, not run, no test) with its tests, counts by severity and area, the release gate, and the
+  comparison with the newest earlier run labelled `baseline…` (resolved, new failures, recurring).
+- Release gate: blocked while any P0/P1 entry in security, reservations or dietary and allergen safety fails, has no
+  test, or isn't fixed. Exit code 1 when blocked.
+- The baseline (`…_baseline-c99e3e7.json`) was built with `--from-vitest` from the same tests run on a checkout of the
+  code before the fixes; the E2E-only entries say in `baselineEvidence` how they were shown failing there.
+
 ## Limits
 
 A finite set of cases is evidence, not proof. Live results vary a little between runs even at temperature 0 (prefix

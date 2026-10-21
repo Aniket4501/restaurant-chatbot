@@ -139,7 +139,12 @@ npm run eval:report      # report on the latest run: evals/reports/<run>.md, .js
 npm run verify:release   # everything, plus the live cases 3 times with the release gates
 npx tsx evals/run.ts --mode live --case LV-REC-014   # rerun one case (or --area recommendations)
 npm run build && npm run bench -- --label mylabel    # latency benchmark (local model, isolated server on port 3107)
+npm run eval:failure-modes                  # every failure-mode regression test (unit and integration), mapped to the register
+npm run eval:failure-modes -- --e2e         # the same plus the Playwright specs (builds first)
+npm run eval:failure-modes -- --only FM-021 # one entry's tests
 ```
+
+The failure-mode register (`evals/failure-modes.json`, D-29) lists each way the chatbot was found to fail, with its trigger, expected and actual behaviour, root cause, fix and the tests named by its ID. `npm run eval:failure-modes` writes `evals/results/failure-modes/`, compares with the baseline run on the code before the fixes, and exits 1 when a P0/P1 safety, booking or security entry fails or isn't fixed. The Failure modes section of `/admin/evals` shows the register and the latest run.
 
 The benchmark (`scripts/bench.ts`, scenarios in `evals/bench.json`) starts its own `next start` with a temporary database, so `data/app.db` is untouched. It times warm questions, recommendations, a follow-up, the menu button, a typed booking and the booking flow with its save; a real browser from send to the reply on screen; and cold starts after unloading both models. Results go to `evals/results/bench/` and appear in the Latency section of `/admin/evals`.
 
@@ -147,17 +152,19 @@ The eval cases, layers, metrics, baseline and how to reproduce a failure are des
 
 ## Known limitations
 
-- **Non-numeric claims are not checked by code.** Grounding catches unsupported times, prices, phone numbers and booking claims, but not, for example, a wrong "this dish is vegan". Diet tags in the facts fixed every such case in the tests, but that is measured, not guaranteed.
+- **Some non-numeric claims are not checked by code.** Grounding catches unsupported times, prices, phone numbers and booking claims, and diet, allergen, availability and popularity claims about the dishes an answer names are checked against their labels. Other wording (taste, a policy detail in a free-text answer) is not; the live evals measure it.
 - **Related weak spots:**
   - A claim inside a hedged sentence ("we'd have a table if you came at 9") is not caught.
-  - Grounding checks that a price exists in the cited facts, not which dish it belongs to.
+  - A price next to a dish's name must be that dish's price; a price elsewhere in a sentence is only checked to exist in the cited facts.
+- **A knowledge document that can't be embedded** keeps search keyword-only for every question until it is fixed or deactivated (D-13 needs every fact's vector); the Knowledge page names it, and the index refresh retries on its own after an outage.
+- **A live eval run shares the model with guests.** Started from `/admin/evals` while guests chat, it slows their replies; the page says so (accepted, D-29 FM-052).
 - **"next Friday"** is read as the coming Friday rather than asked about. The date is always shown back before booking.
 - **Recommendations and meal plans take two model calls** (a plan skips the first), so they are slower than other replies.
 - **Meal plans** use stated portion rules (a main dish shared by two, a bread or drink each, rice or a dessert per two, a starter per four) because portion sizes aren't in the menu data, so "enough food" is that rule, not a measure. Taxes aren't in the data, so totals are menu prices.
 - **"A fish dish"** and similar requests by kind of food: code only knows the words in a dish's name and description, so it can't tell that a pomfret is a fish; the model may or may not say that the fish dish asked for is unavailable.
 - **Menu data limits.**
   - The seed labels the Chocolate Chilli Mousse both vegetarian and containing egg; it appears for "vegetarian" with "Contains egg" on its card.
-  - Allergen labels cover only dairy, nuts and egg, so every answer involving an allergy carries a "tell your server" note.
+  - Allergen labels cover only dairy, nuts and egg, so food answers for a guest with an allergy carry a "tell your server" note (once per conversation, and again when a new allergy is mentioned or the guest asks about safety).
 - **Speed.** Warm replies take about 2–4 s on an M4 Pro, but were slower than 4 s when the machine was heavily loaded. The first reply after the model loads can take 8–14 s; the server warms the model when it starts and every 15 minutes, so this happens only if Ollama was restarted (the chat then says it's still working).
 - **Out of scope:**
   - guests can't change or cancel a booking themselves: the chat gives the branch phone, and staff cancel in admin;
