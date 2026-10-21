@@ -104,6 +104,33 @@ describe("chips with a fixed meaning skip the intent call (D-24)", () => {
   });
 });
 
+describe("FAQ answers get one corrective retry for any claim the labels don't support (D-24 final runs)", () => {
+  const seq = (answers: string[], cited: string[]) => {
+    const sent: string[] = [];
+    const model: ModelClient = { provider: "fake", model: "seq", chat: async (req) => {
+      sent.push(req.messages.at(-1)!.content);
+      const answer = answers[Math.min(sent.length - 1, answers.length - 1)];
+      return { status: 200, error: null, content: JSON.stringify({ intent: "faq", booking: null, prefs: null, answer, citedFactIds: cited, answerable: true }), done_reason: "stop", thinking: null, prompt_eval_count: 1, prompt_eval_cached_count: 0, eval_count: 1, total_ms: 1 };
+    } };
+    return { sent, model };
+  };
+  it("'isn't safe for a nut allergy' is asked again without safe/unsafe wording (LV-HOLD-003)", async () => {
+    const { sent, model } = seq(["No. The Ember Pistachio Kulfi contains nuts (pistachios), so it isn't safe for someone with a nut allergy.", "No. The Ember Pistachio Kulfi contains nuts."], ["menu:pistachio-kulfi"]);
+    const r = await runTurn(say("Is the kulfi okay for someone with a nut allergy?"), deps({ model }));
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatch(/^Don't say a dish is safe or unsafe for an allergy/);
+    expect(r.reply.text).toBe("No. The Ember Pistachio Kulfi contains nuts.");
+  });
+  it("a plural label claim that is false for one dish is asked again, and an answer that stays wrong falls back (LV-AUD-012)", async () => {
+    const wrong = "You can have Mango Sorbet, Coconut Jaggery Payasam, and Shahi Tukda. These are gluten-free.";
+    const { sent, model } = seq([wrong, wrong], ["menu:mango-sorbet", "menu:coconut-jaggery-payasam", "menu:shahi-tukda"]);
+    const r = await runTurn(say("I'm coeliac. Which desserts can I have?"), deps({ model }));
+    expect(sent[1]).toMatch(/Shahi Tukda is not labelled gluten-free/);
+    expect(r.reply.text).not.toContain("Shahi Tukda");
+    expect(r.meta.outcome).toBe("faq_fallback");
+  });
+});
+
 describe("manage_booking next to a pending confirm card (D-24 and its review)", () => {
   it("'confirm it now' gets the reminder; cancelling an earlier booking keeps the phone line, with the reminder", async () => {
     const draft = { ...emptyDraft(), branch: "hauz-khas", date: "2026-10-17", time: "20:00", partySize: 4 };

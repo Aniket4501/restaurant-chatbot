@@ -257,22 +257,37 @@ export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry
   // Attributes the menu data never states ("halal", "organic", "keto") must appear in a cited fact (D-21: "No. Our
   // chicken dishes are not halal." was shown with no fact about halal).
   for (const m of text.matchAll(ATTRIBUTE_RE)) if (!new RegExp(`\\b${m[0]}`, "i").test(citedText)) reasons.push(`"${m[0]}" is not in the facts`);
-  if (!dishes.length) return reasons;
-  const named = mentionsOf(text, dishes, true, menu);
+  // The cited dishes, and any other dish the answer names by its full name: a label claim is checked against the
+  // dish's own labels whether or not the model cited it (D-24).
+  const pool = [...new Set([...dishes, ...mentionsOf(text, menu, false, menu).map((m) => m.d)])];
+  if (!pool.length) return reasons;
+  const named = mentionsOf(text, pool, true, menu);
   const sentences = [...text.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
   const subjectAt = (pos: number): MenuEntry | null => {
     const sent = sentences.find((s) => s.start <= pos && pos < s.end) ?? { start: 0, end: text.length };
     const before = named.filter((m) => m.end <= pos && m.start >= sent.start).at(-1);
     const after = named.find((m) => m.start >= pos && m.start < sent.end);
-    return (before ?? after)?.d ?? (dishes.length === 1 ? dishes[0] : null);
+    return (before ?? after)?.d ?? (pool.length === 1 ? pool[0] : null);
   };
   for (const w of DIET_WORDS)
     for (const m of text.matchAll(w.re)) {
-      const sent = sentences.find((s) => s.start <= m.index && m.index < s.end);
+      const si = sentences.findIndex((s) => s.start <= m.index && m.index < s.end);
+      const sent = sentences[si];
       if (NEGATED.test(text.slice(sent?.start ?? 0, m.index))) continue;
-      const d = subjectAt(m.index);
-      if (d && !w.has(d)) reasons.push(`${d.name} is not ${w.label}`);
+      // "These are gluten-free" names no dish: it is about every dish named in the sentence before (D-24 final run
+      // LV-AUD-012: a bread pudding was called gluten-free to a coeliac guest that way).
+      const inSentence = sent ? named.filter((n) => n.start >= sent.start && n.start < sent.end) : [];
+      const prev = si > 0 ? sentences[si - 1] : null;
+      const plural = !inSentence.length && prev ? [...new Set(named.filter((n) => n.start >= prev.start && n.start < prev.end).map((n) => n.d))] : [];
+      const subjects = plural.length > 1 ? plural : [subjectAt(m.index)].filter((d): d is MenuEntry => !!d);
+      for (const d of subjects) if (!w.has(d)) reasons.push(`${d.name} is not ${w.label}`);
     }
+  // A label given for the wrong reason: nuts, gluten, soy or sesame never make a dish non-vegan (D-24 final run
+  // LV-REC-013: "contains nuts, so it isn't vegan" about a milk ice cream).
+  for (const s of sentences) {
+    const t = text.slice(s.start, s.end);
+    if (/\b(?:isn't|is not|not)\s+(?:a\s+)?vegan\b/i.test(t) && /\bcontains?\s+(?:only\s+)?(?:pea|tree\s+)?nuts?\b|\bcontains?\s+(?:gluten|wheat|soy|sesame)\b/i.test(t) && !/\b(?:dairy|milk|cream|ghee|paneer|cheese|butter|yoghurt|yogurt|egg|honey|meat|chicken|lamb|fish|prawn)\b/i.test(t)) reasons.push("gives a reason that doesn't make a dish non-vegan");
+  }
   reasons.push(...ingredientProblems(text, named, sentences));
   return [...new Set(reasons)];
 }

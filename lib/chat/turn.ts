@@ -330,9 +330,24 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
         const g = checkGrounding(r.turn.answer, r.turn.citedFactIds.filter((id) => factsById.has(id)), { factsById, sentIds, zoneOf });
         const guestNumbers = new Set(foldDigits(latest).match(/\d+/g) ?? []);
         // Likewise when an otherwise good answer promises allergen safety ("these are safe for coeliacs"): the
-        // dishes are worth showing, the promise is not (D-21 after-run LV-AUD-012).
-        const unsafe = claimProblems(r.turn.answer, [], entries).includes("promises allergen safety");
-        const correction = !g.ok && g.reason === "digits" && guestNumbers.has(g.detail) ? `Your answer repeats the guest's number ${g.detail}, which no fact states. Answer again using only numbers that appear in the facts.` : unsafe ? "Your answer promises that something is safe or free of an allergen, which the facts can't confirm. Answer again without that promise; the app adds its own allergy note." : null;
+        // dishes are worth showing, the promise is not (D-21 after-run LV-AUD-012). And when it makes any other claim
+        // the cited dishes' labels don't support ("these are gluten-free" with a bread pudding among them, "contains
+        // nuts, so it isn't vegan"), or calls a dish safe or unsafe for an allergy at all (rule 4): one corrective
+        // retry instead of going straight to the fallback (D-24 final runs).
+        const cited = r.turn.citedFactIds.filter((id) => factsById.has(id));
+        const citedDishes = entries.filter((d) => cited.includes(d.id));
+        const problems = claimProblems(r.turn.answer, citedDishes, entries, cited.map((id) => factsById.get(id)?.text ?? "").join("\n"));
+        const unsafe = problems.includes("promises allergen safety");
+        const safeWords = /\b(?:un)?safe(?:ly)?\b/i.test(r.turn.answer) && /\ballerg|co?eliac|celiac|intoleran/i.test(`${latest} ${r.turn.answer}`);
+        const correction = !g.ok && g.reason === "digits" && guestNumbers.has(g.detail)
+          ? `Your answer repeats the guest's number ${g.detail}, which no fact states. Answer again using only numbers that appear in the facts.`
+          : unsafe
+            ? "Your answer promises that something is safe or free of an allergen, which the facts can't confirm. Answer again without that promise; the app adds its own allergy note."
+            : problems.length
+              ? `Your answer can't be shown: ${problems.join("; ")}. Answer again using only what the cited facts say about each dish.`
+              : safeWords
+                ? "Don't say a dish is safe or unsafe for an allergy. Answer again saying which allergens its labels list; the app adds its own allergy note."
+                : null;
         if (correction) {
           const again = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: correction }]);
           if (again.result.ok) first = again;

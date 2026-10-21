@@ -500,3 +500,20 @@ describe("review of D-24: the reviewers' failing inputs", () => {
     for (const side of ["Tandoori Roti", "Missi Roti", "Steamed Basmati Rice", "Jeera Rice", "Kokum Cooler", "Fresh Lime Soda"]) expect(listed, side).not.toContain(side);
   });
 });
+
+describe("D-24 final runs: claims the first final runs let through", () => {
+  const dish = (id: string) => e(id);
+  it("a plural label claim covers every dish named in the sentence before (LV-AUD-012)", () => {
+    const text = "You can have Mango Sorbet, Coconut Jaggery Payasam, and Shahi Tukda. These are gluten-free.";
+    const cited = ["menu:mango-sorbet", "menu:coconut-jaggery-payasam", "menu:shahi-tukda"].map(dish);
+    expect(claimProblems(text, cited, entries)).toContain("Shahi Tukda is not labelled gluten-free");
+    expect(claimProblems("You can have Mango Sorbet and Coconut Jaggery Payasam. These are gluten-free.", cited.slice(0, 2), entries)).toEqual([]);
+    // Named but not cited is checked too.
+    expect(claimProblems(text, [], entries)).toContain("Shahi Tukda is not labelled gluten-free");
+  });
+  it("rejects nuts (or gluten, soy, sesame) as the reason a dish isn't vegan, not a real reason (LV-REC-013)", () => {
+    expect(claimProblems("No. The Ember Pistachio Kulfi contains nuts, so it isn't vegan.", [dish("menu:pistachio-kulfi")], entries)).toContain("gives a reason that doesn't make a dish non-vegan");
+    expect(claimProblems("No. The Ember Pistachio Kulfi contains nuts (pistachios) and dairy, so it isn't vegan.", [dish("menu:pistachio-kulfi")], entries)).toEqual([]);
+    expect(claimProblems("No. The Ember Pistachio Kulfi is made with milk, so it isn't vegan.", [dish("menu:pistachio-kulfi")], entries)).toEqual([]);
+  });
+});
