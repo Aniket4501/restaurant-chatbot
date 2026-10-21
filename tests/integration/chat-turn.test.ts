@@ -316,6 +316,12 @@ describe("FAQ routing (J1, J2, J8, J12; D-10, D-15)", () => {
         expect(r.reply.text, q).toContain("Golf Course Road, Tuesday to Sunday");
       }
     });
+    it("'right now' and 'tomorrow' show that date's weekday even when the model cited another (D-24 final run LV-INT-010)", async () => {
+      const now = await ask("Are you open right now at Hauz Khas?", ["hours:hauz-khas:mon"]); // NOW is a Friday
+      expect(now.reply.text).toBe("Hauz Khas on Fridays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM.");
+      const tomorrow = await ask("What time does Golf Course Road open tomorrow?", ["hours:gurugram:tue"]);
+      expect(tomorrow.reply.text).toMatch(/^Golf Course Road on Saturdays: /);
+    });
     it("'tomorrow' gets tomorrow's hours without another date's exception; a weekday in general keeps them", async () => {
       const tomorrow = await ask("What time do you open tomorrow?", ["hours:hauz-khas:sat", "hours:gurugram:sat"]);
       expect(tomorrow.reply.text).not.toContain("31 Oct");

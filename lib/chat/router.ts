@@ -2,7 +2,7 @@ import { RULES } from "@/lib/config";
 import { checkStart, getAvailability, type AvailabilityBundle, type Slot } from "@/lib/booking/availability";
 import type { Fact } from "@/lib/kb/facts";
 import type { Turn } from "@/lib/llm/schema";
-import { addLocalDays, dayLabel, dayLabelLong, isoInZone, localDateOf, localTimeOf, minutesOf, timeLabel, timeLabelOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
+import { addLocalDays, dayKeyOf, dayLabel, dayLabelLong, isoInZone, localDateOf, localTimeOf, minutesOf, timeLabel, timeLabelOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 import { smalltalkShowable } from "@/lib/chat/claims";
 import { applySetField, bookingInProgress, mergeExtracted, type FieldCtx, type FieldIssue, type MergeResult } from "@/lib/chat/draft";
 import { checkGrounding, dateSpans, type GroundingContext } from "@/lib/chat/grounding";
@@ -331,6 +331,13 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
         // "hours at Golf Course Road?" showed only its 27 Oct closure).
         // Only for an hours question: an address or phone answer cites branch facts alone (review of D-24).
         if (scope.general && cited.some((id) => /^(?:hours|exception):/.test(id))) ids = [...slugs.flatMap((s) => WEEK_KEYS.map((d) => `hours:${s}:${d}`)).filter((id) => facts.factsById.has(id)), ...cited.filter((id) => id.startsWith("branch:"))];
+        // "Today", "tonight", "tomorrow" with no weekday or date named: that date's own weekday, whatever weekday the model
+        // cited (D-24 final run LV-INT-010: "open right now?" on a Friday showed Monday's hours).
+        if (scope.dates.length && !scope.weekday && !dateSpans(facts.guest ?? "").length && cited.some((id) => /^(?:hours|exception):/.test(id))) {
+          const citedSlugs = [...new Set(cited.map((id) => id.split(":")[1]))].filter((s) => ctx.branches.some((b) => b.slug === s));
+          const asked = facts.branchNamed ? [facts.branchNamed] : citedSlugs.length ? citedSlugs : ctx.branches.map((b) => b.slug);
+          ids = [...asked.flatMap((s) => scope.dates.map((d) => `hours:${s}:${dayKeyOf(d, facts.zoneOf(s))}`)).filter((id) => facts.factsById.has(id)), ...cited.filter((id) => id.startsWith("branch:"))];
+        }
         // A date asked about ("tonight", "tomorrow") with special hours: the exception replaces the usual hours even if
         // the model cited only the weekly fact (D-24 audit: "dinner tonight?" on 22 Oct led with the usual dinner).
         for (const date of scope.dates) for (const s of slugs) if (facts.factsById.has(`exception:${s}:${date}`) && !ids.includes(`exception:${s}:${date}`)) ids = [...ids, `exception:${s}:${date}`];

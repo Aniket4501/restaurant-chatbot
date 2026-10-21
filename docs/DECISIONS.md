@@ -413,3 +413,10 @@ A read-only adversarial review (3 reviewers, 26 findings, each checked by a skep
 - A request to cancel an earlier booking next to a pending card lost the phone line (now kept, with the reminder after it); the evals runner stopped on a failed re-plant (now logged and skipped); a rerun of a few cases compared area rates with the full run (now only case-level changes, with a note).
 Refuted (7), among them: forcing a pick on "recommend" when only "an allergy" is stated (the allergy note and validation still apply), and the v7 meta-request example (not derived from the held-out case's text).
 
+### D-24 first final run and prompt v8 (2026-10-21)
+The first final run (ad6231c, prompt v7) scored 219/232 against the baseline's 216/232, with 4 new failures. Two were fixed, two are recorded:
+- **LV-HOLD-003 (critical, fixed in prompt v8):** "…contains nuts (pistachios), so it is not safe for someone with a nut allergy" followed the shape of the v7 broccoli example. Rule 4 now says never to call a dish safe or unsafe for an allergy, only which allergens its labels list.
+- **LV-INT-010 (fixed in code):** "Are you open right now at Hauz Khas?" on a Friday cited Monday's hours. For "today/tonight/now/tomorrow" with no weekday or date named, the hours answer now shows that date's own weekday (and its exception), whatever weekday the model cited.
+- **LV-MENU-003 (recorded):** "What's the cheapest main course?" was classed as a recommendation instead of a question; the reply is right ("Yellow Dal Tadka … ₹375") with a card. Not tuned for one case.
+- **LV-GAP-015 (recorded):** the only tandoor fish dish is unavailable; neither run says so (the baseline's fallback list happened to include the fish fry). Needs an "asked-for ingredient only in unavailable dishes" reply.
+

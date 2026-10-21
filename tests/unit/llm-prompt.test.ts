@@ -90,7 +90,9 @@ describe("buildPrompt matches probe prompt v2 apart from the approved changes", 
       )
       // v7 (D-24): no whitespace outside strings, and rule 9 (booking is null unless the intent is "booking").
       .replace("written as compact JSON on a single line.", 'written as compact JSON on a single line: start with {"intent": and use no spaces or line breaks outside strings.')
-      .replace("the last suggestion, else null.", 'the last suggestion, else null.\n9. booking is null unless the intent is "booking"; then it holds the fields from rule 2.');
+      .replace("the last suggestion, else null.", 'the last suggestion, else null.\n9. booking is null unless the intent is "booking"; then it holds the fields from rule 2.')
+      // v8 (D-24): no safe/unsafe wording about allergies.
+      .replace("free of an allergen only if the facts say so for that dish.", "free of an allergen only if the facts say so for that dish. Never say a dish is safe or unsafe for an allergy: say which allergens its labels list.");
     const nb = null; // v7: booking is null outside "booking"
     const examples = [
       ["book a table for 2 at Golf Course Road this Saturday at 7pm", { intent: "booking", booking: { branch: "gurugram", date: "2026-10-17", time: "19:00", timeWindow: null, partySize: 2, ambiguity: null }, prefs: null, answer: null, citedFactIds: [], answerable: true }],
@@ -124,7 +126,7 @@ describe("buildPrompt matches probe prompt v2 apart from the approved changes", 
 
   it("is pinned by a snapshot", async () => {
     const p = buildPrompt(input({ draft: { branch: "hauz-khas", date: "2026-10-17", time: null, timeWindow: "dinner", partySize: 4 } }));
-    await expect(`${p.version}\n=== system ===\n${p.system}\n=== user ===\n${p.user}\n`).toMatchFileSnapshot("../golden/prompt-v7.txt");
+    await expect(`${p.version}\n=== system ===\n${p.system}\n=== user ===\n${p.user}\n`).toMatchFileSnapshot("../golden/prompt-v8.txt");
   });
 });
 
