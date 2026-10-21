@@ -190,6 +190,13 @@ describe("failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-
     expect(r).toMatchObject({ code: "UNAVAILABLE", status: 503 });
     expect(rows()).toBe(0);
   });
+  it("FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details", async () => {
+    const saved = await (await post(body({ email: "asha@example.com", note: "window seat" }))).text();
+    expect(saved).not.toMatch(/98765|43210|asha@example\.com/);
+    const stranger = await (await post(body({ name: "Someone Else" }))).json();
+    expect(stranger.error.code).toBe("DUPLICATE_BOOKING");
+    expect(JSON.stringify(stranger)).not.toMatch(/NE-[A-Z0-9]{8}|8:00 PM|Asha/);
+  });
   it("FM-040 names spelt with zero-width joiners are accepted; bidi overrides are still refused", () => {
     expect(createReservation(t.db, body({ name: "ലക്ഷ്മി മേനോന്\u200d" }), randomUUID(), NOW)).toHaveProperty("reservation");
     expect(createReservation(t.db, body({ name: "Asha \u202eoaR", startsAt: toInstant("2026-10-18", "20:00", "Asia/Kolkata") }), randomUUID(), NOW)).toMatchObject({ code: "VALIDATION" });
@@ -221,6 +228,34 @@ describe("failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-
     expect(ok.status).toBe(200);
     expect((await ok.json()).changed).toBe(true);
     expect((t.db.prepare("SELECT count(*) AS n FROM admin_changes WHERE target = ? AND action = 'cancelled'").get(ref) as { n: number }).n).toBe(1);
+  });
+});
+
+describe("failure modes: turn time (FM-025)", () => {
+  /** The scripted model, with a clock that moves on `stepMs` per model call. */
+  const slow = (replies: unknown[], stepMs: number) => {
+    const rec = recorder(replies);
+    let clock = 0;
+    const model: ModelClient = { ...rec.model, chat: async (req) => ((clock += stepMs), rec.model.chat(req)) };
+    return { sent: rec.sent, deps: { ...deps(model), elapsed: () => clock } as TurnDeps };
+  };
+  it("FM-025 past the turn's budget, the dish chooser isn't called: the guest gets the code's list", async () => {
+    const m = slow([recTurn({ diet: ["vegetarian"], course: "mains" }), { pick: "dal-ember", alternatives: [], reply: "The Dal Ember at ₹445." }], 19_000);
+    const r = await runTurn(say("Something vegetarian, a main please"), m.deps);
+    expect(m.sent).toHaveLength(1);
+    expect(r.reply.text).toMatch(/^Here are a few/);
+    expect(block(r, "recommendation")?.items.length).toBeGreaterThan(0);
+  });
+  it("FM-025 past the budget, invalid model output gets no corrective retry", async () => {
+    const m = slow(["not json at all", turn("faq", { answer: "Yes.", citedFactIds: ["faq:pets"] })], 19_000);
+    await runTurn(say("can I bring my dog?"), m.deps);
+    expect(m.sent).toHaveLength(1);
+  });
+  it("FM-025 within the budget both still happen", async () => {
+    const m = slow([recTurn({ diet: ["vegetarian"], course: "mains" }), { pick: "dal-ember", alternatives: [], reply: "The Dal Ember at ₹445 is black lentils slow-cooked overnight." }], 1_000);
+    const r = await runTurn(say("Something vegetarian, a main please"), m.deps);
+    expect(m.sent).toHaveLength(2);
+    expect(block(r, "recommendation")?.items[0].id).toBe("menu:dal-ember");
   });
 });
 

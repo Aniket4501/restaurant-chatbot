@@ -24,7 +24,7 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
   const [overview, setOverview] = useState<Overview>(initial);
   const [runId, setRunId] = useState<string | null>(() => pickDefault(initial.runs));
   const [baseId, setBaseId] = useState<string>("auto");
-  const [detail, setDetail] = useState<RunDetail | null>(null);
+  const [loaded, setDetail] = useState<RunDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openCase, setOpenCase] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(initial.job);
@@ -66,14 +66,14 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
 
   // Follow a running job; when it ends, reload the runs and show the new one.
   useEffect(() => {
-    if (job?.state !== "running") return;
+    if (job?.state !== "running" && job?.state !== "stopping") return;
     const t = setInterval(async () => {
       const r = await fetch("/api/admin/evals/jobs", { cache: "no-store" }).catch(() => null);
       if (!r?.ok) return;
       const j = (await r.json()) as { job: Job | null; now: number };
       setJob(j.job);
       setNow(j.now);
-      if (j.job && j.job.state !== "running") {
+      if (j.job && j.job.state !== "running" && j.job.state !== "stopping") {
         await loadOverview().catch(() => null);
         if (j.job.runId) {
           setBaseId(j.job.request.caseIds && rerunOf.current ? rerunOf.current : "auto");
@@ -105,6 +105,9 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
   };
 
   const runs = overview.runs;
+  // Only the selected run's detail is shown: while a newly selected run loads (or fails to), the previous run's numbers
+  // are not left under its name (failure-mode audit FM-047).
+  const detail = loaded && loaded.run.id === runId ? loaded : null;
   const run = detail?.run ?? runs.find((r) => r.id === runId) ?? null;
   const cmp = detail?.comparison ?? null;
   const base = detail?.base ?? null;
@@ -260,19 +263,20 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
 
             {run && <Regressions cmp={cmp} base={base} onOpen={setOpenCase} />}
 
-            {detail && run && <FailureExplorer rows={detail.cases} areas={overview.areas} hasComparison={!!cmp} onOpen={setOpenCase} onRerun={(caseIds) => start({ mode: run.mode, suite: "full", area: null, caseIds })} rerunDisabled={job?.state === "running"} />}
+            {detail && run && <FailureExplorer rows={detail.cases} areas={overview.areas} hasComparison={!!cmp} onOpen={setOpenCase} onRerun={(caseIds) => start({ mode: run.mode, suite: "full", area: null, caseIds })} rerunDisabled={job?.state === "running" || job?.state === "stopping"} />}
             {!detail && !loadError && <p className="text-muted">Loading the run…</p>}
           </>
         )}
       </div>
-      {openCase && runId && <CaseDetailDialog runId={runId} caseId={openCase} onClose={() => setOpenCase(null)} onRerun={start} rerunDisabled={job?.state === "running"} />}
+      {openCase && runId && <CaseDetailDialog runId={runId} caseId={openCase} onClose={() => setOpenCase(null)} onRerun={start} rerunDisabled={job?.state === "running" || job?.state === "stopping"} />}
     </div>
   );
 }
 
 function OverviewCards({ run, base, cmp, baseReason }: { run: RunSummary; base: RunSummary | null; cmp: RunDetail["comparison"]; baseReason: RunDetail["baseReason"] | null }) {
   const rate = run.counts.executed ? run.counts.passed / run.counts.executed : null;
-  const baseRate = base && base.counts.executed ? base.counts.passed / base.counts.executed : null;
+  // No pass-rate change against or from an unfinished run, or between different case sets (FM-044).
+  const baseRate = base && base.counts.executed && cmp?.ratesComparable ? base.counts.passed / base.counts.executed : null;
   const critical = run.critical.invariantViolations + run.critical.criticalCasesFailed;
   const card = "rounded-2xl border border-line bg-paper p-4";
   const statusTone = run.status === "complete" ? "text-neem" : run.status === "running" ? "text-warn" : "text-bad";

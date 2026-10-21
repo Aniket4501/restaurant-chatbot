@@ -4,7 +4,7 @@ import type { Block, Chip, HoursFocus, HoursSection } from "@/lib/chat/types";
 import type { FactSource } from "@/lib/kb/facts";
 import { formatPhone } from "@/lib/phone";
 import { horizonDates } from "@/lib/time/calendar";
-import { addLocalDays, dayKeyOf, dayLabel, isLocalDate, minutesOf, timeLabelOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
+import { addLocalDays, dayKeyOf, dayLabel, dayLabelLong, isLocalDate, minutesOf, timeLabelOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 
 // Opening-hours answers as a card (D-27). The question is read for its branch, dates and meal; the rows come from the
 // structured weekly hours and the exceptions for that branch and date only (an exception never applies to another
@@ -197,7 +197,9 @@ const when = (date: LocalDate, today: LocalDate, zone: string) => {
   if (ahead === 1) return "tomorrow";
   return ahead > 1 && ahead < 7 ? `on ${cap(WEEKDAYS[weekdayOf(date, zone)])}` : "on that date";
 };
-const subtitleOf = (date: LocalDate, today: LocalDate, zone: string) => (date === today ? `Today, ${dayLabel(date, zone)}` : date === addLocalDays(today, 1, zone) ? `Tomorrow, ${dayLabel(date, zone)}` : dayLabel(date, zone));
+// A date in another year shows the year: "20 October" asked on 22 Oct 2026 is answered for 2027 (failure-mode audit FM-035).
+const subtitleOf = (date: LocalDate, today: LocalDate, zone: string) =>
+  date === today ? `Today, ${dayLabel(date, zone)}` : date === addLocalDays(today, 1, zone) ? `Tomorrow, ${dayLabel(date, zone)}` : date.slice(0, 4) !== today.slice(0, 4) ? dayLabelLong(date, zone) : dayLabel(date, zone);
 function join(xs: string[]): string {
   return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
 }

@@ -341,6 +341,8 @@ export type Comparison = {
   base: { id: string; startedAt: string };
   head: { id: string; startedAt: string };
   comparable: boolean;
+  /** Area rates, metrics and the pass rate may be compared: the same kind and the same cases, both runs complete. */
+  ratesComparable: boolean;
   note: string | null;
   newFailures: CaseChange[];
   resolved: CaseChange[];
@@ -366,7 +368,10 @@ export function compareRuns(base: Run, head: Run): Comparison {
   // or over the same cases: a rerun of five failing cases against the full run it came from would show "−38 pts" for
   // fixing three of them (review of D-24). Case-level changes are always compared.
   const sameSet = a.size === b.size && [...b.keys()].every((id) => a.has(id));
-  const sameCases = sameKind && ((head.summary.suite !== "subset" && head.summary.suite === base.summary.suite) || sameSet);
+  // A running or interrupted run keeps its suite name but ran only some cases, so it counts as a full run only once
+  // complete (failure-mode audit FM-044: an unfinished run's area deltas came from partial data).
+  const unfinished = [head, base].find((r) => r.summary.status !== "complete") ?? null;
+  const sameCases = sameKind && ((!unfinished && head.summary.suite !== "subset" && head.summary.suite === base.summary.suite) || sameSet);
   const areas = head.summary.areas.map((h) => {
     const p = base.summary.areas.find((x) => x.key === h.key);
     return { key: h.key, label: h.label, before: { rate: p?.rate ?? null, n: p?.n ?? 0 }, after: { rate: h.rate, n: h.n }, delta: sameCases && p?.rate != null && h.rate != null ? h.rate - p.rate : null };
@@ -385,7 +390,12 @@ export function compareRuns(base: Run, head: Run): Comparison {
     base: { id: base.summary.id, startedAt: base.summary.startedAt },
     head: { id: head.summary.id, startedAt: head.summary.startedAt },
     comparable: sameKind,
-    note: !sameKind ? "Different modes (scripted vs live): case statuses are compared, but the model differs." : !sameCases ? "These runs ran different sets of cases: case-level changes are compared, but not area rates or metrics." : base.summary.datasetHash !== head.summary.datasetHash ? "The case files changed between these runs: only cases both ran are compared, and an edited case may score differently for that reason." : null,
+    ratesComparable: sameCases,
+    note: !sameKind
+      ? "Different modes (scripted vs live): case statuses are compared, but the model differs."
+      : unfinished && !sameSet
+        ? `${unfinished === head ? "This run" : "The run it is compared with"} is unfinished (${unfinished.summary.counts.executed} of ${unfinished.summary.counts.selected} cases run): case-level changes are compared, but not area rates or metrics.`
+        : !sameCases ? "These runs ran different sets of cases: case-level changes are compared, but not area rates or metrics." : base.summary.datasetHash !== head.summary.datasetHash ? "The case files changed between these runs: only cases both ran are compared, and an edited case may score differently for that reason." : null,
     newFailures,
     resolved: both.filter((c) => failing(c.before) && c.after === "pass"),
     stillFailing: both.filter((c) => failing(c.before) && failing(c.after)),

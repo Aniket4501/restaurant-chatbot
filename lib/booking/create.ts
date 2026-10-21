@@ -183,7 +183,8 @@ export function mapConstraintError(db: DB, err: { code?: string; message?: strin
 
 /**
  * Guest overlap (§5.6 step 3, BR-11). J7 (D-14): reveal a booking only if its name matches the submitted one, checking
- * every overlapping booking on that mobile (review BI-4), so a stranger who knows the number learns nothing.
+ * every overlapping booking on that mobile (review BI-4). A stranger who knows the number learns only that a booking
+ * exists around that time (the generic 409), never its reference, time or name (failure-mode audit FM-019).
  */
 function duplicateOf(db: DB, branchId: number, slug: string, zone: string, body: CreateBody, endsAt: number): TxOutcome | null {
   const rows = db

@@ -52,7 +52,7 @@ export function singleFlight(round: () => Promise<void>): () => Promise<void> {
   };
 }
 
-const evalRunning = () => currentJob()?.state === "running" || listRuns(resultsDir()).some((x) => x.summary.status === "running");
+const evalRunning = () => currentJob()?.state === "running" || currentJob()?.state === "stopping" || listRuns(resultsDir()).some((x) => x.summary.status === "running");
 
 export function startWarmer(): void {
   const config = getConfig();

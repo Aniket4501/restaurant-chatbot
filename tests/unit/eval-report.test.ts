@@ -96,6 +96,18 @@ describe("comparisons", () => {
     // Two full runs still compare by area, even when cases were added since.
     expect(compareRuns(full, run("full-2", [res({ id: "A" }), res({ id: "B" }), res({ id: "C" }), fail({ id: "D" }), res({ id: "E" })], { suite: "full" })).areas.some((x) => x.delta !== null)).toBe(true);
   });
+  it("FM-044 an unfinished full run is compared case by case only, with a note, never by area rate or pass rate", () => {
+    const full = run("full-run", [res({ id: "A" }), fail({ id: "B" }), res({ id: "C" }), fail({ id: "D" })], { suite: "full" });
+    const results = [res({ id: "A" }), res({ id: "B" })];
+    const partial: Run = { summary: summarize("part", "part.json", { kind: "eval-live", mode: "live", suite: "full", startedAt: "2026-10-22T00:00:00.000Z" }, results, null, "interrupted", null), results };
+    const c = compareRuns(full, partial);
+    expect(c.ratesComparable).toBe(false);
+    expect(c.areas.every((x) => x.delta === null)).toBe(true);
+    expect(c.stats.every((x) => x.delta === null && !x.regressed)).toBe(true);
+    expect(c.note).toMatch(/^This run is unfinished/);
+    expect(c.resolved.map((x) => x.id)).toEqual(["B"]);
+    expect(compareRuns(full, run("full-2", [res({ id: "A" }), res({ id: "B" }), res({ id: "C" }), fail({ id: "D" })], { suite: "full" })).ratesComparable).toBe(true);
+  });
   const base = run("base", [res({ id: "A" }), fail({ id: "B" }), res({ id: "C", severity: "critical" }), res({ id: "GONE" })]);
   const head = run("headrun", [res({ id: "A" }), res({ id: "B" }), fail({ id: "C", severity: "critical" }), res({ id: "NEW" })]);
   it("finds new failures, resolved and still-failing cases, and critical regressions", () => {

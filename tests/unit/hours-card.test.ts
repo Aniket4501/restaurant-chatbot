@@ -201,3 +201,12 @@ describe("D-27 opening-hours answers", () => {
     }
   });
 });
+
+describe("failure-mode audit FM-035", () => {
+  it("FM-035 a day already past this year is answered for next year, and the card says which year", () => {
+    const later = Date.parse("2026-10-22T14:00:00+05:30");
+    const a = ask("Are you open at Hauz Khas on 20 October?", { now: later });
+    expect(card(a)[0].subtitle).toBe("Wed 20 Oct 2027");
+    expect(card(ask("Is Hauz Khas open on 24 October?", { now: later }))[0].subtitle).toBe("Sat 24 Oct");
+  });
+});

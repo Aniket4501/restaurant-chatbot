@@ -7,13 +7,24 @@ import { duration } from "@/components/admin/evals/format";
 // D-21: start a real eval run (the runner in a child process) and follow it. One run at a time; a live run uses the
 // local model, so the guest chat is slower while it runs.
 
-const STATE_TEXT: Record<Job["state"], string> = { running: "Running", passed: "Finished: every case passed", failed: "Finished with failures", cancelled: "Cancelled", error: "Couldn't run" };
+const STATE_TEXT: Record<Job["state"], string> = { running: "Running", stopping: "Stopping", passed: "Finished: every case passed", failed: "Finished with failures", cancelled: "Cancelled", error: "Couldn't run" };
+
+/**
+ * The finished-run headline from what the run reported, not only its exit code: a live run exits 0 when its gates are
+ * met or it had no invariant violations, even with failing cases (failure-mode audit FM-043).
+ */
+export function jobHeadline(job: Pick<Job, "state" | "progress">): { text: string; good: boolean } {
+  const { done, failed, total } = job.progress;
+  if (job.state === "passed" && (failed > 0 || (total !== null && done < total))) return { text: `Finished: ${done - failed} of ${total ?? done} cases passed`, good: false };
+  return { text: STATE_TEXT[job.state], good: job.state === "passed" };
+}
 
 export function RunControls({ job, areas, onStart, onCancel, onView, startError, nowMs }: { job: Job | null; areas: AreaInfo[]; onStart: (r: JobRequest) => void; onCancel: () => void; onView: (runId: string) => void; startError: string | null; nowMs: number }) {
   const [mode, setMode] = useState<JobRequest["mode"]>("scripted");
   const [suite, setSuite] = useState<JobRequest["suite"]>("smoke");
   const [area, setArea] = useState("all");
   const running = job?.state === "running";
+  const busy = running || job?.state === "stopping"; // a stopping run still holds the runner
   const total = job?.progress.total ?? null;
   const done = job?.progress.done ?? 0;
   const radio = (name: string, value: string, current: string, set: (v: string) => void, label: string, hint: string) => (
@@ -40,7 +51,7 @@ export function RunControls({ job, areas, onStart, onCancel, onView, startError,
         <fieldset className="grid gap-2 sm:grid-cols-2">
           <legend className="mb-1 text-[14px] text-muted">Model</legend>
           {radio("mode", "scripted", mode, (v) => setMode(v as JobRequest["mode"]), "Scripted", "Fake model, scripted replies: seconds")}
-          {radio("mode", "live", mode, (v) => setMode(v as JobRequest["mode"]), "Live", "Local Ollama model: minutes; chat slows down")}
+          {radio("mode", "live", mode, (v) => setMode(v as JobRequest["mode"]), "Live", "Local Ollama model, shared with guests: minutes to hours. Guest replies slow down or time out while it runs, so start it when no one is chatting")}
         </fieldset>
         <fieldset className="grid gap-2 sm:grid-cols-2">
           <legend className="mb-1 text-[14px] text-muted">Suite</legend>
@@ -58,7 +69,7 @@ export function RunControls({ job, areas, onStart, onCancel, onView, startError,
             ))}
           </select>
         </label>
-        <button type="submit" disabled={running} className="min-h-11 rounded-full bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-50">
+        <button type="submit" disabled={busy} className="min-h-11 rounded-full bg-neem px-5 text-[15px] font-medium text-white hover:bg-neem-dark disabled:opacity-50">
           Start run
         </button>
       </form>
@@ -69,10 +80,10 @@ export function RunControls({ job, areas, onStart, onCancel, onView, startError,
       )}
       <div aria-live="polite" className="mt-3">
         {job && (
-          <div className={`rounded-xl border px-4 py-3 ${job.state === "running" ? "border-sage bg-ash" : job.state === "passed" ? "border-line bg-neem-tint" : "border-line bg-warn-tint"}`}>
+          <div className={`rounded-xl border px-4 py-3 ${job.state === "running" || job.state === "stopping" ? "border-sage bg-ash" : jobHeadline(job).good ? "border-line bg-neem-tint" : "border-line bg-warn-tint"}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-[15px]">
-                <span className="font-medium">{STATE_TEXT[job.state]}</span> · {job.request.caseIds ? `case ${job.request.caseIds.join(", ")}` : `${job.request.mode} ${job.request.suite}${job.request.area ? `, ${areas.find((a) => a.key === job.request.area)?.label ?? job.request.area}` : ""}`} · {duration((job.finishedAt ? Date.parse(job.finishedAt) : nowMs) - Date.parse(job.startedAt))}
+                <span className="font-medium">{jobHeadline(job).text}</span> · {job.request.caseIds ? `case ${job.request.caseIds.join(", ")}` : `${job.request.mode} ${job.request.suite}${job.request.area ? `, ${areas.find((a) => a.key === job.request.area)?.label ?? job.request.area}` : ""}`} · {duration((job.finishedAt ? Date.parse(job.finishedAt) : nowMs) - Date.parse(job.startedAt))}
               </p>
               <div className="flex gap-2">
                 {running && (
@@ -80,7 +91,7 @@ export function RunControls({ job, areas, onStart, onCancel, onView, startError,
                     Cancel run
                   </button>
                 )}
-                {!running && job.runId && (
+                {!busy && job.runId && (
                   <button type="button" onClick={() => onView(job.runId!)} className="min-h-11 rounded-full border border-neem bg-paper px-4 text-[14px] text-neem hover:bg-neem hover:text-white">
                     View results
                   </button>

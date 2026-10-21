@@ -322,7 +322,7 @@ export async function planTurn(
     },
   ];
   for (const attempt of [1, 2] as const) {
-    if (attempt === 2 && input.canRetry && !input.canRetry()) break;
+    if (input.canRetry && !input.canRetry()) break; // past the turn's time budget (FM-025)
     const r = await call(attempt, messages);
     if (!r.plan) {
       input.trace.push({ action: "plan", attempt, result: r.code, items: [], subtotal: null, rejected: [] });

@@ -7,7 +7,8 @@ import { getNow } from "@/lib/time/now";
 // here scores anything or edits results; the dashboard reads the results file when the job ends.
 
 export type JobRequest = { mode: "scripted" | "live"; suite: "smoke" | "full"; area: string | null; caseIds: string[] | null };
-export type JobState = "running" | "passed" | "failed" | "cancelled" | "error";
+// "stopping": Cancel was pressed and the runner hasn't exited yet; "cancelled" only once it has (FM-049).
+export type JobState = "running" | "stopping" | "passed" | "failed" | "cancelled" | "error";
 export type Job = {
   id: string;
   request: JobRequest;
@@ -56,6 +57,9 @@ export function applyLine(job: Job, line: string): void {
 export function startJob(request: JobRequest, opts: { root: string; spawn?: Spawn; now?: () => Date; otherRunActive?: () => boolean }): { ok: true; job: Job } | { ok: false; code: "BUSY"; message: string } {
   const s = store();
   if (s.job?.state === "running") return { ok: false, code: "BUSY", message: "An eval run started from this page is still going. Wait for it, or cancel it." };
+  // A cancelled runner that hasn't exited yet still holds the model and its results file (failure-mode audit FM-049:
+  // Cancel then Start ran two eval processes, and the second couldn't be cancelled).
+  if (s.child) return { ok: false, code: "BUSY", message: "The previous eval run is still stopping. Try again in a moment." };
   if (opts.otherRunActive?.()) return { ok: false, code: "BUSY", message: "Another eval run is in progress (started from the command line). Wait for it to finish." };
   const now = opts.now ?? (() => new Date(getNow())); // the app clock (D-12: only lib/time reads the system clock)
   const args = runnerArgs(request);
@@ -92,10 +96,11 @@ export function startJob(request: JobRequest, opts: { root: string; spawn?: Spaw
   child.on("close", (code) => {
     if (buffer) applyLine(job, buffer);
     if (job.state === "running") job.state = code === 0 ? "passed" : "failed";
+    else if (job.state === "stopping") job.state = "cancelled";
     job.exitCode = code;
     job.finishedAt = now().toISOString();
     if (job.state === "failed" && !job.runId) job.error = "The runner stopped before writing results. See the output below.";
-    s.child = null;
+    if (s.child === child) s.child = null; // only this run's own process
   });
   return { ok: true, job };
 }
@@ -103,7 +108,7 @@ export function startJob(request: JobRequest, opts: { root: string; spawn?: Spaw
 export function cancelJob(): Job | null {
   const s = store();
   if (!s.job || s.job.state !== "running" || !s.child?.pid) return s.job;
-  s.job.state = "cancelled";
+  s.job.state = "stopping";
   try {
     process.kill(-s.child.pid, "SIGTERM");
   } catch {

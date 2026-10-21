@@ -835,7 +835,9 @@ export async function recommendTurn(
   let lastPick: string | null = null;
   let alternatives: string[] = [];
   for (const attempt of [1, 2] as const) {
-    if (attempt === 2 && input.canRetry && !input.canRetry()) break; // the turn is already slow: fall back instead
+    // The turn is past its time budget: the code list instead of another model call, attempt 1 included (failure-mode
+    // audit FM-025: the first chooser call always ran, after however long the intent call and its retry took).
+    if (input.canRetry && !input.canRetry()) break;
     const r = await call(attempt, messages);
     if (!r.choice) {
       input.trace.push({ action: "recommend", attempt, result: r.code, pick: null, alternatives: [], rejected: [] });

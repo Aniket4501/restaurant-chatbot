@@ -151,14 +151,38 @@ describe("evals API: run controls", () => {
     expect(r.status).toBe(409);
     expect((await r.json()).error.message).toMatch(/command line/);
   });
-  it("cancels a running job", async () => {
+  it("cancels a running job: stopping until the runner exits, then cancelled", async () => {
     const child = new FakeChild();
     const jobs = evalsJobHandlers(deps, ev, () => child as unknown as ChildProcess);
     await jobs.POST(post({ mode: "live", suite: "smoke" }));
     const j = (await (await jobs.DELETE()).json()).job as Job;
-    expect(j.state).toBe("cancelled");
+    expect(j.state).toBe("stopping");
+    expect(child.killed).toBe("SIGTERM");
     child.emit("close", null);
     expect(((await (await jobs.GET()).json()).job as Job).state).toBe("cancelled");
+  });
+  it("FM-049 Cancel then Start never runs two runners: Start waits for the first to exit, and the next run can be cancelled", async () => {
+    const children: FakeChild[] = [];
+    const jobs = evalsJobHandlers(deps, ev, () => {
+      const c = new FakeChild();
+      children.push(c);
+      return c as unknown as ChildProcess;
+    });
+    await jobs.POST(post({ mode: "live", suite: "smoke" }));
+    await jobs.DELETE();
+    const early = await jobs.POST(post({ mode: "scripted", suite: "smoke" }));
+    expect(early.status).toBe(409);
+    expect((await early.json()).error.message).toMatch(/still stopping/);
+    expect(children).toHaveLength(1);
+    children[0].emit("close", null);
+    expect((await jobs.POST(post({ mode: "scripted", suite: "smoke" }))).status).toBe(202);
+    expect(((await (await jobs.DELETE()).json()).job as Job).state).toBe("stopping");
+    expect(children[1].killed).toBe("SIGTERM");
+  });
+  it("FM-043 a finished run with failing cases isn't headlined 'every case passed', whatever its exit code", async () => {
+    const { jobHeadline } = await import("@/components/admin/evals/RunControls");
+    expect(jobHeadline({ state: "passed", progress: { done: 282, failed: 11, total: 282 } })).toEqual({ text: "Finished: 271 of 282 cases passed", good: false });
+    expect(jobHeadline({ state: "passed", progress: { done: 2, failed: 0, total: 2 } })).toEqual({ text: "Finished: every case passed", good: true });
   });
   it("builds the runner's arguments only from validated values", () => {
     expect(runnerArgs({ mode: "live", suite: "smoke", area: null, caseIds: ["LV-A", "LV-B"] })).toEqual(["tsx", "evals/run.ts", "--mode", "live", "--suite", "full", "--case", "LV-A,LV-B", "--save"]);

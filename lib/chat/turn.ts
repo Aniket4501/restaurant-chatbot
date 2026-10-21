@@ -67,6 +67,8 @@ export const PROMPT_CHAR_BUDGET = Math.floor(MODEL.promptBudgetTokens * 2.9);
 
 const RATE_LIMITED_TEXT = "You're sending messages quickly. Please wait a moment and try again.";
 // A full model queue is not the guest's doing (D-24 audit: it said "you're sending messages quickly").
+/** The time after which a turn makes no further optional model calls. */
+const TURN_BUDGET_MS = 18_000;
 const BUSY_TEXT = "We're answering a lot of guests right now. Please try again in a moment.";
 
 // The guest lifting their own diet in so many words (outside a food request).
@@ -75,6 +77,9 @@ const SELF_LIFT = /\b(?:i|we) (?:do |can |also )?eat (?:meat|chicken|fish|mutton
 export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnReply> {
   const elapsed = deps.elapsed ?? (() => performance.now());
   const started = elapsed();
+  // Optional model calls (a corrective retry, the chooser or planner) start only within the turn's time budget; past it
+  // the turn answers from code (failure-mode audit FM-025: three 15 s calls could run back to back).
+  const withinBudget = () => elapsed() - started < TURN_BUDGET_MS;
   const trace: TraceEntry[] = [];
   const draft0 = input.draft ?? emptyDraft();
   // Memory out (D-20): unchanged unless this turn is about food choices.
@@ -278,7 +283,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     try {
       rec = await (deps.gate ?? openGate).run(async () => {
         t.queueMs = elapsed() - q0;
-        return recommendTurn({ turn: { ...fixed("recommend"), prefs: proposal }, text: chip.text, history, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: [], branch: draft0.branch }, chooser);
+        return recommendTurn({ turn: { ...fixed("recommend"), prefs: proposal }, text: chip.text, history, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: withinBudget, relevant: [], branch: draft0.branch }, chooser);
       });
     } catch (e) {
       if (e instanceof GateFullError) {
@@ -339,7 +344,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       res = await (deps.gate ?? openGate).run(async () => {
         t.queueMs = elapsed() - q0;
         // The diet question is asked once per plan: only a plan already under way counts as asked.
-        return planTurn({ request: planReq, text: latest, history, entries, src, prefs: prefsOut ?? noPrefs(), branch: planBranch, asked: askedOut.includes("plan_diet") && !!input.context?.plan, trace, canRetry: () => elapsed() - started < 18_000 }, planner);
+        return planTurn({ request: planReq, text: latest, history, entries, src, prefs: prefsOut ?? noPrefs(), branch: planBranch, asked: askedOut.includes("plan_diet") && !!input.context?.plan, trace, canRetry: withinBudget }, planner);
       });
     } catch (e) {
       if (e instanceof GateFullError) {
@@ -437,8 +442,11 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       let first = await call(1, base);
       const r = first.result;
       const answerTurn = r.ok && (r.turn.intent === "faq" || r.turn.intent === "smalltalk");
-      if (!r.ok && r.code === "MODEL_INVALID_OUTPUT") first = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: CORRECTIVE_MESSAGE }]);
-      else if (r.ok && r.truncated && answerTurn) first = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: CORRECTIVE_MESSAGE }]);
+      if (!r.ok && r.code === "MODEL_INVALID_OUTPUT") {
+        if (withinBudget()) first = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: CORRECTIVE_MESSAGE }]);
+      } else if (r.ok && r.truncated && answerTurn) {
+        if (withinBudget()) first = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: CORRECTIVE_MESSAGE }]);
+      }
       else if (r.ok && r.turn.intent === "faq" && r.turn.answer) {
         // One retry when an answer fails grounding only because it repeats a number from the guest's own message
         // ("we'll be 20 minutes late" → "since you'll be 20 minutes late…"): the facts answer it, the echo doesn't
@@ -464,11 +472,11 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
               : safeWords
                 ? "Don't say a dish is safe or unsafe for an allergy. Answer again saying which allergens its labels list; the app adds its own allergy note."
                 : null;
-        if (correction) {
+        if (correction && withinBudget()) {
           const again = await call(2, [...base, { role: "assistant", content: first.content }, { role: "user", content: correction }]);
           if (again.result.ok) first = again;
         }
-      } else if (!r.ok && r.code === "CONTEXT_TOO_LARGE" && usedHistory.length > 2) {
+      } else if (!r.ok && r.code === "CONTEXT_TOO_LARGE" && usedHistory.length > 2 && withinBudget()) {
         usedHistory = usedHistory.slice(-2);
         prompt = promptFor(usedHistory);
         deps.onPrompt?.(prompt);
@@ -482,7 +490,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       // A popularity or evidence question is answered from the data in code (D-26): no dish chooser for it.
       if (t1.ok && t1.turn.intent === "recommend" && !evidenceKind) {
         recommended.result = await recommendTurn(
-          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: retrieval.hits.map((h) => h.factId), branch: draft0.branch ?? t1.turn.booking.branch ?? branchIn(latest) },
+          { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: withinBudget, relevant: retrieval.hits.map((h) => h.factId), branch: draft0.branch ?? t1.turn.booking.branch ?? branchIn(latest) },
           chooser,
         );
         metrics.promptVersion = `${PROMPT_VERSION}+${CHOOSER_VERSION}`;

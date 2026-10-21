@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { decide } from "@/lib/auth/proxy-rules";
 
@@ -21,3 +23,15 @@ describe("proxy rules", () => {
     expect(decide(base)).toEqual({ action: "next" });
   });
 });
+
+// Failure-mode audit FM-018 (scenario 18): no sign-in by decision D-22, so what keeps staff routes local is the loopback
+// bind and these rules.
+describe("failure-mode audit FM-018", () => {
+  it("FM-018 refuses opaque, other-port and look-alike origins on writes, and the server only listens on loopback", () => {
+    const patch = { ...base, method: "PATCH" };
+    for (const origin of ["null", "http://localhost:3000", "http://127.0.0.1.evil.example:3100", "file://"]) expect(decide({ ...patch, origin }), origin).toMatchObject({ action: "deny", status: 403 });
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../package.json"), "utf8")) as { scripts: Record<string, string> };
+    for (const k of ["dev", "start"]) expect(pkg.scripts[k], k).toMatch(/ -H 127\.0\.0\.1(?: |$)/);
+  });
+});
+
