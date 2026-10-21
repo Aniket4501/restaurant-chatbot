@@ -50,6 +50,11 @@ export function embeddingCoverage(db: DB, facts: Fact[], digest: string): Covera
   return { total: facts.length, embedded: facts.length - missing.length - stale.length, missing, stale };
 }
 
+/** Active knowledge documents whose last embedding failed (kb_documents.embed_error), slug → title. */
+export function embedFailedDocs(db: DB): Map<string, string> {
+  return new Map((db.prepare("SELECT slug, title FROM kb_documents WHERE embed_error IS NOT NULL AND is_active = 1").all() as { slug: string; title: string }[]).map((d) => [d.slug, d.title]));
+}
+
 /** Vectors for every fact, or null unless all are present and current (hybrid needs full coverage). */
 export function loadVectors(db: DB, facts: Fact[], digest: string): Map<string, Float32Array> | null {
   const rows = vectorRows(db, digest);

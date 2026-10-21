@@ -92,11 +92,12 @@ export type MenuItemDetail = {
   guestCard: MenuItemView | null;
   /** List facts (a section or a dietary list) that name this dish. */
   listedIn: string[];
-  index: { keyword: "current" | "stale" | "missing" | "not_indexed"; vector: "current" | "stale" | "missing" | "not_indexed" };
+  index: { keyword: "current" | "stale" | "missing" | "not_indexed"; vector: "current" | "stale" | "missing" | "not_indexed" | "unknown" };
   changes: ChangeRow[];
 };
 
-export function menuItemDetail(db: DB, slug: string): MenuItemDetail {
+/** `digest`: the embedding model in use (null when it didn't answer). */
+export function menuItemDetail(db: DB, slug: string, digest: string | null): MenuItemDetail {
   const r = rowBySlug(db, slug);
   if (!r) throw notFound("Menu item");
   const item = toItem(r, branchNames(db));
@@ -111,8 +112,10 @@ export function menuItemDetail(db: DB, slug: string): MenuItemDetail {
   if (fact) {
     const fts = db.prepare("SELECT body FROM kb_fts WHERE fact_id = ?").get(fact.id) as { body: string } | undefined;
     keyword = !fts ? "missing" : fts.body === (fact.indexText ?? fact.text).normalize("NFKC") ? "current" : "stale";
-    const rows = db.prepare("SELECT content_hash FROM fact_embeddings WHERE fact_id = ?").all(fact.id) as { content_hash: string }[];
-    vector = rows.length === 0 ? "missing" : rows.some((x) => x.content_hash === contentHash(fact)) ? "current" : "stale";
+    // Only vectors from the embedding model in use count (failure-mode audit FM-032: an old model's vector showed
+    // "current" while retrieval was keyword-only); with no answer from the model the state is unknown.
+    const rows = digest === null ? [] : (db.prepare("SELECT content_hash FROM fact_embeddings WHERE fact_id = ? AND model_digest = ?").all(fact.id, digest) as { content_hash: string }[]);
+    vector = digest === null ? "unknown" : rows.length === 0 ? "missing" : rows.some((x) => x.content_hash === contentHash(fact)) ? "current" : "stale";
   }
   return {
     item,
@@ -161,8 +164,11 @@ function checkBranches(db: DB, branches: string[] | null | undefined): string[] 
   const unknown = branches.find((b) => !active.has(b));
   if (unknown) throw fieldError("branches", `Unknown or inactive branch: ${unknown}`);
   const unique = [...new Set(branches)];
-  // Every active branch is the same as "all branches": store null so a new branch would serve it too.
-  return unique.length === active.size ? null : unique;
+  // Every branch is the same as "all branches": store null so a new branch would serve it too. Compared with every
+  // branch, not only the active ones: a dish limited to the only open branch stays limited when another reopens
+  // (failure-mode audit FM-031).
+  const all = (db.prepare("SELECT count(*) AS n FROM branches").get() as { n: number }).n;
+  return unique.length === all ? null : unique;
 }
 
 const SPICE_WORDS = ["not spicy", "mild", "medium", "hot"];
@@ -235,9 +241,10 @@ export function updateMenuItem(db: DB, now: number, slug: string, raw: unknown):
     const after: AdminMenuItem = { ...before, ...next, categoryLabel: COURSE_LABEL[next.category], scopeLabel: next.branches ? `${next.branches.map((s) => branchShortName(names.get(s) ?? s)).join(" and ")} only` : null };
     const summary = describeChange(before, after);
     if (summary === "no change") return { result: { item: before, changed: false, summary }, change: null };
+    // The stored category is written back unless the patch changes it, never the display fallback (FM-034).
     db.prepare(
       `UPDATE menu_items SET name = ?, category = ?, description = ?, price_inr = ?, dietary = ?, spice_level = ?, branch_slugs = ?, is_available = ?, is_listed = ?, is_bestseller = ?, updated_at = ? WHERE slug = ?`,
-    ).run(next.name, next.category, next.description, next.priceInr, JSON.stringify(next.dietary), next.spiceLevel, next.branches ? JSON.stringify(next.branches) : null, next.status === "available" ? 1 : 0, next.status === "removed" ? 0 : 1, next.bestseller ? 1 : 0, now, slug);
+    ).run(next.name, patch.category ?? row.category, next.description, next.priceInr, JSON.stringify(next.dietary), next.spiceLevel, next.branches ? JSON.stringify(next.branches) : null, next.status === "available" ? 1 : 0, next.status === "removed" ? 0 : 1, next.bestseller ? 1 : 0, now, slug);
     const item = toItem(rowBySlug(db, slug)!, names);
     const action = before.status !== after.status && summary === `${before.status} → ${after.status}` ? `marked ${after.status}` : "edited";
     return { result: { item, changed: true, summary }, change: { area: "menu", action, target: slug, summary: `"${item.name}": ${summary}` } };

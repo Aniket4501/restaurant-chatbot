@@ -5,7 +5,7 @@ import { branchShortName, loadFactSource, renderKbFacts } from "@/lib/kb/facts";
 import { contentHash } from "@/lib/kb/index";
 import { STOPWORDS } from "@/lib/kb/retrieve";
 import { contentWarnings } from "@/lib/kb/documents";
-import { AdminError, adminWrite, fieldError, line, notFound, parse, recentChanges, slugify, type ChangeRow } from "@/lib/admin/common";
+import { AdminError, adminWrite, fieldError, line, notFound, ownPhones, parse, recentChanges, slugify, type ChangeRow } from "@/lib/admin/common";
 
 // FAQ management (D-25) on faq_entries, the table the chatbot's faq:<slug> facts come from. An FAQ is a curated
 // question and answer; knowledge documents (lib/admin/knowledge.ts) are longer sources split into passages. Both are
@@ -95,13 +95,14 @@ export function listFaqs(db: DB): { items: AdminFaq[]; conflicts: FaqConflict[];
 export type FaqDetail = {
   faq: AdminFaq;
   fact: { id: string; text: string } | null;
-  index: { keyword: "current" | "stale" | "missing" | "not_indexed"; vector: "current" | "stale" | "missing" | "not_indexed" };
+  index: { keyword: "current" | "stale" | "missing" | "not_indexed"; vector: "current" | "stale" | "missing" | "not_indexed" | "unknown" };
   warnings: string[];
   conflicts: FaqConflict[];
   changes: ChangeRow[];
 };
 
-export function faqDetail(db: DB, slug: string): FaqDetail {
+/** `digest`: the embedding model in use (null when it didn't answer). */
+export function faqDetail(db: DB, slug: string, digest: string | null): FaqDetail {
   const { byId } = branchMaps(db);
   const r = db.prepare("SELECT * FROM faq_entries WHERE slug = ?").get(slug) as Row | undefined;
   if (!r) throw notFound("FAQ");
@@ -112,14 +113,16 @@ export function faqDetail(db: DB, slug: string): FaqDetail {
   if (fact) {
     const fts = db.prepare("SELECT body FROM kb_fts WHERE fact_id = ?").get(fact.id) as { body: string } | undefined;
     keyword = !fts ? "missing" : fts.body === fact.text.normalize("NFKC") ? "current" : "stale";
-    const rows = db.prepare("SELECT content_hash FROM fact_embeddings WHERE fact_id = ?").all(fact.id) as { content_hash: string }[];
-    vector = rows.length === 0 ? "missing" : rows.some((x) => x.content_hash === contentHash(fact)) ? "current" : "stale";
+    // Only vectors from the embedding model in use count (failure-mode audit FM-032: an old model's vector showed
+    // "current" while retrieval was keyword-only); with no answer from the model the state is unknown.
+    const rows = digest === null ? [] : (db.prepare("SELECT content_hash FROM fact_embeddings WHERE fact_id = ? AND model_digest = ?").all(fact.id, digest) as { content_hash: string }[]);
+    vector = digest === null ? "unknown" : rows.length === 0 ? "missing" : rows.some((x) => x.content_hash === contentHash(fact)) ? "current" : "stale";
   }
   return {
     faq,
     fact: fact ? { id: fact.id, text: fact.text } : null,
     index: { keyword, vector },
-    warnings: contentWarnings(faq.answer),
+    warnings: contentWarnings(faq.answer, ownPhones(db)),
     conflicts: listFaqs(db).conflicts.filter((c) => c.a === slug || c.b === slug),
     changes: recentChanges(db, { area: "faq", target: slug, limit: 10 }),
   };

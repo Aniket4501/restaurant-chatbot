@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { hasBookingStateWords } from "@/lib/chat/claims";
 import { timeSpans } from "@/lib/kb/canonical";
 import { neutralise } from "@/lib/llm/redact";
+import { findPhones } from "@/lib/phone";
 
 // Knowledge document ingestion (D-25): extract → normalise → chunk. Pure functions; lib/admin/knowledge.ts stores the
 // result and records each stage, and the index refresher embeds the passages. Only plain text and Markdown are
@@ -74,10 +75,12 @@ export function normalizeText(raw: string, opts: { markdown: boolean }): StageRe
       .replace(/`([^`]*)`/g, "$1")
       .replace(/(\*\*|__)(.+?)\1/g, "$2")
       .replace(/(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s).,;:!?]|$)/gm, "$1$2")
-      .replace(/^\s{0,3}>\s?/gm, "")
-      .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, "- ")
-      .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "")
-      .replace(/^\s*\|?(?:\s*:?-{2,}:?\s*\|)+\s*:?-*:?\s*\|?\s*$/gm, "")
+      // Line patterns match within one line ([ \t], never \s): with \s, a run of blank lines made the table-separator
+      // pattern backtrack cubically and froze the server for seconds per document (failure-mode audit FM-048).
+      .replace(/^[ \t]{0,3}>[ \t]?/gm, "")
+      .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, "- ")
+      .replace(/^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$/gm, "")
+      .replace(/^[ \t]*\|?(?:[ \t]*:?-{2,}:?[ \t]*\|)+[ \t]*:?-*:?[ \t]*\|?[ \t]*$/gm, "")
       .replace(/\|/g, " ");
   } else t = t.replace(/^#+(?=\s)/gm, (m) => m.replace(/#/g, "")); // a "#" in plain text is not a heading
   t = t.replace(/<\/?[a-z][^>\n]*>/gi, " ");
@@ -192,8 +195,17 @@ export const contentHashOf = (content: string) => createHash("sha256").update(co
  * - booking words: an answer sentence about booking, tables or confirmation is shown only if it copies a cited fact
  *   word for word, so paraphrased booking rules fall back to "I don't have that information".
  */
-export function contentWarnings(text: string): string[] {
+/**
+ * `ownPhones`: the restaurant's own numbers (branch phones, E.164). Any other phone number or an email address may be a
+ * guest's or a staff member's, and guests can be shown passages word for word (failure-mode audit FM-051).
+ */
+export function contentWarnings(text: string, ownPhones: string[] = []): string[] {
   const out: string[] = [];
+  const own = new Set(ownPhones);
+  const otherPhone = findPhones(text).some((p) => !own.has(p.e164));
+  const email = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/.test(text);
+  if (otherPhone || email)
+    out.push(`It contains ${otherPhone && email ? "a phone number and an email address" : otherPhone ? "a phone number" : "an email address"} that isn't a branch's. The chatbot can repeat a passage word for word to any guest, so remove personal contact details of guests or staff.`);
   if (timeSpans(text).length) out.push("It mentions times. Opening hours and booking times come from Availability, so if they differ the chatbot can give conflicting answers.");
   if (hasBookingStateWords(text)) out.push("It talks about booking, tables or confirmations. The chatbot only shows such a sentence when it repeats the document word for word, so keep those sentences short and clear.");
   return out;

@@ -4,10 +4,10 @@ import { slug as slugSchema } from "@/lib/db/seed-schema";
 import { chunkText, contentHashOf, contentWarnings, DOC_LIMITS, DOC_TYPE_LABEL, DOC_TYPES, extractText, normalizeText, uploadTypeOf, type DocType } from "@/lib/kb/documents";
 import type { Embedder } from "@/lib/kb/embedder";
 import { branchShortName, docFactId, loadFactSource, renderKbFacts, renderStaticFacts, type Fact } from "@/lib/kb/facts";
-import { contentHash } from "@/lib/kb/index";
+import { contentHash, embedFailedDocs } from "@/lib/kb/index";
 import { insertJob, listJobs, type Job, type JobStage } from "@/lib/kb/refresh";
 import { retrieveFacts, type Hit } from "@/lib/kb/retrieve";
-import { AdminError, adminWrite, fieldError, line, notFound, parse, slugify } from "@/lib/admin/common";
+import { AdminError, adminWrite, fieldError, line, notFound, ownPhones, parse, slugify } from "@/lib/admin/common";
 
 // Knowledge base management (D-25). What the chatbot retrieves from:
 // - built-in sources: the menu and FAQ tables (one fact per dish and per FAQ, plus menu list facts), and the restaurant,
@@ -175,6 +175,11 @@ export function knowledgeOverview(db: DB, now: number, digest: { value: string |
   const vectors = v.digest ? all.filter((f) => vectorCurrent(v, f)).length : null;
   const extraFts = [...v.fts.keys()].filter((id) => !v.facts.has(id)).length;
   const hybrid = vectors === all.length && keyword === all.length && extraFts === 0;
+  // Say which documents hold semantic search back, and whether a refresh is actually on its way (failure-mode audit
+  // FM-029: the text said "until the index refresh finishes" with none pending and named no document).
+  const failedDocs = embedFailedDocs(db);
+  const failedNote = failedDocs.size ? ` ${[...failedDocs.values()].map((t) => `"${t}"`).join(", ")} couldn't be embedded: open ${failedDocs.size === 1 ? "it" : "them"} to retry, or deactivate ${failedDocs.size === 1 ? "it" : "them"} to turn semantic search back on.` : "";
+  const waiting = v.refreshPending ? "until the index refresh finishes" : "until the index is refreshed";
   const lastRefresh = (db.prepare("SELECT id FROM kb_jobs WHERE kind = 'refresh' AND status IN ('succeeded','failed') ORDER BY id DESC LIMIT 1").get() as { id: number } | undefined)?.id;
   return {
     documents,
@@ -188,7 +193,13 @@ export function knowledgeOverview(db: DB, now: number, digest: { value: string |
       keyword,
       vectors,
       mode: hybrid ? "hybrid" : "keyword",
-      reason: hybrid ? null : !v.digest ? `The embedding model couldn't be reached (${v.digestError ?? "unknown"}), so searches use keywords only.` : vectors !== all.length ? `${all.length - (vectors ?? 0)} of ${all.length} facts have no current vector, so searches use keywords only until the index refresh finishes.` : "The keyword index is out of date; refresh the index.",
+      reason: hybrid
+        ? null
+        : !v.digest
+          ? `The embedding model couldn't be reached (${v.digestError ?? "unknown"}), so searches use keywords only.`
+          : vectors !== all.length
+            ? `${all.length - (vectors ?? 0)} of ${all.length} facts have no current vector, so searches use keywords only ${waiting}.${failedNote}`
+            : "The keyword index is out of date; refresh the index.",
       refreshPending: v.refreshPending,
       lastRefresh: lastRefresh ? listJobs(db, { limit: 50 }).find((j) => j.id === lastRefresh) ?? null : null,
       model,
@@ -231,7 +242,7 @@ export function documentDetail(db: DB, id: number, digest: { value: string | nul
       const f = v.facts.get(docFactId(r.slug, c.seq));
       return { seq: c.seq, factId: docFactId(r.slug, c.seq), heading: c.heading, text: c.text, factText: f?.text ?? null, keyword: !!f && keywordCurrent(v, f), vector: v.digest ? !!f && vectorCurrent(v, f) : null };
     }),
-    warnings: r.content ? contentWarnings(r.content) : [],
+    warnings: r.content ? contentWarnings(r.content, ownPhones(db)) : [],
     jobs: listJobs(db, { documentId: id, limit: 10 }),
     editable: r.raw_text !== null,
   };
@@ -339,7 +350,7 @@ export function createArticle(db: DB, now: number, raw: unknown): IngestResult {
         .run(slug, input.title, input.docType, branchId, input.isActive ? 1 : 0, now, now).lastInsertRowid,
     );
     storeResult(db, now, { id, slug, title: input.title }, p, "article", "created");
-    return { result: { id, ok: true, error: null, warnings: contentWarnings(p.content) }, change: { area: "knowledge", action: "created", target: slug, summary: `Added the article "${input.title}" (${p.chunks.value.length} passages)` } };
+    return { result: { id, ok: true, error: null, warnings: contentWarnings(p.content, ownPhones(db)) }, change: { area: "knowledge", action: "created", target: slug, summary: `Added the article "${input.title}" (${p.chunks.value.length} passages)` } };
   });
 }
 
@@ -368,7 +379,7 @@ export function createUpload(db: DB, now: number, file: { name: string; bytes: U
     );
     storeResult(db, now, { id, slug, title }, p, "upload", "uploaded");
     return {
-      result: { id, ok: p.ok, error: p.ok ? null : p.error, warnings: p.ok ? contentWarnings(p.content) : [] },
+      result: { id, ok: p.ok, error: p.ok ? null : p.error, warnings: p.ok ? contentWarnings(p.content, ownPhones(db)) : [] },
       change: { area: "knowledge", action: p.ok ? "uploaded" : "upload failed", target: slug, summary: p.ok ? `Uploaded "${title}" (${filename}, ${p.chunks.value.length} passages)` : `Uploaded "${title}" (${filename}); it couldn't be read: ${p.error}` },
     };
   });
@@ -386,7 +397,7 @@ export function replaceUpload(db: DB, now: number, id: number, file: { name: str
     refuseDuplicate(db, p, id);
     db.prepare("UPDATE kb_documents SET source = 'upload', filename = ?, mime = ?, size_bytes = ? WHERE id = ?").run(file.name.replace(/[\\/]/g, "_").slice(0, 160), type.mime, file.bytes.byteLength, id);
     storeResult(db, now, r, p, "upload", "file replaced");
-    return { result: { id, ok: p.ok, error: p.ok ? null : p.error, warnings: p.ok ? contentWarnings(p.content) : [] }, change: { area: "knowledge", action: "file replaced", target: r.slug, summary: p.ok ? `Replaced the file of "${r.title}" (${p.chunks.value.length} passages)` : `Replaced the file of "${r.title}"; it couldn't be read: ${p.error}` } };
+    return { result: { id, ok: p.ok, error: p.ok ? null : p.error, warnings: p.ok ? contentWarnings(p.content, ownPhones(db)) : [] }, change: { area: "knowledge", action: "file replaced", target: r.slug, summary: p.ok ? `Replaced the file of "${r.title}" (${p.chunks.value.length} passages)` : `Replaced the file of "${r.title}"; it couldn't be read: ${p.error}` } };
   });
 }
 
@@ -422,7 +433,7 @@ export function updateDocument(db: DB, now: number, id: number, raw: unknown): {
     if (patch.isActive === false) db.prepare("DELETE FROM fact_embeddings WHERE fact_id LIKE ?").run(`doc:${r.slug}:%`); // deactivated: no vectors kept
     const summary = parts.join("; ");
     const action = parts.length === 1 && (parts[0] === "activated" || parts[0] === "deactivated") ? parts[0] : "edited";
-    return { result: { changed: true, summary, warnings: p?.ok ? contentWarnings(p.content) : [] }, change: { area: "knowledge", action, target: r.slug, summary: `"${patch.title ?? r.title}": ${summary}` } };
+    return { result: { changed: true, summary, warnings: p?.ok ? contentWarnings(p.content, ownPhones(db)) : [] }, change: { area: "knowledge", action, target: r.slug, summary: `"${patch.title ?? r.title}": ${summary}` } };
   });
 }
 
@@ -436,7 +447,7 @@ export function reingestDocument(db: DB, now: number, id: number): IngestResult 
     const p = runPipeline({ text: r.raw_text, markdown });
     if (!p.ok && r.status === "ready") throw new AdminError(409, "CONFLICT", `Processing again would fail (${p.error}), so the current version stays.`);
     storeResult(db, now, r, p, r.source, "retry");
-    return { result: { id, ok: p.ok, error: p.ok ? null : p.error, warnings: p.ok ? contentWarnings(p.content) : [] }, change: { area: "knowledge", action: p.ok ? "processed again" : "retry failed", target: r.slug, summary: p.ok ? `Processed "${r.title}" again (${p.chunks.value.length} passages)` : `Processing "${r.title}" failed again: ${p.error}` } };
+    return { result: { id, ok: p.ok, error: p.ok ? null : p.error, warnings: p.ok ? contentWarnings(p.content, ownPhones(db)) : [] }, change: { area: "knowledge", action: p.ok ? "processed again" : "retry failed", target: r.slug, summary: p.ok ? `Processed "${r.title}" again (${p.chunks.value.length} passages)` : `Processing "${r.title}" failed again: ${p.error}` } };
   });
 }
 

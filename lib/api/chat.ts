@@ -73,7 +73,18 @@ export function chatHandler(deps: ApiDeps, dedup = dedupe) {
     const { sessionId, requestId } = parsed.data;
     const key = requestId ? `${sessionId}:${requestId}:${createHash("sha256").update(JSON.stringify(parsed.data)).digest("hex").slice(0, 16)}` : null;
     const { result, duplicate } = dedup.run(key, now, () => turnResult(deps, parsed.data, now));
-    const r = await result;
+    let r: Result;
+    try {
+      r = await result;
+    } catch (e) {
+      // A turn that throws answers with a JSON error, not a bare 500. A database behind the code's migrations is named in
+      // the log (failure-mode audit FM-028: every guest turn failed with no explanation anywhere). Never guest text.
+      const behind = e instanceof Error && e.name === "SqliteError" && /no such (?:column|table)/.test(e.message);
+      console.error(JSON.stringify({ event: "chat_error", requestId: requestId ?? null, error: behind ? "schema_behind" : e instanceof Error ? e.name : "unknown" }));
+      return behind
+        ? errorResponse(503, "UNAVAILABLE", "The chat is being updated and can't answer just now. Please try again later, or call the restaurant.", {}, { "retry-after": "30" })
+        : errorResponse(500, "INTERNAL", "Something went wrong on our side, and nothing was changed. Please try again.");
+    }
     if (process.env.NODE_ENV !== "test" && !config.testMode) {
       // One line per guest action for debugging (D-20): ids, timings and outcomes, never guest text.
       const m = r.json.meta as Record<string, unknown> | undefined;

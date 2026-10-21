@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COURSES } from "@/lib/chat/types";
 import { DAY_KEYS, isLocalDate, isLocalTime } from "@/lib/time/tz";
 
 // Seed file format (data/seed/*.json and evals/fixtures/base.json share it). Validated before anything
@@ -68,7 +69,9 @@ export const SeedSchema = z
     menu: z.array(
       z.strictObject({
         slug,
-        category: slug,
+        // One of the menu sections: a dish in any other category was in the facts but missing from the chat menu, and
+        // a staff edit rewrote it to "mains" (failure-mode audit FM-034).
+        category: z.enum(COURSES),
         name: z.string().min(1),
         description: z.string().min(1),
         priceInr: z.number().int().positive(),

@@ -108,16 +108,20 @@ export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptCon
       }
     }
 
+    // A reseed returns each seeded dish and FAQ to its seeded state, listed and active, as a seeded row (failure-mode
+    // audit FM-033: a dish staff removed stayed hidden from guests after --overwrite-staff-changes).
     const upsertMenu = db.prepare(`INSERT INTO menu_items (slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available, is_bestseller)
       VALUES (@slug, @category, @name, @description, @priceInr, @dietary, @spiceLevel, @branches, @available, @bestseller)
       ON CONFLICT(slug) DO UPDATE SET category = excluded.category, name = excluded.name, description = excluded.description, price_inr = excluded.price_inr,
-        dietary = excluded.dietary, spice_level = excluded.spice_level, branch_slugs = excluded.branch_slugs, is_available = excluded.is_available, is_bestseller = excluded.is_bestseller`);
+        dietary = excluded.dietary, spice_level = excluded.spice_level, branch_slugs = excluded.branch_slugs, is_available = excluded.is_available, is_bestseller = excluded.is_bestseller,
+        is_listed = 1, created_by = 'seed', updated_at = NULL`);
     for (const m of seed.menu) upsertMenu.run({ ...m, dietary: JSON.stringify(m.dietary), branches: m.branches ? JSON.stringify(m.branches) : null, available: m.isAvailable ? 1 : 0, bestseller: m.bestseller ? 1 : 0 });
     const menuSlugs = seed.menu.map((m) => m.slug);
     db.prepare(`DELETE FROM menu_items WHERE slug NOT IN (${menuSlugs.map(() => "?").join(",") || "''"})`).run(...menuSlugs);
 
     const upsertFaq = db.prepare(`INSERT INTO faq_entries (slug, question, answer, branch_id, category) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(slug) DO UPDATE SET question = excluded.question, answer = excluded.answer, branch_id = excluded.branch_id, category = excluded.category`);
+      ON CONFLICT(slug) DO UPDATE SET question = excluded.question, answer = excluded.answer, branch_id = excluded.branch_id, category = excluded.category,
+        is_active = 1, created_by = 'seed', updated_at = NULL`);
     for (const f of seed.faq) upsertFaq.run(f.slug, f.question, f.answer, f.branch ? branchId.get(f.branch) : null, f.category ?? "general");
     const faqSlugs = seed.faq.map((f) => f.slug);
     db.prepare(`DELETE FROM faq_entries WHERE slug NOT IN (${faqSlugs.map(() => "?").join(",") || "''"})`).run(...faqSlugs);

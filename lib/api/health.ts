@@ -1,6 +1,7 @@
 import { okResponse } from "@/lib/http/json";
 import { EmbedError } from "@/lib/kb/embedder";
 import { loadFactSource, renderKbFacts } from "@/lib/kb/facts";
+import { pendingMigrations } from "@/lib/db/migrate";
 import { embeddingCoverage, lexicalCurrent } from "@/lib/kb/index";
 import type { ApiDeps } from "@/lib/api/deps";
 
@@ -12,10 +13,12 @@ import type { ApiDeps } from "@/lib/api/deps";
 export function healthHandler(deps: ApiDeps) {
   return async (): Promise<Response> => {
     const config = deps.config();
-    let db: { ok: boolean; schema?: string[]; error?: string };
+    // A database behind the code's migrations is unhealthy: guest turns would fail on the missing columns (FM-028).
+    let db: { ok: boolean; schema?: string[]; pending?: string[]; error?: string };
     try {
       const rows = deps.db().prepare("SELECT version FROM schema_migrations ORDER BY version").all() as { version: string }[];
-      db = { ok: true, schema: rows.map((r) => r.version) };
+      const pending = pendingMigrations(deps.db());
+      db = { ok: pending.length === 0, schema: rows.map((r) => r.version), pending };
     } catch (e) {
       db = { ok: false, error: (e as Error).name };
     }

@@ -76,6 +76,9 @@ export type ChangeArea = "menu" | "faq" | "knowledge" | "hours" | "exceptions" |
 export type Change = { area: ChangeArea; action: string; target: string; summary: string };
 
 /** Append to the change log (inside the caller's transaction). Never pass guest names, phones or emails. */
+/** The restaurant's own phone numbers (every branch's), which content warnings don't flag (FM-051). */
+export const ownPhones = (db: DB): string[] => (db.prepare("SELECT phone FROM branches").all() as { phone: string }[]).map((b) => b.phone);
+
 export function logChange(db: DB, now: number, c: Change): void {
   db.prepare("INSERT INTO admin_changes (at, area, action, target, summary) VALUES (?, ?, ?, ?, ?)").run(now, c.area, c.action.slice(0, 40), c.target.slice(0, 120), c.summary.slice(0, 300));
 }

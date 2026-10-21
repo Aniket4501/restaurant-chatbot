@@ -5,12 +5,24 @@ import { immediate } from "@/lib/db/tx";
 
 export const MIGRATIONS_DIR = path.join(process.cwd(), "lib", "db", "migrations");
 
-/** Apply pending `NNN_name.sql` files in order, each in its own IMMEDIATE transaction. Returns versions applied. */
-export function migrate(db: DB, now: number, dir = MIGRATIONS_DIR): string[] {
-  const files = fs
+const migrationFiles = (dir: string) =>
+  fs
     .readdirSync(dir)
     .filter((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))
     .sort();
+
+/** Migrations in `dir` the database hasn't applied (failure-mode audit FM-028: health said ok one migration behind). */
+export function pendingMigrations(db: DB, dir = MIGRATIONS_DIR): string[] {
+  const hasTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get();
+  const applied = new Set(hasTable ? (db.prepare("SELECT version FROM schema_migrations").all() as { version: string }[]).map((r) => r.version) : []);
+  return migrationFiles(dir)
+    .map((f) => f.replace(/\.sql$/, ""))
+    .filter((v) => !applied.has(v));
+}
+
+/** Apply pending `NNN_name.sql` files in order, each in its own IMMEDIATE transaction. Returns versions applied. */
+export function migrate(db: DB, now: number, dir = MIGRATIONS_DIR): string[] {
+  const files = migrationFiles(dir);
   const done: string[] = [];
   for (const file of files) {
     const version = file.replace(/\.sql$/, "");

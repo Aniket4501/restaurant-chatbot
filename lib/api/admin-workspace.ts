@@ -77,7 +77,7 @@ export const menuHandlers = (deps: ApiDeps) => ({
 });
 
 export const menuItemHandlers = (deps: ApiDeps) => ({
-  GET: handle<{ slug: string }>((_req, p) => ({ body: menuItemDetail(deps.db(), p.slug) })),
+  GET: handle<{ slug: string }>(async (_req, p) => ({ body: menuItemDetail(deps.db(), p.slug, (await digestOf(deps)).value) })),
   PATCH: handle<{ slug: string }>(async (req, p) => {
     const r = updateMenuItem(deps.db(), deps.now(), p.slug, await body(req));
     return { body: { ...r, index: r.changed ? { jobId: refresh(deps, "menu") } : null } };
@@ -95,7 +95,7 @@ export const faqHandlers = (deps: ApiDeps) => ({
 });
 
 export const faqItemHandlers = (deps: ApiDeps) => ({
-  GET: handle<{ slug: string }>((_req, p) => ({ body: faqDetail(deps.db(), p.slug) })),
+  GET: handle<{ slug: string }>(async (_req, p) => ({ body: faqDetail(deps.db(), p.slug, (await digestOf(deps)).value) })),
   PATCH: handle<{ slug: string }>(async (req, p) => {
     const r = updateFaq(deps.db(), deps.now(), p.slug, await body(req));
     return { body: { ...r, index: r.changed ? { jobId: refresh(deps, "faq") } : null } };

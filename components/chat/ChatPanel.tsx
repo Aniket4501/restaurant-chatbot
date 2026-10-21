@@ -148,10 +148,11 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         });
         const j = await res.json().catch(() => null);
         if (gen !== generation.current) return; // the guest started over while this was in flight: drop the stale reply
-        if (res.status === 429) {
-          // Nothing was answered: the same request can be sent again with Try again (the server forgets a 429).
+        if (res.status === 429 || (res.status >= 500 && j?.error?.message)) {
+          // Nothing was answered: the same request can be sent again with Try again (the server forgets a 429 or an
+          // error), and the server's reason is shown (FM-028: a database being updated said only "couldn't reach").
           update((p) => ({ ...p, chatPending: null }));
-          setFailed({ ...req, why: j?.error?.message ?? "You're sending messages quickly. Please wait a moment." });
+          setFailed({ ...req, why: j?.error?.message ?? (res.status === 429 ? "You're sending messages quickly. Please wait a moment." : undefined) });
           return;
         }
         if (!res.ok || !j?.reply) throw new Error(`chat ${res.status}`);

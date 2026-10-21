@@ -164,7 +164,23 @@ export type Refresher = {
   idle(): Promise<void>;
 };
 
-export type RefresherDeps = { db: () => DB; embedder: () => Embedder | null; now: () => number; timeoutMs?: number };
+export type RefresherDeps = {
+  db: () => DB;
+  embedder: () => Embedder | null;
+  now: () => number;
+  timeoutMs?: number;
+  /**
+   * After a failed run, retry after each of these delays in turn, then wait for the next request (failure-mode audit
+   * FM-020: after an embedding-model outage nothing re-ran the refresh, so retrieval stayed keyword-only until staff
+   * acted). `schedule` is injected so tests control time.
+   */
+  retry?: { delaysMs: number[]; schedule: (fn: () => void, ms: number) => void };
+};
+
+const defaultRetry: NonNullable<RefresherDeps["retry"]> = {
+  delaysMs: [60_000, 5 * 60_000, 15 * 60_000],
+  schedule: (fn, ms) => void setTimeout(fn, ms).unref?.(),
+};
 
 /**
  * A background refresher for one database. Jobs left "queued" or "running" by a previous process (a restart mid-run)
@@ -173,6 +189,9 @@ export type RefresherDeps = { db: () => DB; embedder: () => Embedder | null; now
 export function createRefresher(deps: RefresherDeps): Refresher {
   let loop: Promise<void> | null = null;
   let interrupted = false;
+  const retry = deps.retry ?? defaultRetry;
+  let failedRuns = 0;
+  let retryScheduled = false;
   const db = () => deps.db();
   const markInterrupted = () => {
     if (interrupted) return;
@@ -200,6 +219,20 @@ export function createRefresher(deps: RefresherDeps): Refresher {
       { stage: "embed", status: r.ok ? "done" : "failed", detail: r.ok ? `${r.embedded} embedded, ${r.reused} current` : r.error },
     ];
     d.prepare("UPDATE kb_jobs SET status = ?, finished_at = ?, summary = ?, error = ?, stages = ? WHERE id = ?").run(r.ok ? "succeeded" : "failed", deps.now(), summary, r.error, JSON.stringify(stages), job.id);
+    // A bounded retry after a failure with an embedding model configured; a success resets the count.
+    if (r.ok) failedRuns = 0;
+    else if (deps.embedder() && failedRuns < retry.delaysMs.length && !retryScheduled) {
+      retryScheduled = true;
+      retry.schedule(() => {
+        retryScheduled = false;
+        try {
+          self.request("retry");
+        } catch (e) {
+          // The database went away (a test reset or shutdown): nothing to retry.
+          console.error(JSON.stringify({ event: "kb_refresh_retry_error", error: e instanceof Error ? e.message.slice(0, 200) : "unknown" }));
+        }
+      }, retry.delaysMs[failedRuns++]);
+    }
     // Facts changed while embedding: one more run picks up the new text.
     if (r.ok && r.changed && !d.prepare("SELECT 1 FROM kb_jobs WHERE kind = 'refresh' AND status = 'queued'").get()) insertJob(d, deps.now(), { kind: "refresh", trigger: "follow-up", status: "queued" });
     d.prepare(`DELETE FROM kb_jobs WHERE id <= (SELECT id FROM kb_jobs ORDER BY id DESC LIMIT 1 OFFSET ?)`).run(KEEP_JOBS);
@@ -225,7 +258,7 @@ export function createRefresher(deps: RefresherDeps): Refresher {
     })();
   };
 
-  return {
+  const self: Refresher = {
     request(trigger) {
       markInterrupted();
       const d = db();
@@ -238,4 +271,14 @@ export function createRefresher(deps: RefresherDeps): Refresher {
       while (loop) await loop;
     },
   };
+  return self;
+}
+
+/**
+ * At server start: a refresh that a restart interrupted, or whose last run failed, runs again (FM-020; previously it
+ * waited for the next staff edit or a manual refresh).
+ */
+export function resumeRefresh(db: DB, refresher: Refresher): number | null {
+  const last = db.prepare("SELECT status FROM kb_jobs WHERE kind = 'refresh' ORDER BY id DESC LIMIT 1").get() as { status: string } | undefined;
+  return last && last.status !== "succeeded" ? refresher.request("startup") : null;
 }

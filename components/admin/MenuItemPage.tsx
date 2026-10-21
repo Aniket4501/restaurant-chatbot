@@ -32,6 +32,7 @@ const INDEX: Record<string, { label: string; tone: "good" | "warn" | "neutral" |
   stale: { label: "updating", tone: "warn" },
   missing: { label: "not yet stored", tone: "warn" },
   not_indexed: { label: "not used", tone: "neutral" },
+  unknown: { label: "unknown: the embedding model didn't answer", tone: "neutral" },
 };
 
 export function MenuItemPage({ slug, justCreated = false }: { slug: string | null; justCreated?: boolean }) {
