@@ -60,5 +60,10 @@
       "menu:chana-pindi"
     ],
     "reply": "I'd suggest the Dal Ember at ₹445: black lentils slow-cooked overnight. For something tangier, the Chana Pindi at ₹395."
+  },
+  "chooser:Surprise me": {
+    "pick": "menu:chana-pindi",
+    "alternatives": [],
+    "reply": "Try the Chana Pindi at ₹395: a dark, tangy Punjabi chickpea curry."
   }
 }

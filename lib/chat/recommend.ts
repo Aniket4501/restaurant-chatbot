@@ -1,7 +1,7 @@
 import { checkGrounding, type GroundingContext } from "@/lib/chat/grounding";
 import { smalltalkShowable } from "@/lib/chat/claims";
 import { ALLERGY_NOTE, describePrefs, eligible as eligibleAll, hasPrefs, unlistedReferral, unmet, view, type MenuEntry } from "@/lib/chat/menu";
-import { AVOIDS, DIETS, noPrefs, PrefsSchema, UNLISTED, type Action, type Block, type Prefs, type TraceEntry, type TurnContext } from "@/lib/chat/types";
+import { AVOIDS, DIETS, noPrefs, PrefsSchema, RECOMMEND_CHIP_TEXTS, UNLISTED, type Action, type Block, type Chip, type Prefs, type TraceEntry, type TurnContext } from "@/lib/chat/types";
 import { buildChooserSystem, buildChooserUser, chooserCorrection, type Choice } from "@/lib/llm/chooser";
 import type { ChatMessage as LlmMessage } from "@/lib/llm/client";
 import { priceSpans } from "@/lib/kb/canonical";
@@ -75,7 +75,12 @@ export function explicitPrefs(raw: string): Stated {
     const unlisted = UNLISTED_RE.filter(([, re]) => re.test(t)).map(([u]) => u);
     // "allergic to kiwi": an allergen nobody can check against the labels.
     // Read from the message without its "no allergies" phrases, so "no" is never taken for an allergen (D-21 audit).
-    const named = [...positive.matchAll(/\ballergic to (?:\w+ )?(\w+)|\b(\w+) allerg(?:y|ies)\b/g)].map((m) => m[1] ?? m[2]).filter((w) => !NOT_AN_ALLERGEN.has(w));
+    // Every item of "allergic to nuts and dairy" / "allergic to peanuts, eggs or milk", up to the end of the clause
+    // (D-24 audit: the old pattern read "and" as the allergen and sent the guest to staff).
+    const listed = [...positive.matchAll(/\ballergic to ((?:[a-z-]+(?:,\s*|\s+))*?[a-z-]+)(?=\s*(?:[.,;:!?)]|$|\s(?:so|but|which|what|can|could|would|will|is|are|please|i|i'm|im|my|we|our|me|suggest|recommend|any|anything|for|in|then|and (?:i|my|we|our))\b))/g)].flatMap((m) =>
+      m[1].split(/\s*(?:,|\band\b|\bor\b|&|\balso\b|\bboth\b)\s*/).map((item) => item.trim().split(/\s+/).at(-1) ?? "").filter(Boolean),
+    );
+    const named = [...listed, ...[...positive.matchAll(/\b(\w+) allerg(?:y|ies)\b/g)].map((m) => m[1])].filter((w) => !NOT_AN_ALLERGEN.has(w));
     const covered = new RegExp(`^(?:${NUTS}|${DAIRY_ALLERGY}|${DAIRY_FOOD}|${EGG}|gluten|wheat|nut|peanut|tree)$`);
     if (!unlisted.length && named.some((w) => !covered.test(w) && !UNLISTED_RE.some(([, re]) => re.test(w)))) unlisted.push("other");
     if (unlisted.length) out.unlisted = unlisted;
@@ -160,6 +165,17 @@ const HYPE_RE = /\b(?:most popular|popular|best[- ]?sell\w*|favou?rites?|signatu
 // Allergen safety can't be confirmed from labels (ALLERGY_NOTE): no "safe", no "nut-free", no "contains no nuts".
 // Also "doesn't contain any nuts", "suits your allergy", "fine for an allergy" (D-21 audit). Shared with the FAQ path.
 export const SAFETY_RE = /\bsafe(?:ly|r|st)?\b|\ballerg(?:y|en)[- ](?:free|friendly|safe)\b|\b(?:pea)?nut[- ]free\b|\bwon't (?:trigger|affect|cause|bother)\b|\bharmless\b|\bfree (?:of|from) (?:any )?(?:allergens?|(?:pea|tree )?nuts?|traces?|sesame|gluten|shellfish|soy)\b|\b(?:no|without|zero) (?:any )?(?:(?:pea|tree )?nuts?|allergens?|traces?)\b|\b(?:doesn't|does not|don't|do not|has no|have no|won't|will not)\s+(?:contain|have|include|use)\s+(?:any\s+)?(?:(?:pea|tree )?nuts?|allergens?|traces?|sesame|shellfish|soy|gluten|mustard)\b|\b(?:suits?|fine for|ok(?:ay)? for|good for|works for)\s+(?:your|an?|the)\s+(?:\w+\s+)?allerg\w*/i;
+// Suitability words and allergy words in one sentence promise safety too ("a good option for your severe peanut
+// allergy", "as a coeliac guest, you can have…"; D-24 audit: SAFETY_RE missed them). A negated sentence ("we can't
+// say it suits your allergy") is not a promise.
+const ALLERGY_TERMS = /\b(?:allerg\w*|co?eliacs?|celiacs?|intoleran\w*|anaphyla\w*)\b/i;
+const SUITABLE_TERMS = /\b(?:good|ideal|perfect|great|fine|suitable|suited|suits?|ok(?:ay)?|works?|fits?|right|appropriate|recommended|enjoy|you can (?:have|eat|enjoy|order|try)|safe(?:ly)?)\b/i;
+export function suitabilityClaim(text: string): boolean {
+  return [...text.matchAll(/[^.!?]+[.!?]*/g)].some(({ 0: s }) => {
+    if (!ALLERGY_TERMS.test(s) || !SUITABLE_TERMS.test(s)) return false;
+    return !/\b(?:can't|cannot|can not|not|never|isn't|aren't|unable to|no guarantee|won't guarantee|don't guarantee|please (?:tell|let|check|ask))\b/i.test(s);
+  });
+}
 // A diet word must be true of the dish it describes (the nearest dish named before it in the sentence, else after).
 const DIET_WORDS: { re: RegExp; label: string; has: (d: MenuEntry) => boolean }[] = [
   { re: /\bvegans?\b|\bplant[- ]based\b/gi, label: "vegan", has: (d) => d.dietary.includes("vegan") },
@@ -210,6 +226,7 @@ export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry
     reasons.push("promises allergen safety");
     break;
   }
+  if (!reasons.includes("promises allergen safety") && suitabilityClaim(text)) reasons.push("promises allergen safety");
   // Attributes the menu data never states ("halal", "organic", "keto") must appear in a cited fact (D-21: "No. Our
   // chicken dishes are not halal." was shown with no fact about halal).
   for (const m of text.matchAll(ATTRIBUTE_RE)) if (!new RegExp(`\\b${m[0]}`, "i").test(citedText)) reasons.push(`"${m[0]}" is not in the facts`);
@@ -253,7 +270,7 @@ function ingredientProblems(text: string, named: Mention[], sentences: { start: 
 }
 
 /** Why a chooser reply can't be shown (empty when it can). Exported for tests. */
-export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, MenuEntry>, prefs: Prefs, grounding: GroundingContext): { reasons: string[]; alternatives: string[]; pick: string | null } {
+export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, MenuEntry>, prefs: Prefs, grounding: GroundingContext, opts: { mustPick?: boolean; mayName?: string[] } = {}): { reasons: string[]; alternatives: string[]; pick: string | null } {
   // Dishes are listed by slug; "dal-ember" and "menu:dal-ember" both mean the dish (a format, not a fact).
   const id = (s: string) => (s.startsWith("menu:") ? s : `menu:${s}`);
   const choice: Choice = { ...raw, pick: raw.pick === null ? null : id(raw.pick.trim()), alternatives: raw.alternatives.map((a) => id(a.trim())) };
@@ -266,9 +283,14 @@ export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, M
   else if (reply.length >= 390 || !/[.!?)"'’…]$/.test(reply)) reasons.push("the reply is cut off");
   const hype = HYPE_RE.exec(reply);
   if (choice.pick === null) {
-    // A clarifying question: no dish, no prices, no booking words, and no claims about food.
-    if (reply && !(reply.includes("?") && smalltalkShowable(reply))) reasons.push("without a dish, the reply must be one short question with no prices or booking words");
-    if (hype || SAFETY_RE.test(reply) || DIET_WORDS.some((w) => new RegExp(w.re.source, "i").test(reply)) || mentionsOf(reply, menu, false, menu).length) reasons.push("without a dish, the question must not name or describe dishes");
+    // The guest asked for a choice ("what would you recommend?", "surprise me"): a question back is not an answer
+    // (D-24 audit LV-AUD-008: the chooser asked twice and the guest got a generic list).
+    if (opts.mustPick) reasons.push("the guest asked you to choose, so pick one dish from the list instead of asking");
+    // A clarifying question: no dish, no prices, no booking words, and no claims about food. Diet words are fine in a
+    // question ("vegetarian or not?"), and so is "which one" (D-24 audit: both were rejected).
+    const asked = reply.replace(/\b(which|this|that|the other|any) one\b|\bone of\b/gi, (_m, w: string | undefined) => (w ? `${w} it` : "some of"));
+    if (reply && !(reply.includes("?") && smalltalkShowable(asked))) reasons.push("without a dish, the reply must be one short question with no prices or booking words");
+    if (hype || SAFETY_RE.test(reply) || suitabilityClaim(reply) || mentionsOf(reply, menu, false, menu).length) reasons.push("without a dish, the question must not name or describe dishes");
     return { reasons, alternatives: [], pick: null };
   }
   const pick = all.get(choice.pick);
@@ -283,8 +305,10 @@ export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, M
   // Dish names, never internal IDs or slugs ("yellow-dal-tadka", "menu:dal-ember"; D-21 audit).
   const slug = menu.find((d) => new RegExp(`(?<![a-z0-9-])(?:menu:)?${escapeRe(d.id.slice(5))}(?![a-z0-9-])`, "i").test(reply) && d.id.slice(5).includes("-"));
   if (slug || /\bmenu:[a-z0-9-]+/i.test(reply)) reasons.push("the reply must use dish names, not IDs");
-  // A dish named in the reply must be on the card (one dropped as an alternative, or never chosen, is not).
-  for (const m of mentionsOf(reply, menu, false, menu)) if (!shown.includes(m.d) && !named.some((n) => n.start <= m.start && m.end <= n.end)) reasons.push(`the reply names ${m.d.name}, which is not on the card`);
+  // A dish named in the reply must be on the card (one dropped as an alternative, or never chosen, is not), except the
+  // dish a "cheaper" or "another" request compares with ("cheaper than the Dal Ember"; D-24 audit LV-REC-005).
+  const mayName = new Set(opts.mayName ?? []);
+  for (const m of mentionsOf(reply, menu, false, menu)) if (!shown.includes(m.d) && !mayName.has(m.d.id) && !named.some((n) => n.start <= m.start && m.end <= n.end)) reasons.push(`the reply names ${m.d.name}, which is not on the card`);
   // Claims are tied to the dish they are about: the nearest dish named before them in the sentence, else the first
   // one after, else the last one named earlier in the reply, else the pick (review: any dish on the card used to do).
   const sentences = [...reply.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
@@ -301,6 +325,10 @@ export function validateChoice(raw: Choice, fit: MenuEntry[], all: Map<string, M
   }
   if (hype && !shown.some((d) => d.description.toLowerCase().includes(hype[0].toLowerCase()))) reasons.push(`"${hype[0]}" is not supported by the menu`);
   if (SAFETY_RE.test(reply)) reasons.push("the reply must not promise allergen safety");
+  if (suitabilityClaim(reply)) reasons.push("the reply must not say a dish suits an allergy");
+  // Attributes the menu never states (sugar-free, halal, keto…) only when a shown dish's description says so (D-24
+  // audit: ATTRIBUTE_RE was applied to FAQ answers only).
+  for (const m of reply.matchAll(ATTRIBUTE_RE)) if (!shown.some((d) => new RegExp(`\\b${escapeRe(m[0])}`, "i").test(d.description))) reasons.push(`"${m[0]}" is not supported by the menu`);
   for (const w of DIET_WORDS)
     for (const m of reply.matchAll(w.re)) {
       const sent = sentences.find((s) => s.start <= m.index && m.index < s.end);
@@ -339,34 +367,43 @@ export function shortlist(fit: MenuEntry[], relevant: string[], max = 18): MenuE
 
 export type RecommendResult = { text: string; blocks: Block[]; cited: string[]; prefs: Prefs; recommended: string[] };
 
+/** Breads, plain rice and drinks: sides, not dish suggestions (biryanis are dishes). */
+export const isSide = (d: MenuEntry) => d.course === "drinks" || (d.course === "breads-rice" && !/biryani/i.test(d.name));
+const SIDE_WORDS = /\b(?:drinks?|beverages?|thirsty|lassi|chai|coffee|tea|soda|cooler|juice|breads?|naan|roti|paratha|rice|biryani|sides?)\b/i;
+/** The guest asked for a choice, so the chooser must pick rather than ask (D-24 audit LV-AUD-008). */
+const CHOOSE_WORDS = /\b(?:recommend\w*|suggest\w*|best|surprise|pick|choose|what should (?:i|we) (?:get|order|have|try|eat)|which (?:one|dish) should)\b/i;
+
 const FOLLOW_UPS = (): Block => ({
   type: "quick_replies",
   chips: [
-    { label: "Something cheaper", text: "Anything cheaper?" },
-    { label: "Another option", text: "Show me another option" },
+    { label: "Something cheaper", action: { type: "recommend", text: "Anything cheaper?" } as Action },
+    { label: "Another option", action: { type: "recommend", text: "Show me another option" } as Action },
     { label: "Find a table", action: { type: "set_field", field: "branch", value: null } as Action },
   ],
 });
 const MENU_CHIP = (): Block => ({ type: "quick_replies", chips: [{ label: "Show me the menu", action: { type: "menu", course: null } }] });
-// Answers to the chooser's clarifying question ("light or filling?"), so the guest can tap instead of typing. Each one
-// is sent as the guest's message and goes back to the model; none of them picks a dish.
-const ANSWER_CHIPS = (): Block => ({
+// Answers to the clarifying question ("light or filling?"), so the guest can tap instead of typing. Each goes to the
+// dish chooser (D-24: as an action, without the intent call); none of them picks a dish by itself.
+export const ANSWER_CHIPS = (): Block => ({
   type: "quick_replies",
   chips: [
-    { label: "Something light", text: "Something light" },
-    { label: "Something filling", text: "Something filling" },
-    { label: "Something vegetarian", text: "Something vegetarian" },
-    { label: "Surprise me", text: "Surprise me" },
+    { label: "Something light", action: { type: "recommend", text: "Something light" } },
+    { label: "Something filling", action: { type: "recommend", text: "Something filling" } },
+    { label: "Something vegetarian", action: { type: "recommend", text: "Something vegetarian" } },
+    { label: "Surprise me", action: { type: "recommend", text: "Surprise me" } },
     { label: "Show me the menu", action: { type: "menu", course: null } },
   ],
 });
+/** The fixed question for "Help me find a dish" (D-24: no model call for a fixed chip). */
+export const HELP_QUESTION = "Happy to help. What are you in the mood for?";
 
 /** One chip per constraint that can be lifted, each sent as words liftedPrefs reads as lifting it. */
-function relaxChips(p: Prefs): { label: string; text: string }[] {
+function relaxChips(p: Prefs): Chip[] {
+  const chip = (label: string, text: (typeof RECOMMEND_CHIP_TEXTS)[number]): Chip => ({ label, action: { type: "recommend", text } });
   return [
-    ...(p.maxPrice !== null ? [{ label: "Any price", text: "Any price is fine" }] : []),
-    ...(p.diet.includes("vegan") ? [{ label: "Not only vegan", text: "Forget the vegan" }] : p.diet.includes("vegetarian") ? [{ label: "Not only vegetarian", text: "Forget the vegetarian" }] : []),
-    ...(p.mild ? [{ label: "Spicy is fine", text: "Spicy is fine" }] : []),
+    ...(p.maxPrice !== null ? [chip("Any price", "Any price is fine")] : []),
+    ...(p.diet.includes("vegan") ? [chip("Not only vegan", "Forget the vegan")] : p.diet.includes("vegetarian") ? [chip("Not only vegetarian", "Forget the vegetarian")] : []),
+    ...(p.mild ? [chip("Spicy is fine", "Spicy is fine")] : []),
   ];
 }
 
@@ -416,7 +453,13 @@ export async function recommendTurn(
   const sameCourse = relation && prefs.course === null && last ? last.course : null;
   const scope: Prefs = sameCourse ? { ...prefs, course: sameCourse } : prefs;
   const inCourse = sameCourse ? eligible(input.entries, scope, { exclude, cheaperThan }) : [];
-  const fit = sameCourse && (inCourse.length || cheaperThan !== null) ? inCourse : eligible(input.entries, prefs, { exclude, cheaperThan });
+  const fitAll = sameCourse && (inCourse.length || cheaperThan !== null) ? inCourse : eligible(input.entries, prefs, { exclude, cheaperThan });
+  // A side (bread, plain rice) or a drink is not a dish suggestion unless the guest asked for one or a section that has
+  // them (chooser rule 2; D-24 audit: 4 of 39 cards led with a naan or a lime soda). Code decides it, so the chooser
+  // reads fewer lines too.
+  const askedForSides = prefs.course !== null || sameCourse !== null || SIDE_WORDS.test(input.text);
+  const mains = askedForSides ? fitAll : fitAll.filter((d) => !isSide(d));
+  const fit = mains.length ? mains : fitAll;
   if (!fit.length) {
     const what = describePrefs(cheaperThan !== null ? scope : prefs);
     const any = eligible(input.entries, cheaperThan !== null ? scope : prefs);
@@ -471,7 +514,7 @@ export async function recommendTurn(
       messages.push({ role: "assistant", content: r.content }, { role: "user", content: chooserCorrection(["it was not a valid JSON object for the schema"]) });
       continue;
     }
-    const v = validateChoice(r.choice, fit, byId, prefs, input.grounding);
+    const v = validateChoice(r.choice, fit, byId, prefs, input.grounding, { mustPick: CHOOSE_WORDS.test(input.text), mayName: relation ? previous : [] });
     input.trace.push({ action: "recommend", attempt, result: v.reasons.length ? "rejected" : "ok", pick: r.choice.pick, alternatives: r.choice.alternatives, rejected: v.reasons });
     if (!v.reasons.length) {
       if (v.pick === null) return done(r.choice.reply.trim(), [...allergyNote, ANSWER_CHIPS()]);

@@ -196,6 +196,15 @@ function ResultView({ r, repeats }: { r: CaseResult; repeats: number }) {
               {t.outcome ? ` · ${t.outcome}` : ""}
               {t.latencyMs !== null ? ` · ${t.latencyMs.toLocaleString("en-GB")} ms` : ""}
             </p>
+            {t.timing && (
+              <p className="text-[13px] text-muted">
+                {t.timing.calls} model call{t.timing.calls === 1 ? "" : "s"}
+                {t.timing.turnModelMs !== null ? ` · turn model ${t.timing.turnModelMs.toLocaleString("en-GB")} ms` : ""}
+                {t.timing.chooserMs !== null ? ` · chooser ${t.timing.chooserMs.toLocaleString("en-GB")} ms` : ""}
+                {t.timing.retrievalMs !== null ? ` · retrieval ${t.timing.retrievalMs} ms (${t.retrievalMode ?? "?"})` : ""}
+                {t.timing.evalTokens !== null ? ` · ${t.timing.evalTokens} tokens written, ${t.timing.uncachedPromptTokens ?? "?"} prompt tokens read` : ""}
+              </p>
+            )}
             <p className="mt-1 text-[15px]">
               <span className="font-medium">Guest:</span> {t.input}
             </p>

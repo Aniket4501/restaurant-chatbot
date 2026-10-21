@@ -5,6 +5,7 @@ import { AdminHeader } from "@/components/admin/AdminHeader";
 import { BarChart, LineChart, Sparkline } from "@/components/admin/evals/Charts";
 import { CaseDetailDialog } from "@/components/admin/evals/CaseDetail";
 import { FailureExplorer } from "@/components/admin/evals/FailureExplorer";
+import { LatencyPanel } from "@/components/admin/evals/LatencyPanel";
 import { RunControls } from "@/components/admin/evals/RunControls";
 import { clock, duration, pct, pts, runLabel, shortWhen, statDelta, statValue, when } from "@/components/admin/evals/format";
 import type { Job, JobRequest, Overview, RunDetail, RunSummary } from "@/components/admin/evals/types";
@@ -32,6 +33,9 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
   const [now, setNow] = useState(serverNow);
   const [openArea, setOpenArea] = useState<string | null>(null);
   const detailReq = useRef(0);
+  // A rerun of some cases is compared with the run they came from (D-24 audit: it was compared with whatever subset
+  // ran before, so its fixes never showed as resolved).
+  const rerunOf = useRef<string | null>(null);
 
   const loadOverview = useCallback(async () => {
     const r = await fetch("/api/admin/evals", { cache: "no-store" });
@@ -73,7 +77,7 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
       if (j.job && j.job.state !== "running") {
         await loadOverview().catch(() => null);
         if (j.job.runId) {
-          setBaseId("auto");
+          setBaseId(j.job.request.caseIds && rerunOf.current ? rerunOf.current : "auto");
           setRunId(j.job.runId);
         }
       }
@@ -83,6 +87,7 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
 
   const start = async (request: JobRequest) => {
     setStartError(null);
+    rerunOf.current = request.caseIds ? runId : null;
     const r = await fetch("/api/admin/evals/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) }).catch(() => null);
     if (!r) return setStartError("Couldn't reach the server to start the run.");
     const j = (await r.json().catch(() => null)) as { job?: Job; error?: { message: string; job?: Job } } | null;
@@ -253,9 +258,11 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
               </section>
             )}
 
+            {run && run.mode === "live" && <LatencyPanel run={run} base={base} benches={overview.benches ?? []} />}
+
             {run && <Regressions cmp={cmp} base={base} onOpen={setOpenCase} />}
 
-            {detail && run && <FailureExplorer rows={detail.cases} areas={overview.areas} hasComparison={!!cmp} onOpen={setOpenCase} />}
+            {detail && run && <FailureExplorer rows={detail.cases} areas={overview.areas} hasComparison={!!cmp} onOpen={setOpenCase} onRerun={(caseIds) => start({ mode: run.mode, suite: "full", area: null, caseIds })} rerunDisabled={job?.state === "running"} />}
             {!detail && !loadError && <p className="text-muted">Loading the run…</p>}
           </>
         )}

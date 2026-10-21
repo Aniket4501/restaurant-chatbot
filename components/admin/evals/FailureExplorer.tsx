@@ -11,15 +11,17 @@ type SortKey = "id" | "area" | "severity" | "status";
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, major: 1, minor: 2 };
 const STATUS_ORDER: Record<string, number> = { error: 0, fail: 1, flaky: 2, pass: 3 };
 
-export function FailureExplorer({ rows, areas, hasComparison, onOpen }: { rows: CaseRow[]; areas: AreaInfo[]; hasComparison: boolean; onOpen: (id: string) => void }) {
+export function FailureExplorer({ rows, areas, hasComparison, onOpen, onRerun, rerunDisabled }: { rows: CaseRow[]; areas: AreaInfo[]; hasComparison: boolean; onOpen: (id: string) => void; onRerun?: (ids: string[]) => void; rerunDisabled?: boolean }) {
   const [q, setQ] = useState("");
   const [area, setArea] = useState("all");
+  const [category, setCategory] = useState("all");
   const [severity, setSeverity] = useState("all");
   const [status, setStatus] = useState("failing");
   const [type, setType] = useState("all");
   const [change, setChange] = useState("all");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "status", dir: 1 });
   const types = useMemo(() => [...new Set(rows.flatMap((r) => (r.failureType ? [r.failureType] : [])))].sort(), [rows]);
+  const categories = useMemo(() => [...new Set(rows.map((r) => r.category))].sort(), [rows]);
   const label = (key: string) => areas.find((a) => a.key === key)?.label ?? key;
 
   const shown = useMemo(() => {
@@ -28,6 +30,7 @@ export function FailureExplorer({ rows, areas, hasComparison, onOpen }: { rows: 
       (r) =>
         (status === "all" || (status === "failing" ? r.status !== "pass" : r.status === status)) &&
         (area === "all" || r.area === area) &&
+        (category === "all" || r.category === category) &&
         (severity === "all" || r.severity === severity) &&
         (type === "all" || r.failureType === type) &&
         (change === "all" || r.regression === change) &&
@@ -40,7 +43,7 @@ export function FailureExplorer({ rows, areas, hasComparison, onOpen }: { rows: 
       const y = key(b);
       return (x < y ? -1 : x > y ? 1 : a.id.localeCompare(b.id)) * sort.dir;
     });
-  }, [rows, areas, q, area, severity, status, type, change, sort]);
+  }, [rows, areas, q, area, category, severity, status, type, change, sort]);
 
   const select = "min-h-11 rounded-full border border-line bg-ash px-3 text-[14px]";
   const th = (key: SortKey, text: string) => (
@@ -87,6 +90,17 @@ export function FailureExplorer({ rows, areas, hasComparison, onOpen }: { rows: 
           </select>
         </label>
         <label className="flex items-center gap-1.5 text-[14px]">
+          <span className="text-muted">Category</span>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className={select}>
+            <option value="all">All</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-[14px]">
           <span className="text-muted">Severity</span>
           <select value={severity} onChange={(e) => setSeverity(e.target.value)} className={select}>
             <option value="all">All</option>
@@ -119,9 +133,17 @@ export function FailureExplorer({ rows, areas, hasComparison, onOpen }: { rows: 
           </label>
         )}
       </div>
-      <p className="text-[14px] text-muted" aria-live="polite">
-        {shown.length} of {rows.length} cases shown
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[14px] text-muted" aria-live="polite">
+          {shown.length} of {rows.length} cases shown
+        </p>
+        {onRerun && rows.some((r) => r.status !== "pass") && (
+          // D-24: the cases not passing in this run, rerun together (the runner takes up to 20 case IDs).
+          <button type="button" disabled={rerunDisabled} onClick={() => onRerun(rows.filter((r) => r.status !== "pass").map((r) => r.id).slice(0, 20))} className="min-h-11 rounded-full border border-line bg-paper px-4 text-[14px] hover:border-neem hover:text-neem disabled:opacity-50">
+            {rows.filter((r) => r.status !== "pass").length === 1 ? "Rerun the case not passing" : `Rerun the ${Math.min(20, rows.filter((r) => r.status !== "pass").length)} cases not passing`}
+          </button>
+        )}
+      </div>
       {shown.length === 0 ? (
         <p className="rounded-xl border border-dashed border-line bg-paper px-4 py-6 text-center text-muted">{status === "failing" && rows.every((r) => r.status === "pass") ? "Every case in this run passed." : "No cases match these filters."}</p>
       ) : (

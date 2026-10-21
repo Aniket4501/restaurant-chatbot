@@ -26,7 +26,23 @@ export function reservationsHandler(deps: ApiDeps) {
       return errorResponse(429, "RATE_LIMITED", "Too many booking attempts. Please wait a moment.", {}, { "retry-after": String(retry) });
     }
 
-    const r = createReservation(deps.db(), body.value, key, now);
+    // An error opening the database happens before any write, so it is "nothing booked, try again" (503). One later on
+    // may come after the row was committed, so it is reported as unknown (500), which the client retries with the same
+    // key to learn the outcome (D-24 audit: the handler threw and Next answered 500 with no body).
+    let db: ReturnType<ApiDeps["db"]>;
+    try {
+      db = deps.db();
+    } catch (e) {
+      console.error(JSON.stringify({ event: "reservation_error", stage: "open", code: (e as { code?: string }).code ?? (e as Error).name }));
+      return errorResponse(503, "UNAVAILABLE", "We couldn't reach the booking system. Nothing was booked; please try again.", {}, { "retry-after": "1" });
+    }
+    let r: ReturnType<typeof createReservation>;
+    try {
+      r = createReservation(db, body.value, key, now);
+    } catch (e) {
+      console.error(JSON.stringify({ event: "reservation_error", stage: "create", code: (e as { code?: string }).code ?? (e as Error).name }));
+      return errorResponse(500, "INTERNAL", "We couldn't confirm whether your booking was saved. Tap Retry to check.");
+    }
     if ("reservation" in r) return okResponse(r.status, { reservation: reservationJson(r.reservation) });
     switch (r.code) {
       case "VALIDATION":

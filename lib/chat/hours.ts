@@ -42,7 +42,13 @@ export function guestHoursText(f: Fact): string {
  * fact that names in-horizon exceptions is followed by those exceptions, so "hours on Thursdays" also says what
  * changes on Thu 22 Oct. Returns the fact IDs shown (for the info card and the trace).
  */
-export function renderHoursAnswer(cited: string[], factsById: Map<string, Fact>, zoneOf: (slug: string) => string, mentioned: (date: string) => boolean = () => true): { text: string; factIds: string[] } {
+export function renderHoursAnswer(cited: string[], factsById: Map<string, Fact>, zoneOf: (slug: string) => string, mentioned: (date: string) => boolean = () => true, opts: { onlyMentioned?: boolean } = {}): { text: string; factIds: string[] } {
+  // A question about particular dates ("tomorrow", "on the 31st") gets only those dates' exceptions (D-24 audit: "what
+  // time do you open tomorrow?" also listed the Sat 31 Oct hours); a question about a weekday in general gets them all.
+  const relevant = (id: string) => {
+    const m = EXCEPTION_ID.exec(id);
+    return !m || !opts.onlyMentioned || mentioned(m[2]);
+  };
   const shown: string[] = [];
   const add = (id: string) => {
     if (factsById.has(id) && !shown.includes(id)) shown.push(id);
@@ -56,9 +62,9 @@ export function renderHoursAnswer(cited: string[], factsById: Map<string, Fact>,
   for (const id of supersede(replacing, zoneOf)) {
     add(id);
     const f = factsById.get(id);
-    if (f?.kind === "hours") for (const m of f.text.matchAll(/see (exception:[a-z0-9-]+:\d{4}-\d{2}-\d{2})/g)) add(m[1]);
+    if (f?.kind === "hours") for (const m of f.text.matchAll(/see (exception:[a-z0-9-]+:\d{4}-\d{2}-\d{2})/g)) if (relevant(m[1])) add(m[1]);
   }
-  for (const id of cited) if (EXCEPTION_ID.test(id)) add(id);
+  for (const id of cited) if (EXCEPTION_ID.test(id) && relevant(id)) add(id);
   return { text: compact(shown, factsById), factIds: shown };
 }
 

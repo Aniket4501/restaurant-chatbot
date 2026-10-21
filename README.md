@@ -34,7 +34,7 @@ The app listens on 127.0.0.1 only. The staff pages have no password (anyone usin
 
 **Guests** (`/`):
 - Ask a question, for example "Do you have parking at Hauz Khas?" or "How much is the butter chicken?". Unknown or unrelated questions get a short fallback with the branch phone number.
-- Ask for a suggestion in your own words: "the best vegetarian dish under ₹400", "something light", "surprise me". Then refine it: "anything cheaper?", "another option", "actually, a dessert instead". Preferences, including an allergy, carry over until you change them, even across a booking.
+- Ask for a suggestion in your own words: "the best vegetarian dish under ₹400", "something light", "surprise me". Then refine it: "anything cheaper?", "another option", "actually, a dessert instead". Preferences, including an allergy, carry over until you change them, even across a booking. The buttons ("Help me find a dish", "Something cheaper", "Opening hours"…) skip the step that works out what a typed message means, so they answer sooner.
 - Browse the menu by section, or ask for "the vegan dishes".
 - Tap **Book a table**, then choose a branch, date, party size and one of the open times. Enter your name and mobile number, then tap Confirm.
 - You can also type a request, for example "table for 2 tomorrow at 8pm at Golf Course Road".
@@ -43,7 +43,7 @@ The booking reference appears only after the booking has been saved. Full times,
 
 **Staff** (`/admin`, no sign-in): pick a date (it opens on today) and optionally a branch. You see the day's booking and guest counts and a table of each booking's time, guest, party size, branch and status. Cancelling a booking frees its table straight away.
 
-**Evals** (`/admin/evals`, no sign-in): how the chatbot scores on its test cases. Start a scripted or live run (smoke or full, optionally one quality area), follow its progress, compare any run with the saved baseline or another run, see quality by area with each metric's definition and case count, trends across runs, new failures and resolved cases, and open any case to see each turn's input, reply, tool calls, validation results and checks, with the command that reruns it. Every number comes from the results files in `evals/results`; see `evals/README.md`.
+**Evals** (`/admin/evals`, no sign-in): how the chatbot scores on its test cases. Start a scripted or live run (smoke or full, optionally one quality area), follow its progress, compare any run with the saved baseline or another run, see quality by area with each metric's definition and case count, trends across runs, new failures and resolved cases, and the Latency section: turn time by kind of turn (p50, and p95 from 20 turns), where a model turn's time goes, and the latest benchmark against the one labelled baseline. Filter the failing cases by area, category, severity or failure type, rerun the ones not passing, and open any case to see each turn's input, reply, timing, tool calls, validation results and checks, with the command that reruns it. Every number comes from the results files in `evals/results`; see `evals/README.md`.
 
 ## How it works
 
@@ -118,11 +118,14 @@ Quality is measured on 92 live test conversations, 3 runs each (`docs/EVAL_REPOR
 ```bash
 npm run verify           # lint, types, unit, integration, scripted evals (fake model), build, Playwright E2E with axe accessibility checks
 npm run eval:smoke       # scripted cases, then a few live cases per quality area (local model), with reports
-npm run eval:full        # scripted cases, then every live case (about an hour), with reports compared with the baseline
+npm run eval:full        # scripted cases, then every live case (15–25 minutes), with reports compared with the baseline
 npm run eval:report      # report on the latest run: evals/reports/<run>.md, .json and -review.md (for human review)
 npm run verify:release   # everything, plus the live cases 3 times with the release gates
 npx tsx evals/run.ts --mode live --case LV-REC-014   # rerun one case (or --area recommendations)
+npm run build && npm run bench -- --label mylabel    # latency benchmark (local model, isolated server on port 3107)
 ```
+
+The benchmark (`scripts/bench.ts`, scenarios in `evals/bench.json`) starts its own `next start` with a temporary database, so `data/app.db` is untouched. It times warm questions, recommendations, a follow-up, the menu button, a typed booking and the booking flow with its save; a real browser from send to the reply on screen; and cold starts after unloading both models. Results go to `evals/results/bench/` and appear in the Latency section of `/admin/evals`.
 
 The eval cases, layers, metrics, baseline and how to reproduce a failure are described in `evals/README.md`.
 

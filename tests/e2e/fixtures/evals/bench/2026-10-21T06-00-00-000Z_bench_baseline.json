@@ -1,0 +1,116 @@
+{
+ "kind": "bench",
+ "formatVersion": 1,
+ "label": "baseline",
+ "startedAt": "2026-10-21T06:00:00.000Z",
+ "finishedAt": "2026-10-21T06:00:00.000Z",
+ "gitSha": "e2e0001",
+ "gitDirty": false,
+ "promptVersion": "v6",
+ "model": "qwen3.5:9b",
+ "loadAverage": {
+  "start": [
+   3.2,
+   3,
+   3
+  ],
+  "end": [
+   3.6,
+   3,
+   3
+  ]
+ },
+ "trials": {
+  "warm": 5,
+  "browser": 3,
+  "cold": 3
+ },
+ "summary": [
+  {
+   "phase": "warm",
+   "key": "kind:lookup",
+   "n": 20,
+   "failed": 0,
+   "p50": 3300,
+   "p95": 4400,
+   "min": 2800,
+   "max": 4200,
+   "serverP50": 3260,
+   "stagesP50": {
+    "turnModelMs": 3000,
+    "chooserMs": null
+   },
+   "extra": {
+    "turnP50": 3300,
+    "saveP50": null,
+    "networkP50": null,
+    "renderP50": null
+   }
+  },
+  {
+   "phase": "warm",
+   "key": "kind:recommend",
+   "n": 20,
+   "failed": 0,
+   "p50": 5200,
+   "p95": 7200,
+   "min": 4700,
+   "max": 6100,
+   "serverP50": 5160,
+   "stagesP50": {
+    "turnModelMs": 4900,
+    "chooserMs": 900
+   },
+   "extra": {
+    "turnP50": 5200,
+    "saveP50": null,
+    "networkP50": null,
+    "renderP50": null
+   }
+  },
+  {
+   "phase": "cold",
+   "key": "kind:cold",
+   "n": 3,
+   "failed": 0,
+   "p50": 14500,
+   "p95": null,
+   "min": 14000,
+   "max": 15400,
+   "serverP50": 14460,
+   "stagesP50": {
+    "turnModelMs": 14200,
+    "chooserMs": null,
+    "loadMs": 6200
+   },
+   "extra": {
+    "turnP50": 14500,
+    "saveP50": null,
+    "networkP50": null,
+    "renderP50": null
+   }
+  },
+  {
+   "phase": "browser",
+   "key": "kind:lookup",
+   "n": 3,
+   "failed": 0,
+   "p50": 3360,
+   "p95": null,
+   "min": 2860,
+   "max": 4260,
+   "serverP50": 3320,
+   "stagesP50": {
+    "turnModelMs": 3060,
+    "chooserMs": null
+   },
+   "extra": {
+    "turnP50": 3360,
+    "saveP50": null,
+    "networkP50": 3320,
+    "renderP50": 40
+   }
+  }
+ ],
+ "samples": []
+}

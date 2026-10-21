@@ -11,7 +11,7 @@ import { noTurnLimit, openGate } from "@/lib/chat/ratelimit";
 import { historyContent, submitOutcome, type SubmitBranch } from "@/lib/chat/submit";
 import { branchInfo } from "@/lib/chat/templates";
 import { runTurn, systemInputFor } from "@/lib/chat/turn";
-import { emptyDraft, type Action, type Block, type ChatMessage, type Draft, type TraceEntry, type TurnContext, type TurnTiming } from "@/lib/chat/types";
+import { emptyDraft, RECOMMEND_CHIP_LABEL, type Action, type Block, type ChatMessage, type Draft, type TraceEntry, type TurnContext, type TurnTiming } from "@/lib/chat/types";
 import { loadConfig, MODEL } from "@/lib/config";
 import { openDb, type DB } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
@@ -30,7 +30,7 @@ import { buildChooserSystem, CHOOSER_JSON_SCHEMA, CHOOSER_VERSION } from "@/lib/
 import { TURN_JSON_SCHEMA } from "@/lib/llm/schema";
 import { maskText } from "@/lib/llm/redact";
 import { modelFor, OLLAMA_CHAT_READY } from "@/lib/llm/provider";
-import { toInstant } from "@/lib/time/tz";
+import { todayLocal, toInstant } from "@/lib/time/tz";
 import { AREAS, areaOf } from "@/evals/areas";
 import { CATEGORIES, loadCases, type EvalCase, type Expectation } from "@/evals/case";
 import { checkCase, offeredStarts, snapshotRows, type CaseRecord, type TurnRecord, type Violation } from "@/evals/invariants";
@@ -106,6 +106,8 @@ function failingEmbedder(kind: "down" | "timeout"): Embedder {
 function chipLabel(a: Action | { type: "select_slot"; branch: string; start: string }, branches: { slug: string; name: string }[]): string {
   if (a.type === "select_slot") return "start" in a ? a.start.slice(11) : "a time";
   if (a.type === "menu") return a.course ? a.course.replace(/-/g, " ") : "Show me the menu";
+  if (a.type === "recommend") return RECOMMEND_CHIP_LABEL[a.text] ?? a.text;
+  if (a.type === "hours") return "Opening hours";
   {
     if (a.value === null) return a.field === "branch" ? "Find a table" : `Change the ${a.field}`;
     if (a.field === "branch") return branches.find((b) => b.slug === a.value)?.name.split(", ").pop() ?? String(a.value);
@@ -769,24 +771,34 @@ async function main(): Promise<number> {
   if (partial) fs.writeFileSync(partial, `${JSON.stringify({ header: { mode, suite, selection: { case: only ?? null, category: category ?? null, area: area ?? null }, startedAt: started.toISOString(), gitSha: atStart.gitSha, gitDirty: atStart.gitDirty, datasetHash: atStart.datasetHash, selected: cases.map((c) => c.id), runs, pid: process.pid } })}\n`);
   const template = await prepareTemplate(mode === "live" ? embedder : fakeEmbedder(), Date.parse(cases[0].now));
   let warmup: unknown = null;
-  if (mode === "live") {
-    // Warm the prefix for the cases' own date, so the first measured turn isn't a cold prefill (§6.5 reports cold
-    // load separately). All live cases share one `now`; another date would pay one cold prefill.
+  // Warm the prefix for the cases' own date, so a measured turn isn't a cold prefill (§6.5 reports cold load
+  // separately). The static prompt changes with the branch-local day, so a case on another day is planted before it,
+  // and the usual day again after it (D-24: one case on 17 Oct evicted the cache and the next 8 turns timed out).
+  const plants: { day: string; shots: unknown[] }[] = [];
+  let plantedDay: string | null = null;
+  const plantFor = async (now: number) => {
     const cfg = loadConfig({ ...process.env, LLM_PROVIDER: "ollama", EMBED_PROVIDER: "ollama", E2E_TEST_MODE: undefined });
     const tdb = openDb(template);
-    const sysIn = systemInputFor(tdb, Date.parse(cases[0].now));
-    const system = buildSystemPrompt(sysIn);
-    const restaurantName = sysIn.restaurant.name;
+    const sysIn = systemInputFor(tdb, now);
     tdb.close();
-    warmup = [
-      ...(await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system, format: TURN_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs })),
+    const day = todayLocal(now, sysIn.zone);
+    if (day === plantedDay) return;
+    const shots = [
+      ...(await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system: buildSystemPrompt(sysIn), format: TURN_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs })),
       // The recommendation chooser's own static prefix (D-20).
-      ...(await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system: buildChooserSystem(restaurantName), format: CHOOSER_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs })),
+      ...(await plantSnapshot({ baseUrl: cfg.ollamaBaseUrl, model: cfg.chatModel, system: buildChooserSystem(sysIn.restaurant.name), format: CHOOSER_JSON_SCHEMA, timeoutMs: MODEL.warmTimeoutMs })),
     ];
-    console.log(`warm-up (not scored): ${JSON.stringify(warmup)}`);
+    plants.push({ day, shots });
+    plantedDay = day;
+    console.log(`warm-up for ${day} (not scored): ${JSON.stringify(shots)}`);
+  };
+  if (mode === "live") {
+    await plantFor(Date.parse(cases[0].now));
+    warmup = plants[0].shots;
   }
   for (let run = 1; run <= runs; run++)
     for (const c of cases) {
+      if (mode === "live") await plantFor(Date.parse(c.now));
       const r = await runCase(c, { mode, run, model, embedder, template });
       results.push(r);
       if (partial) fs.appendFileSync(partial, `${JSON.stringify(r)}\n`);
@@ -842,6 +854,7 @@ async function main(): Promise<number> {
     model: model?.model ?? "fake-sequence",
     ollama: ollamaMeta,
     warmup,
+    warmupByDay: plants,
     loadAverage: os.loadavg(),
   };
   const label = arg("label") ? `_${arg("label")!.replace(/[^a-z0-9-]+/gi, "-")}` : "";

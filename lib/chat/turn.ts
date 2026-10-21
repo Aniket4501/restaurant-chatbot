@@ -11,16 +11,16 @@ import { CHOOSER_JSON_SCHEMA, CHOOSER_VERSION, ChooserSchema } from "@/lib/llm/c
 import { buildPrompt, promptChars, PROMPT_VERSION, type SystemPromptInput } from "@/lib/llm/prompt";
 import { foldDigits, maskMessages } from "@/lib/llm/redact";
 import { modelTimeout } from "@/lib/llm/warmth";
-import { TURN_JSON_SCHEMA, type Intent } from "@/lib/llm/schema";
+import { nullBooking, TURN_JSON_SCHEMA, type Intent, type Turn } from "@/lib/llm/schema";
 import type { LocalDate } from "@/lib/time/tz";
 import { checkGrounding } from "@/lib/chat/grounding";
 import { guardExtraction, largePartyStated } from "@/lib/chat/guards";
 import { foodWords, menuEntries, menuStep } from "@/lib/chat/menu";
-import { claimProblems, explicitPrefs, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
+import { ANSWER_CHIPS, claimProblems, explicitPrefs, HELP_QUESTION, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
 import { GateFullError, openGate, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
 import { blankStep, degradedStep, handleAction, routeTurn, type FlowCtx, type Prepared, type Step } from "@/lib/chat/router";
 import { branchInfo } from "@/lib/chat/templates";
-import { emptyDraft, noPrefs, type Action, type ChatMessage, type Draft, type Prefs, type TraceEntry, type TurnContext, type TurnReply, type TurnTiming } from "@/lib/chat/types";
+import { emptyDraft, HELP_CHIP_TEXT, noPrefs, type Action, type ChatMessage, type Draft, type Prefs, type TraceEntry, type TurnContext, type TurnReply, type TurnTiming } from "@/lib/chat/types";
 
 // runTurn (§5.7, ARCHITECTURE "Chat turn pipeline"): the single entry point for POST /api/chat and the eval runner.
 // The body is validated by the caller (ChatBodySchema). Nothing here reads the clock: `now` is an input, and
@@ -63,6 +63,8 @@ export function systemInputFor(db: DB, now: number): SystemPromptInput {
 export const PROMPT_CHAR_BUDGET = Math.floor(MODEL.promptBudgetTokens * 2.9);
 
 const RATE_LIMITED_TEXT = "You're sending messages quickly. Please wait a moment and try again.";
+// A full model queue is not the guest's doing (D-24 audit: it said "you're sending messages quickly").
+const BUSY_TEXT = "We're answering a lot of guests right now. Please try again in a moment.";
 
 export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnReply> {
   const elapsed = deps.elapsed ?? (() => performance.now());
@@ -123,6 +125,39 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     return reply;
   };
 
+  // How long a model call may take: longer when Ollama reports the model unloaded, so a reload is a slow reply rather
+  // than a failed one (D-23). Asked once per turn, inside the gate, so a warm-up the turn waited behind is counted.
+  let timeout: number | null = null;
+  const timeoutMs = async () => {
+    if (timeout === null) {
+      const s0 = elapsed();
+      const loaded = deps.modelTimeoutMs === undefined && deps.modelLoaded ? await deps.modelLoaded() : null;
+      if (deps.modelTimeoutMs === undefined && deps.modelLoaded) t.statusMs = elapsed() - s0;
+      timeout = modelTimeout(loaded, deps.modelTimeoutMs);
+    }
+    return timeout;
+  };
+
+  // The recommendation chooser (D-20): the second model call of a recommend turn, in the same gate slot as the first,
+  // so another session can't take the slot in between.
+  const chooser: ChooserCall = async (attempt, messages) => {
+    const limit = await timeoutMs();
+    const m0 = elapsed();
+    t.calls++;
+    try {
+      const env = await deps.model.chat({ messages, format: CHOOSER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(limit) });
+      countCall(env);
+      const r = interpretJson(env, ChooserSchema);
+      return r.ok ? { choice: r.value, code: "ok", content: env.content } : { choice: null, code: r.code, content: env.content };
+    } catch (e) {
+      if ((e as { name?: string })?.name === "ScriptExhaustedError") throw e; // a test script ran out: fail the test
+      const code = e instanceof ModelError ? e.code : (e as { name?: string })?.name === "TimeoutError" || (e as { name?: string })?.name === "AbortError" ? "MODEL_TIMEOUT" : "MODEL_UNAVAILABLE";
+      return { choice: null, code, content: "" };
+    } finally {
+      metrics.modelMs = (metrics.modelMs ?? 0) + (elapsed() - m0);
+      add("chooserMs", elapsed() - m0);
+    }
+  };
   // 1. Rate limits (the body was already validated by the caller).
   const allowed = deps.limiter.allow(input.sessionId, input.now);
   if (!allowed.ok) {
@@ -156,7 +191,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     trace.push({ action: "menu", course: input.action.course, items: m.shown });
     return finish({ text: m.text, blocks: m.blocks, draft: draft0, outcome: "menu", citedFactIds: m.cited }, null);
   }
-  if (input.action) return finish(handleAction(input.action, draft0, ctx), null);
+  if (input.action?.type === "set_field" || input.action?.type === "select_slot") return finish(handleAction(input.action, draft0, ctx), null);
+  const chip = input.action?.type === "recommend" || input.action?.type === "hours" ? input.action : null;
 
   // 3. Mask every message once, whatever its role (D-15).
   const masked = maskMessages(input.messages);
@@ -164,7 +200,43 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const history = masked.slice(0, -1).slice(-(LIMITS.historyMax - 1));
   const previousGuest = history.filter((m) => m.role === "guest").at(-1)?.content ?? null;
   // A blank message gets the clarify reply without retrieval or a model call (D-21: it used to call the model).
-  if (!latest.trim()) return finish(blankStep(draft0, ctx), null);
+  if (!latest.trim() && !chip) return finish(blankStep(draft0, ctx), null);
+
+  // Chips with a fixed meaning (D-24): no retrieval, prompt or intent call. "Opening hours" is the hours route of a
+  // typed question, from the facts; "Help me find a dish" gets its question; the other food chips go straight to the
+  // dish chooser, which still validates every pick.
+  if (chip) {
+    const staticFacts = renderStaticFacts(src, input.now);
+    const kbFacts = renderKbFacts(src);
+    const factsById = new Map<string, Fact>([...staticFacts, ...kbFacts].map((f) => [f.id, f]));
+    const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;
+    const sentIds = new Set(staticFacts.map((f) => f.id));
+    const facts = { factsById, sentIds, zoneOf, staticFacts, foodPrefs: prefsOut, menu: entries, branchNamed: draft0.branch };
+    const fixed = (intent: Intent, cited: string[] = []): Turn => ({ intent, booking: nullBooking(), prefs: null, answer: null, citedFactIds: cited, answerable: true });
+    if (chip.type === "hours") {
+      const weekly = staticFacts.filter((f) => f.id.startsWith("hours:")).map((f) => f.id);
+      return finish(routeTurn(fixed("faq", weekly), draft0, ctx, { ...facts, guest: "What are your opening hours?" }), "faq");
+    }
+    if (chip.text === HELP_CHIP_TEXT) return finish(routeTurn(fixed("recommend"), draft0, ctx, { ...facts, guest: chip.text }, { text: HELP_QUESTION, blocks: [ANSWER_CHIPS()], cited: [] }), "recommend");
+    let rec: RecommendResult;
+    const q0 = elapsed();
+    try {
+      rec = await (deps.gate ?? openGate).run(async () => {
+        t.queueMs = elapsed() - q0;
+        return recommendTurn({ turn: fixed("recommend"), text: chip.text, history, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: [], branch: draft0.branch }, chooser);
+      });
+    } catch (e) {
+      if (e instanceof GateFullError) {
+        trace.push({ action: "rate_limited" });
+        return finish({ text: BUSY_TEXT, blocks: [], draft: draft0, outcome: "rate_limited" }, null, "rate_limited", 1000);
+      }
+      throw e;
+    }
+    metrics.promptVersion = `chip+${CHOOSER_VERSION}`;
+    prefsOut = rec.prefs;
+    recommendedOut = rec.recommended;
+    return finish(routeTurn(fixed("recommend"), draft0, ctx, { ...facts, foodPrefs: prefsOut, guest: chip.text }, { text: rec.text, blocks: rec.blocks, cited: rec.cited, largeParty: false }), "recommend");
+  }
 
   // 4. Retrieve (D-02, D-13).
   const staticFacts = renderStaticFacts(src, input.now);
@@ -195,19 +267,6 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   t.promptMs = elapsed() - p0;
   if (promptChars(prompt) > PROMPT_CHAR_BUDGET) return finish(degradedStep(draft0, ctx, "CONTEXT_TOO_LARGE"), null);
 
-  // How long a model call may take: longer when Ollama reports the model unloaded, so a reload is a slow reply rather
-  // than a failed one (D-23). Asked once per turn, inside the gate, so a warm-up the turn waited behind is counted.
-  let timeout: number | null = null;
-  const timeoutMs = async () => {
-    if (timeout === null) {
-      const s0 = elapsed();
-      const loaded = deps.modelTimeoutMs === undefined && deps.modelLoaded ? await deps.modelLoaded() : null;
-      if (deps.modelTimeoutMs === undefined && deps.modelLoaded) t.statusMs = elapsed() - s0;
-      timeout = modelTimeout(loaded, deps.modelTimeoutMs);
-    }
-    return timeout;
-  };
-
   // 6–7. Call the model through the gate; one corrective retry for invalid output, one trimmed retry for context.
   const call = async (attempt: 1 | 2, messages: LlmMessage[]): Promise<{ result: Interpreted; content: string }> => {
     const limit = await timeoutMs();
@@ -237,26 +296,6 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const sentIds = new Set([...staticFacts.map((f) => f.id), ...retrieved.map((f) => f.id)]);
   const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;
 
-  // The recommendation chooser (D-20): the second model call of a recommend turn, in the same gate slot as the first,
-  // so another session can't take the slot in between.
-  const chooser: ChooserCall = async (attempt, messages) => {
-    const limit = await timeoutMs();
-    const m0 = elapsed();
-    t.calls++;
-    try {
-      const env = await deps.model.chat({ messages, format: CHOOSER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(limit) });
-      countCall(env);
-      const r = interpretJson(env, ChooserSchema);
-      return r.ok ? { choice: r.value, code: "ok", content: env.content } : { choice: null, code: r.code, content: env.content };
-    } catch (e) {
-      if ((e as { name?: string })?.name === "ScriptExhaustedError") throw e; // a test script ran out: fail the test
-      const code = e instanceof ModelError ? e.code : (e as { name?: string })?.name === "TimeoutError" || (e as { name?: string })?.name === "AbortError" ? "MODEL_TIMEOUT" : "MODEL_UNAVAILABLE";
-      return { choice: null, code, content: "" };
-    } finally {
-      metrics.modelMs = (metrics.modelMs ?? 0) + (elapsed() - m0);
-      add("chooserMs", elapsed() - m0);
-    }
-  };
   const recommended: { result: RecommendResult | null } = { result: null }; // set inside the gate closure
   const branchIn = (text: string) => {
     const hits = src.branches.filter((b) => b.isActive && [b.name.split(", ").pop()!, b.slug.replace(/-/g, " ")].some((n) => text.toLowerCase().includes(n.toLowerCase())));
@@ -315,7 +354,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   } catch (e) {
     if (e instanceof GateFullError) {
       trace.push({ action: "rate_limited" });
-      return finish({ text: RATE_LIMITED_TEXT, blocks: [], draft: draft0, outcome: "rate_limited" }, null, "rate_limited", 1000);
+      return finish({ text: BUSY_TEXT, blocks: [], draft: draft0, outcome: "rate_limited" }, null, "rate_limited", 1000);
     }
     throw e;
   }
@@ -365,7 +404,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       trace.push({ action: "prefs", prefs: prefsOut, added: [...(ex.allergy ? ["allergy"] : []), ...(ex.avoid ?? []).map((a) => `no ${a}`), ...(ex.unlisted ?? []).map((u) => `unlisted allergen: ${u}`)] });
     }
   }
-  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries }, prepared);
+  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries, branchNamed }, prepared);
   return finish(step, turn.intent);
 }
 

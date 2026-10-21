@@ -37,14 +37,14 @@
   {
    "metric": "criticalInvariantViolations",
    "value": 0,
-   "want": "≤ 0",
+   "want": "\u2264 0",
    "ok": true,
    "override": null
   },
   {
    "metric": "groundedAnswerCorrectness",
    "value": 0.8,
-   "want": "≥ 0.85",
+   "want": "\u2265 0.85",
    "ok": false,
    "override": null
   }
@@ -125,7 +125,23 @@
        "ok": false,
        "detail": "turn 1: shows the same text twice: \"sorry, i couldn't check availability just now\""
       }
-     ]
+     ],
+     "timing": {
+      "setupMs": 3,
+      "retrievalMs": 40,
+      "promptMs": 2,
+      "queueMs": 0,
+      "statusMs": 4,
+      "turnModelMs": 2020,
+      "chooserMs": null,
+      "otherMs": 31,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 400,
+      "evalMs": 1600,
+      "evalTokens": 110,
+      "uncachedPromptTokens": 600
+     }
     }
    ]
   },
@@ -195,7 +211,23 @@
        "ok": true,
        "detail": ""
       }
-     ]
+     ],
+     "timing": {
+      "setupMs": 3,
+      "retrievalMs": 40,
+      "promptMs": 2,
+      "queueMs": 0,
+      "statusMs": 4,
+      "turnModelMs": 2020,
+      "chooserMs": null,
+      "otherMs": 31,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 400,
+      "evalMs": 1600,
+      "evalTokens": 110,
+      "uncachedPromptTokens": 600
+     }
     }
    ]
   },
@@ -274,7 +306,23 @@
        "ok": true,
        "detail": ""
       }
-     ]
+     ],
+     "timing": {
+      "setupMs": 3,
+      "retrievalMs": 40,
+      "promptMs": 2,
+      "queueMs": 0,
+      "statusMs": 4,
+      "turnModelMs": 2020,
+      "chooserMs": null,
+      "otherMs": 31,
+      "calls": 1,
+      "loadMs": 1,
+      "promptEvalMs": 400,
+      "evalMs": 1600,
+      "evalTokens": 110,
+      "uncachedPromptTokens": 600
+     }
     }
    ]
   },
@@ -311,9 +359,9 @@
      "index": 0,
      "kind": "guest",
      "input": "Suggest a dessert",
-     "reply": "The Mango Sorbet at ₹245 is light and fruity.",
+     "reply": "The Mango Sorbet at \u20b9245 is light and fruity.",
      "blocks": [
-      "recommend menu:mango-sorbet ₹245"
+      "recommend menu:mango-sorbet \u20b9245"
      ],
      "cited": [],
      "outcome": "recommend",
@@ -348,7 +396,23 @@
        "ok": true,
        "detail": ""
       }
-     ]
+     ],
+     "timing": {
+      "setupMs": 3,
+      "retrievalMs": 40,
+      "promptMs": 2,
+      "queueMs": 0,
+      "statusMs": 4,
+      "turnModelMs": 2000,
+      "chooserMs": 1800,
+      "otherMs": 51,
+      "calls": 2,
+      "loadMs": 1,
+      "promptEvalMs": 400,
+      "evalMs": 1600,
+      "evalTokens": 110,
+      "uncachedPromptTokens": 600
+     }
     }
    ]
   }

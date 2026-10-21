@@ -16,96 +16,103 @@
       ]
     },
     "booking": {
-      "type": "object",
-      "properties": {
-        "branch": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "date": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "time": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "timeWindow": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "lunch",
-                "dinner"
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": [
+                "string",
+                "null"
               ]
             },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "partySize": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 999
+            "date": {
+              "type": [
+                "string",
+                "null"
+              ]
             },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ambiguity": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "field": {
+            "time": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timeWindow": {
+              "anyOf": [
+                {
                   "type": "string",
                   "enum": [
-                    "branch",
-                    "date",
-                    "time",
-                    "partySize"
+                    "lunch",
+                    "dinner"
                   ]
                 },
-                "candidates": {
-                  "minItems": 2,
-                  "maxItems": 4,
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "field",
-                "candidates"
-              ],
-              "additionalProperties": false
+              ]
             },
-            {
-              "type": "null"
+            "partySize": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 999
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ambiguity": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "enum": [
+                        "branch",
+                        "date",
+                        "time",
+                        "partySize"
+                      ]
+                    },
+                    "candidates": {
+                      "minItems": 2,
+                      "maxItems": 4,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "candidates"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
-          ]
+          },
+          "required": [
+            "branch",
+            "date",
+            "time",
+            "timeWindow",
+            "partySize",
+            "ambiguity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
         }
-      },
-      "required": [
-        "branch",
-        "date",
-        "time",
-        "timeWindow",
-        "partySize",
-        "ambiguity"
-      ],
-      "additionalProperties": false
+      ]
     },
     "prefs": {
       "anyOf": [

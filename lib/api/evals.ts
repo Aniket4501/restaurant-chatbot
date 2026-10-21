@@ -5,7 +5,7 @@ import { AREAS, areaOf } from "@/evals/areas";
 import { loadCases, type EvalCase } from "@/evals/case";
 import { describeExpect } from "@/evals/describe";
 import { baselineFile, resultsDir } from "@/evals/paths";
-import { baselineFor, baselineKey, caseStatuses, compareRuns, listRuns, previousComparable, readBaseline, type Comparison, type Run } from "@/evals/report";
+import { baselineFor, baselineKey, caseStatuses, compareRuns, listBenches, listRuns, previousComparable, readBaseline, type Comparison, type Run } from "@/evals/report";
 import type { ApiDeps } from "@/lib/api/deps";
 import { cancelJob, currentJob, startJob } from "@/lib/evals/jobs";
 import { errorResponse, okResponse, readJson } from "@/lib/http/json";
@@ -52,7 +52,7 @@ function comparisonFor(runs: Run[], run: Run, baseId: string | null, baselineFil
 /** The dashboard's first data (also rendered into the page): run summaries, newest first, baselines and the job. */
 export function evalsOverview(ev: EvalsDeps = defaultEvalsDeps()) {
   const runs = listRuns(ev.resultsDir());
-  return { runs: runs.slice(0, MAX_RUNS).map(runRef), totalRuns: runs.length, baseline: readBaseline(ev.baselineFile()), areas: AREAS.map(({ key, label, about }) => ({ key, label, about })), job: currentJob() };
+  return { runs: runs.slice(0, MAX_RUNS).map(runRef), totalRuns: runs.length, baseline: readBaseline(ev.baselineFile()), areas: AREAS.map(({ key, label, about }) => ({ key, label, about })), job: currentJob(), benches: listBenches(ev.resultsDir()).slice(0, 12) };
 }
 
 /** GET /api/admin/evals: every run's summary (newest first), the saved baselines and the current job. */

@@ -43,6 +43,30 @@ test("the evals dashboard shows the latest run from its results file, compared w
   await axe(page, "evals overview");
 });
 
+test("the latency section shows the run's turn times and stages, and the benchmark against its baseline, from the files (D-24) @cat:evals", async ({ page }) => {
+  await openEvals(page);
+  const lat = page.getByRole("region", { name: "Latency" });
+  type T = { latencyMs: number | null; modelMs: number | null; timing?: { turnModelMs: number | null } };
+  const turns = (HEAD as unknown as { results: { turns: T[] }[] }).results.flatMap((r) => r.turns).filter((t) => t.modelMs !== null);
+  const sorted = turns.map((t) => t.latencyMs!).sort((a, b) => a - b);
+  const p50 = sorted[Math.ceil(sorted.length / 2) - 1];
+  const row = lat.getByRole("row", { name: /^Turns that called the model/ });
+  await expect(row.getByRole("cell").nth(0)).toHaveText(String(turns.length));
+  await expect(row.getByRole("cell").nth(1)).toContainText(`${p50.toLocaleString("en-GB")} ms`);
+  await expect(row.getByRole("cell").nth(2)).toHaveText("n < 20");
+  const model = turns.map((t) => t.timing!.turnModelMs!).sort((a, b) => a - b)[Math.ceil(turns.length / 2) - 1];
+  await expect(lat.getByRole("definition").filter({ hasText: `${model.toLocaleString("en-GB")} ms` }).first()).toBeVisible();
+  // The benchmark: the latest file, with changes against the one labelled baseline.
+  const bench = JSON.parse(fs.readFileSync(path.join(FIXTURES, "bench/2026-10-21T09-00-00-000Z_bench.json"), "utf8")) as { summary: { phase: string; key: string; p50: number }[] };
+  const lookup = bench.summary.find((g) => g.phase === "warm" && g.key === "kind:lookup")!;
+  const benchRow = lat.getByRole("row", { name: /^warm lookup/i });
+  await expect(benchRow).toContainText(`${lookup.p50.toLocaleString("en-GB")} ms`);
+  await expect(benchRow).toContainText("−1,200 ms"); // 3,300 ms in the baseline file
+  await expect(lat.getByText(/Changes against .* \(baseline\)/)).toBeVisible();
+  await expect(lat.getByRole("row", { name: /^cold cold/i })).toContainText("model load 6,200 ms");
+  await axe(page, "latency section");
+});
+
 test("the failure explorer filters cases and opens one with its trace, checks and rerun command @cat:evals", async ({ page }) => {
   await openEvals(page);
   const explorer = page.getByRole("region", { name: "Failure explorer" });
@@ -54,6 +78,11 @@ test("the failure explorer filters cases and opens one with its trace, checks an
   await explorer.getByLabel("Status").selectOption("all");
   await expect(explorer.getByText(`${HEAD.results.length} of ${HEAD.results.length} cases shown`)).toBeVisible();
   await explorer.getByLabel("Status").selectOption("failing");
+  // D-24: a category filter, and a rerun of every case not passing in this run.
+  await explorer.getByLabel("Category").selectOption("booking_intent");
+  await expect(explorer.getByText("No cases match these filters.")).toBeVisible();
+  await explorer.getByLabel("Category").selectOption("all");
+  await expect(explorer.getByRole("button", { name: "Rerun the case not passing" })).toBeEnabled();
   await explorer.getByRole("button", { name: "LV-UX-901" }).click();
   const dialog = page.getByRole("dialog", { name: "LV-UX-901" });
   await expect(dialog.getByText("Why it failed")).toBeVisible();

@@ -33,11 +33,25 @@ export const AVOIDS = ["dairy", "nuts", "egg"] as const;
 /** Allergens the menu labels don't cover (D-20 review): a guest who states one is sent to staff, never recommended a dish. */
 export const UNLISTED = ["shellfish", "fish", "seafood", "soy", "sesame", "mustard", "mushroom", "coconut", "other"] as const;
 
+/**
+ * Food chips with a fixed meaning (D-24). Sent as an action, they skip the intent call: "Help me find a dish" gets its
+ * question with no model call, and the others go straight to the dish chooser, which still validates every pick.
+ * Typed text always takes the model path.
+ */
+export const RECOMMEND_CHIP_TEXTS = ["Help me find a dish", "Recommend something vegetarian", "Anything cheaper?", "Show me another option", "Something light", "Something filling", "Something vegetarian", "Surprise me", "Any price is fine", "Forget the vegan", "Forget the vegetarian", "Spicy is fine"] as const;
+export const HELP_CHIP_TEXT = "Help me find a dish";
+/** The label each food chip shows (and the guest's bubble says) when it differs from its text. */
+export const RECOMMEND_CHIP_LABEL: Partial<Record<(typeof RECOMMEND_CHIP_TEXTS)[number], string>> = { "Anything cheaper?": "Something cheaper", "Show me another option": "Another option", "Any price is fine": "Any price", "Forget the vegan": "Not only vegan", "Forget the vegetarian": "Not only vegetarian" };
+
 export const ActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_field"), field: z.enum(FIELDS), value: z.union([z.string().max(64), z.number().int().min(0).max(999), z.null()]) }),
   z.strictObject({ type: z.literal("select_slot"), branch: slug, startsAt: z.number().int() }),
   /** Browse the menu: no section gives the list of sections (D-20). No model call. */
   z.strictObject({ type: z.literal("menu"), course: z.enum(COURSES).nullable() }),
+  /** A food chip with a fixed meaning (D-24). */
+  z.strictObject({ type: z.literal("recommend"), text: z.enum(RECOMMEND_CHIP_TEXTS) }),
+  /** The "Opening hours" chip (D-24): every branch's week from the facts, no model call. */
+  z.strictObject({ type: z.literal("hours") }),
 ]);
 
 /**

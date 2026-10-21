@@ -34,8 +34,21 @@ export type RunSummary = {
   gates: ThresholdLine[] | null;
   gatesOk: boolean | null;
   areas: AreaSummary[];
+  latency: LatencySummary;
 };
 export type Run = { summary: RunSummary; results: CaseResult[] };
+
+/** D-24: where turn time went in a run, from its per-turn records. p95 only from 20 turns; stages only from D-24 runs. */
+export type LatencyGroup = { key: string; label: string; n: number; p50: number | null; p95: number | null };
+export type LatencyStage = { key: string; label: string; p50: number | null; mean: number | null; n: number };
+export type LatencySummary = {
+  modelTurns: LatencyGroup;
+  noModelTurns: LatencyGroup;
+  byIntent: LatencyGroup[];
+  /** Medians per stage over the turns that called the model; null when the run predates stage timings. */
+  stages: LatencyStage[] | null;
+  model: { n: number; callsMean: number | null; evalTokensP50: number | null; uncachedPromptTokensP50: number | null; evalMsP50: number | null; promptEvalMsP50: number | null; loadMsP50: number | null; msPerOutputToken: number | null } | null;
+};
 
 type Meta = Record<string, unknown>;
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -114,6 +127,54 @@ export const pct = (xs: number[], p: number) => {
   return s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)];
 };
 
+const STAGE_LABELS: [string, string][] = [
+  ["setupMs", "Setup"],
+  ["retrievalMs", "Retrieval"],
+  ["promptMs", "Prompt build"],
+  ["queueMs", "Queue"],
+  ["statusMs", "Model status check"],
+  ["turnModelMs", "Turn model"],
+  ["chooserMs", "Recommendation chooser"],
+  ["otherMs", "Validation and formatting"],
+];
+const INTENT_LABEL: Record<string, string> = { faq: "Questions (FAQ)", recommend: "Recommendations", menu: "Menu", booking: "Booking", smalltalk: "Small talk", off_topic: "Off topic", unclear: "Unclear", none: "Degraded or no intent" };
+
+/** D-24: latency of a run's guest turns, split into turns that called the model and turns that didn't. */
+export function latencySummary(results: CaseResult[]): LatencySummary {
+  const turns = results.flatMap((r) => r.turns ?? []).filter((t) => t.latencyMs !== null && t.latencyMs !== undefined);
+  const calledModel = (t: (typeof turns)[number]) => (t.timing ? t.timing.calls > 0 : t.modelMs !== null);
+  const model = turns.filter(calledModel);
+  const noModel = turns.filter((t) => !calledModel(t));
+  const group = (key: string, label: string, xs: typeof turns): LatencyGroup => {
+    const lat = xs.map((t) => t.latencyMs as number);
+    return { key, label, n: lat.length, p50: pct(lat, 50), p95: lat.length >= 20 ? pct(lat, 95) : null };
+  };
+  const intents = [...new Set(model.map((t) => t.intent ?? "none"))].sort();
+  const timed = model.filter((t) => t.timing);
+  const vals = (k: string) => timed.flatMap((t) => (typeof (t.timing as Record<string, unknown>)[k] === "number" ? [(t.timing as Record<string, number>)[k]] : []));
+  const mean = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+  const evalMs = vals("evalMs");
+  const evalTok = vals("evalTokens");
+  return {
+    modelTurns: group("model", "Turns that called the model", model),
+    noModelTurns: group("noModel", "Turns without a model call", noModel),
+    byIntent: intents.map((i) => group(i, INTENT_LABEL[i] ?? i, model.filter((t) => (t.intent ?? "none") === i))),
+    stages: timed.length ? STAGE_LABELS.map(([key, label]) => ({ key, label, p50: pct(vals(key), 50), mean: mean(vals(key)), n: vals(key).length })) : null,
+    model: timed.length
+      ? {
+          n: timed.length,
+          callsMean: timed.length ? Math.round((vals("calls").reduce((a, b) => a + b, 0) / timed.length) * 100) / 100 : null,
+          evalTokensP50: pct(evalTok, 50),
+          uncachedPromptTokensP50: pct(vals("uncachedPromptTokens"), 50),
+          evalMsP50: pct(evalMs, 50),
+          promptEvalMsP50: pct(vals("promptEvalMs"), 50),
+          loadMsP50: pct(vals("loadMs"), 50),
+          msPerOutputToken: evalTok.reduce((a, b) => a + b, 0) > 0 ? Math.round((evalMs.reduce((a, b) => a + b, 0) / evalTok.reduce((a, b) => a + b, 0)) * 10) / 10 : null,
+        }
+      : null,
+  };
+}
+
 function checkStat(results: CaseResult[], key: string, label: string, pred: (k: string) => boolean, definition: string): Stat {
   const cs = results.flatMap((r) => r.checks ?? []).filter((c) => pred(c.key));
   return { key, label, value: rate(cs.filter((c) => c.ok).length, cs.length), n: cs.length, kind: "rate", definition, better: "higher" };
@@ -183,7 +244,7 @@ function areaStats(key: AreaKey | "other", all: CaseResult[], inArea: CaseResult
         { key: "errorRate", label: "Cases that could not run", value: rate(all.filter((r) => r.status === "error").length, all.length), n: all.length, kind: "rate", definition: "Case results with an execution error (setup or harness), not a failed expectation.", better: "lower" },
         { key: "degradedRate", label: "Model turns degraded", value: rate(modelTurns.filter((t) => t.outcome === "degraded").length, modelTurns.length), n: modelTurns.length, kind: "rate", definition: "Turns that called the model and fell back to the degraded reply (down, timeout, invalid output), including deliberate fault cases.", better: "lower" },
         count("modelTimeouts", "Model timeouts", timeouts, modelTurns.length, "Model calls that timed out, over the turns that called the model (traces from D-21 runs only)."),
-        { key: "latencyP50", label: "Turn latency p50", value: pct(lat, 50), n: lat.length, kind: "ms", definition: "Median end-to-end turn time over turns that called the model.", better: "lower" },
+        { key: "latencyP50", label: "Turn latency p50", value: pct(lat, 50), n: lat.length, kind: "ms", definition: "Median server turn time (the turn pipeline, without HTTP or the browser) over turns that called the model.", better: "lower" },
         { key: "latencyP95", label: "Turn latency p95", value: lat.length >= 20 ? pct(lat, 95) : null, n: lat.length, kind: "ms", definition: "95th percentile turn time (shown from 20 turns up).", better: "lower" },
       ];
     }
@@ -198,7 +259,9 @@ export function summarize(id: string, file: string, meta: Meta, results: CaseRes
   const violations = results.flatMap((r) => r.violations ?? []);
   const mode = meta.mode === "scripted" || meta.kind === "eval-scripted" ? "scripted" : "live";
   const sel = meta.selection as { case?: unknown; category?: unknown; area?: unknown } | undefined;
-  const suite = sel && (sel.case || sel.category || sel.area) ? "subset" : meta.suite === "smoke" ? "smoke" : "full";
+  // Only a run that says it was the full suite counts as one: pre-D-21 files have no suite and ran 3 to 276 cases, so
+  // they are subsets in trends and comparisons (D-24 audit: a 3-case check showed as "Live full").
+  const suite = sel && (sel.case || sel.category || sel.area) ? "subset" : meta.suite === "smoke" ? "smoke" : meta.suite === "full" || meta.kind === "eval-scripted" ? "full" : "subset";
   const runs = num(meta.runs) ?? Math.max(1, ...results.map((r) => r.run));
   const selectedCases = selected ?? num((meta.dataset as Meta | undefined)?.cases) ?? statuses.size;
   const areaRows: AreaSummary[] = [...AREAS.map((a) => ({ key: a.key as AreaKey | "other", label: a.label, about: a.about })), { key: "other" as const, label: "Other", about: "Categories from older results files." }].map((a) => {
@@ -241,6 +304,7 @@ export function summarize(id: string, file: string, meta: Meta, results: CaseRes
     gates: gates && gates.length ? gates : null,
     gatesOk: gates && gates.length ? gates.every((g) => g.ok) : null,
     areas: areaRows.filter((a) => a.key !== "other" || a.n > 0),
+    latency: latencySummary(results),
   };
 }
 
@@ -426,3 +490,31 @@ export function baselineFor(baseline: Baseline, runs: Run[], run: Run): Run | nu
   const b = baseline[baselineKey(run.summary)];
   return b && b.id !== run.summary.id ? (runs.find((r) => r.summary.id === b.id) ?? null) : null;
 }
+
+/** D-24: a latency benchmark file (scripts/bench.ts) without its samples. */
+export type BenchGroup = { phase: string; key: string; n: number; failed: number; p50: number | null; p95: number | null; min: number | null; max: number | null; serverP50: number | null; stagesP50: Record<string, number | null>; extra: Record<string, number | null> };
+export type BenchSummary = { id: string; label: string | null; startedAt: string; finishedAt: string; gitSha: string | null; gitDirty: boolean | null; promptVersion: string | null; model: string; loadAverage: { start: number[]; end: number[] } | null; trials: { warm: number; browser: number; cold: number }; groups: BenchGroup[] };
+const benchCache = new Map<string, { mtimeMs: number; bench: BenchSummary | null }>();
+export function listBenches(resultsDir: string): BenchSummary[] {
+  const dir = path.join(resultsDir, "bench");
+  if (!fs.existsSync(dir)) return [];
+  const out: BenchSummary[] = [];
+  for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".json"))) {
+    const file = path.join(dir, name);
+    const st = fs.statSync(file);
+    const hit = benchCache.get(file);
+    let bench = hit && hit.mtimeMs === st.mtimeMs ? hit.bench : null;
+    if (!hit || hit.mtimeMs !== st.mtimeMs) {
+      try {
+        const j = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+        bench = j.kind === "bench" ? { id: name.replace(/\.json$/, ""), label: str(j.label), startedAt: String(j.startedAt), finishedAt: String(j.finishedAt), gitSha: str(j.gitSha), gitDirty: typeof j.gitDirty === "boolean" ? j.gitDirty : null, promptVersion: str(j.promptVersion), model: str(j.model) ?? "unknown", loadAverage: (j.loadAverage as BenchSummary["loadAverage"]) ?? null, trials: j.trials as BenchSummary["trials"], groups: (j.summary as BenchGroup[]) ?? [] } : null;
+      } catch {
+        bench = null;
+      }
+      benchCache.set(file, { mtimeMs: st.mtimeMs, bench });
+    }
+    if (bench) out.push(bench);
+  }
+  return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+

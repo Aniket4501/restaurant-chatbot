@@ -41,12 +41,13 @@ function welcome(name: string): Item {
       {
         type: "quick_replies",
         // Starting points, not limits (D-20). Menu and table need no model call: a menu action lists the sections,
-        // and an empty set_field asks for the first missing booking field, the branch (§5.7 step 2).
+        // and an empty set_field asks for the first missing booking field, the branch (§5.7 step 2). The food chips
+        // are actions too (D-24): no intent call for a chip whose meaning is fixed.
         chips: [
-          { label: "Help me find a dish", text: "Help me find a dish" },
+          { label: "Help me find a dish", action: { type: "recommend", text: "Help me find a dish" } },
           { label: "Show me the menu", action: { type: "menu", course: null } },
           { label: "Find a table", action: { type: "set_field", field: "branch", value: null } as Action },
-          { label: "Recommend something vegetarian", text: "Recommend something vegetarian" },
+          { label: "Recommend something vegetarian", action: { type: "recommend", text: "Recommend something vegetarian" } },
         ],
       },
     ],
@@ -74,7 +75,8 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
       setSlow(false);
     };
   }, [busy]);
-  const [failed, setFailed] = useState<ChatRequest | null>(null);
+  // A chat request that didn't get a reply, with why when the server said (D-24 audit: a 429 had no Try again).
+  const [failed, setFailed] = useState<(ChatRequest & { why?: string }) | null>(null);
   const [card, setCard] = useState<CardState>(() => (initial.pending ? { ...NO_CARD, locked: initial.pending.unknown } : NO_CARD));
   const [text, setText] = useState("");
   const ref = useRef(initial);
@@ -138,7 +140,9 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         const j = await res.json().catch(() => null);
         if (gen !== generation.current) return; // the guest started over while this was in flight: drop the stale reply
         if (res.status === 429) {
-          update((p) => ({ ...p, chatPending: null, items: [...p.items, { id: uid(), role: "assistant", text: j?.error?.message ?? "You're sending messages quickly. Please wait a moment.", tone: "error" }] }));
+          // Nothing was answered: the same request can be sent again with Try again (the server forgets a 429).
+          update((p) => ({ ...p, chatPending: null }));
+          setFailed({ ...req, why: j?.error?.message ?? "You're sending messages quickly. Please wait a moment." });
           return;
         }
         if (!res.ok || !j?.reply) throw new Error(`chat ${res.status}`);
@@ -191,8 +195,11 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     return null;
   };
 
+  // What a POST found out (D-24 audit): Start over resets only after a known refusal; a booking or an unknown outcome
+  // keeps the card (D-14: a new key could book twice).
+  type PostResult = "booked" | "refused" | "unknown";
   const postOnce = useCallback(
-    async (pending: Pending) => {
+    async (pending: Pending): Promise<PostResult> => {
       const c = confirmBlock();
       const branch = branches.find((b) => b.slug === pending.body.branch) ?? branches[0];
       setCard((x) => ({ ...x, submitting: true, message: null, fieldErrors: null }));
@@ -210,7 +217,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
       if (pending.unknown && (o.unknown || status === 429 || status === 503)) {
         setCard({ submitting: false, locked: true, fieldErrors: null, done: false, message: "We still couldn't confirm whether your booking went through. Tap Retry in a moment." });
         update((p) => ({ ...p, pending: { ...pending, unknown: true } }));
-        return;
+        return "unknown";
       }
       if (o.clearDraft) {
         generation.current += 1; // booked: any chat reply still on its way is now stale
@@ -229,16 +236,17 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         selected: o.clearDraft ? null : p.selected,
         items: inCard ? p.items : [...p.items, { id: uid(), role: "assistant", text: o.text, blocks: o.blocks }],
       }));
+      return o.clearDraft ? "booked" : o.unknown ? "unknown" : "refused";
     },
     [branches, update],
   );
 
   const post = useCallback(
-    async (pending: Pending) => {
-      if (posting.current) return; // one POST at a time; a retry reuses the key anyway
+    async (pending: Pending): Promise<PostResult> => {
+      if (posting.current) return "unknown"; // one POST at a time; a retry reuses the key anyway
       posting.current = true;
       try {
-        await postOnce(pending);
+        return await postOnce(pending);
       } finally {
         posting.current = false;
       }
@@ -264,10 +272,9 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
   const startOver = async () => {
     const p = ref.current.pending;
     if (p) {
-      // Learn the outcome first (D-14): booked → show it; still unknown → stay locked, since a new key could book twice.
-      await post(p);
-      // Known now (booked, refused or still unknown): the outcome message is the answer to this tap.
-      if (ref.current.pending?.unknown || !ref.current.pending) return;
+      // Learn the outcome first (D-14): booked → show it; still unknown → stay locked, since a new key could book twice;
+      // refused (taken, unavailable, invalid) → nothing was booked, so start over (D-24 audit: it never reset).
+      if ((await post(p)) !== "refused") return;
     }
     setCard(NO_CARD);
     setFailed(null);
@@ -359,7 +366,9 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
               <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neem-tint text-neem">
                 <LeafMark className="h-5 w-5" />
               </span>
-              <p className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-line bg-paper px-4 py-2.5 text-muted" aria-label="Checking">
+              {/* A status region, so the change to "Still working…" is announced too (D-24 audit: the list only announces
+                  additions). */}
+              <p role="status" className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-line bg-paper px-4 py-2.5 text-muted" aria-label="Checking">
                 {/* The dot pulses, not the text: faded text failed the contrast check mid-pulse (D-23). */}
                 <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-neem motion-safe:animate-pulse" />
                 <span>{slow ? "Still working on it, one moment…" : "Checking…"}</span>
@@ -368,8 +377,8 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
           )}
           {failed && (
             <div role="alert" className="space-y-2 rounded-xl bg-warn-tint px-4 py-3">
-              <p className="text-warn">We couldn&apos;t reach the restaurant just now. Check your connection and try again.</p>
-              <button type="button" onClick={() => void send(failed)} disabled={composerLocked} className="min-h-11 rounded-full border border-line bg-paper px-4 hover:border-neem hover:text-neem disabled:opacity-50">
+              <p className="text-warn">{failed.why ?? "We couldn't reach the restaurant just now. Check your connection and try again."}</p>
+              <button type="button" onClick={() => void send({ messages: failed.messages, action: failed.action, requestId: failed.requestId })} disabled={composerLocked} className="min-h-11 rounded-full border border-line bg-paper px-4 hover:border-neem hover:text-neem disabled:opacity-50">
                 Try again
               </button>
             </div>

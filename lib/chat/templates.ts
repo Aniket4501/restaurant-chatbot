@@ -39,6 +39,8 @@ export const T = {
   noMoreToday: (short: string) => `There are no more times at ${short} today.`,
   fullyBooked: (short: string, dateLabel: string) => `${short} is fully booked on ${dateLabel} for that party size.`,
   timeUnavailable: (timeLabel: string) => `${timeLabel} isn't available.`,
+  /** D-24 audit: a service closed for the day by an exception says so, with the restaurant's own note. */
+  serviceClosed: (short: string, service: string, dateLabel: string, note: string | null) => `${short} is closed for ${service} on ${dateLabel}${note ? ` (${note.charAt(0).toLowerCase()}${note.slice(1).replace(/\.$/, "")})` : ""}.`,
   windowUnavailable: (window: string, short: string, dateLabel: string) => `${short} has no open ${window} times on ${dateLabel}.`,
   otherOptions: "Here are other options.",
   nearestTimes: "Here are the nearest open times.",

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AREAS, areaOf } from "@/evals/areas";
 import { CATEGORIES } from "@/evals/case";
-import { baselineFor, caseStatuses, compareRuns, listRuns, loadRun, previousComparable, renderMarkdown, summarize, type Run } from "@/evals/report";
+import { baselineFor, caseStatuses, compareRuns, latencySummary, listBenches, listRuns, loadRun, previousComparable, renderMarkdown, summarize, type Run } from "@/evals/report";
 import type { CaseResult } from "@/evals/run";
 
 // D-21: the report and the dashboard derive every number from results files. These tests pin the denominators, the
@@ -47,6 +47,40 @@ describe("summaries: counts and denominators", () => {
   it("hides p95 latency below 20 turns", () => {
     const s = summarize("r", "r.json", { kind: "eval-live" }, [res({ id: "A" })], null, "complete", null);
     expect(s.areas.find((a) => a.key === "reliability")!.stats.find((x) => x.key === "latencyP95")).toMatchObject({ value: null, n: 1 });
+  });
+});
+
+describe("latency summary (D-24)", () => {
+  const timing = (o: Record<string, number | null> = {}) => ({ setupMs: 2, retrievalMs: 30, promptMs: 1, queueMs: 0, statusMs: 3, turnModelMs: 2000, chooserMs: null, otherMs: 4, calls: 1, loadMs: 1, promptEvalMs: 400, evalMs: 1500, evalTokens: 100, uncachedPromptTokens: 600, ...o });
+  it("splits model and no-model turns, gives p95 only from 20 turns, and medians per stage", () => {
+    const model = Array.from({ length: 20 }, (_, i) => turn({ latencyMs: 1000 + i * 100, timing: timing() }));
+    const chips = [turn({ latencyMs: 3, modelMs: null, intent: null, outcome: "ask_field", timing: timing({ calls: 0, turnModelMs: null, retrievalMs: null, evalTokens: null, evalMs: null }) })];
+    const l = latencySummary([res({ turns: [...model, ...chips] })]);
+    expect(l.modelTurns).toMatchObject({ n: 20, p50: 1900, p95: 2800 }); // nearest rank: the 19th of 20
+    expect(l.noModelTurns).toMatchObject({ n: 1, p50: 3, p95: null }); // fewer than 20: no p95
+    expect(l.stages?.find((x) => x.key === "turnModelMs")).toMatchObject({ p50: 2000, n: 20 });
+    expect(l.stages?.find((x) => x.key === "chooserMs")).toMatchObject({ p50: null, n: 0 });
+    expect(l.model).toMatchObject({ n: 20, callsMean: 1, evalTokensP50: 100, msPerOutputToken: 15 });
+  });
+  it("a run from before stage timings has totals only", () => {
+    const l = latencySummary([res({ turns: [turn({ latencyMs: 1200 }), turn({ latencyMs: 5, modelMs: null })] })]);
+    expect(l.modelTurns).toMatchObject({ n: 1, p50: 1200 });
+    expect(l.noModelTurns).toMatchObject({ n: 1, p50: 5 });
+    expect(l.stages).toBeNull();
+    expect(l.model).toBeNull();
+  });
+  it("reads benchmark files, newest first, ignoring anything else", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bench-"));
+    fs.mkdirSync(path.join(dir, "bench"));
+    const b = (startedAt: string, label: string | null) => ({ kind: "bench", label, startedAt, finishedAt: startedAt, gitSha: "abc1234", gitDirty: false, promptVersion: "v6", model: "qwen3.5:9b", loadAverage: { start: [2, 2, 2], end: [3, 3, 3] }, trials: { warm: 5, browser: 3, cold: 3 }, summary: [{ phase: "warm", key: "kind:lookup", n: 20, failed: 0, p50: 3000, p95: 4000, min: 2000, max: 5000, serverP50: 2900, stagesP50: {}, extra: {} }], samples: [] });
+    fs.writeFileSync(path.join(dir, "bench", "a_bench_baseline.json"), JSON.stringify(b("2026-10-21T06:00:00.000Z", "baseline")));
+    fs.writeFileSync(path.join(dir, "bench", "b_bench.json"), JSON.stringify(b("2026-10-21T09:00:00.000Z", null)));
+    fs.writeFileSync(path.join(dir, "bench", "c.json"), JSON.stringify({ kind: "other" }));
+    fs.writeFileSync(path.join(dir, "bench", "d.json"), "{ not json");
+    const list = listBenches(dir);
+    expect(list.map((x) => [x.id, x.label])).toEqual([["b_bench", null], ["a_bench_baseline", "baseline"]]);
+    expect(list[0].groups[0]).toMatchObject({ key: "kind:lookup", p50: 3000 });
+    expect(listBenches(path.join(dir, "missing"))).toEqual([]);
   });
 });
 

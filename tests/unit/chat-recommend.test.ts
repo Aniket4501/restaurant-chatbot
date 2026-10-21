@@ -6,7 +6,7 @@ import { migrate } from "@/lib/db/migrate";
 import { applySeed, parseSeed } from "@/lib/db/seed";
 import { loadFactSource, renderKbFacts, renderStaticFacts, type Fact } from "@/lib/kb/facts";
 import { describePrefs, eligible, menuEntries, menuStep, unmet, type MenuEntry } from "@/lib/chat/menu";
-import { claimProblems, explicitPrefs, recommendTurn, resolvePrefs, shortlist, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
+import { claimProblems, explicitPrefs, recommendTurn, resolvePrefs, shortlist, suitabilityClaim, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
 import { noPrefs, type Prefs, type TraceEntry } from "@/lib/chat/types";
 import type { Choice } from "@/lib/llm/chooser";
 import type { GroundingContext } from "@/lib/chat/grounding";
@@ -157,18 +157,20 @@ describe("recommendTurn: the full turn after the first model call", () => {
   it("offers answers to a clarifying question as chips (user report: only 'Show me the menu' was offered)", async () => {
     const { res } = await run(recTurn({}), [{ pick: null, alternatives: [], reply: "Would you like something light or more filling?" }], { text: "Help me find a dish" });
     expect(res.text).toBe("Would you like something light or more filling?");
-    expect(res.blocks).toEqual([{ type: "quick_replies", chips: [{ label: "Something light", text: "Something light" }, { label: "Something filling", text: "Something filling" }, { label: "Something vegetarian", text: "Something vegetarian" }, { label: "Surprise me", text: "Surprise me" }, { label: "Show me the menu", action: { type: "menu", course: null } }] }]);
+    // D-24: food chips are actions (no intent call), each carrying the same fixed text.
+    const rec = (label: string) => ({ label, action: { type: "recommend", text: label } });
+    expect(res.blocks).toEqual([{ type: "quick_replies", chips: [rec("Something light"), rec("Something filling"), rec("Something vegetarian"), rec("Surprise me"), { label: "Show me the menu", action: { type: "menu", course: null } }] }]);
   });
   it("answers an impossible request honestly, with no model call", async () => {
     const { res, calls } = await run(recTurn({ diet: ["vegan"], course: "mains", maxPrice: 200 }), [], { text: "Show me a vegan main course under ₹200" });
     expect(calls).toEqual([]);
     expect(res.text).toBe("We don't have any vegan main courses, up to ₹200 on the menu. Tap one to widen the search.");
     // Each chip's words lift its constraint in code (D-21 audit: "yes" to "want me to relax one?" changed nothing).
-    const chips = (res.blocks.find((b) => b.type === "quick_replies") as { chips: { label: string; text?: string }[] }).chips;
+    const chips = (res.blocks.find((b) => b.type === "quick_replies") as { chips: { label: string; action?: { type: string; text?: string } }[] }).chips;
     expect(chips.map((c) => c.label)).toEqual(["Any price", "Not only vegan", "Show me the menu"]);
-    const lifted = resolvePrefs(null, res.prefs, chips[0].text!).prefs;
+    const lifted = resolvePrefs(null, res.prefs, chips[0].action!.text!).prefs; // D-24: the text rides in the action
     expect(lifted.maxPrice).toBeNull();
-    expect(resolvePrefs(null, res.prefs, chips[1].text!).prefs.diet).toEqual([]);
+    expect(resolvePrefs(null, res.prefs, chips[1].action!.text!).prefs.diet).toEqual([]);
     expect(res.blocks.some((b) => b.type === "recommendation")).toBe(false);
   });
   it("falls back to dishes that fit, without a retry, when the model is down", async () => {
@@ -405,3 +407,54 @@ describe("a new constraint on a follow-up (D-21 held-out LV-HOLD-012)", () => {
   });
 });
 
+
+describe("D-24 audit: safety wording, allergen lists, attributes, sides and the chooser's rules", () => {
+  it("rejects suitability wording paired with an allergy, the phrasings live replies used, but not a negated sentence", () => {
+    for (const s of ["The Coconut Jaggery Payasam at ₹265 is vegan, making it a good option for your severe peanut allergy.", "As a coeliac guest, you can have the Mango Sorbet.", "It's ideal for someone with a nut allergy.", "This one fits your allergy needs."]) expect(suitabilityClaim(s), s).toBe(true);
+    for (const s of ["The Mango Sorbet is an Alphonso mango sorbet.", "I can't say whether it suits your allergy; please tell your server.", "Please tell your server about your allergy.", "A good choice for a light dessert."]) expect(suitabilityClaim(s), s).toBe(false);
+    expect(claimProblems("As a coeliac guest, you can have the Mango Sorbet.", [], entries)).toContain("promises allergen safety");
+    const prefs = P({ avoid: ["nuts"], allergy: true, course: "desserts" });
+    const v = validateChoice({ pick: "menu:coconut-jaggery-payasam", alternatives: [], reply: "The Coconut Jaggery Payasam at ₹265 is a rice pudding, making it a good option for your severe peanut allergy." }, eligible(entries, prefs), byId(), prefs, grounding);
+    expect(v.reasons.join("; ")).toMatch(/allerg/);
+  });
+  it("reads every allergen in 'allergic to X and Y', so labelled ones never become an unknown allergen", () => {
+    expect(explicitPrefs("I'm allergic to nuts and dairy. Which dessert can I have?")).toMatchObject({ allergy: true, avoid: ["nuts", "dairy"] });
+    expect(explicitPrefs("I'm allergic to nuts and dairy. Which dessert can I have?").unlisted).toBeUndefined();
+    expect(explicitPrefs("allergic to peanuts and eggs").unlisted).toBeUndefined();
+    expect(explicitPrefs("allergic to milk, eggs or cashews so what can I eat").unlisted).toBeUndefined();
+    expect(explicitPrefs("I'm allergic to kiwi and nuts").unlisted).toEqual(["other"]); // kiwi has no label
+    expect(explicitPrefs("allergic to tree nuts").unlisted).toBeUndefined();
+  });
+  it("rejects an attribute the menu never states on a dish card (sugar-free, halal)", () => {
+    const prefs = P({ course: "desserts" });
+    const v = validateChoice({ pick: "menu:mango-sorbet", alternatives: [], reply: "The Mango Sorbet at ₹245 is sugar-free, so it suits a diabetic diet." }, eligible(entries, prefs), byId(), prefs, grounding);
+    expect(v.reasons).toContain('"sugar-free" is not supported by the menu');
+  });
+  it("must pick when the guest asked for a choice; a question may name a diet or say 'which one'", () => {
+    const prefs = P({});
+    const fit = eligible(entries, prefs);
+    const q = { pick: null, alternatives: [], reply: "Would you like something vegetarian or non-vegetarian? Which one sounds better?" };
+    expect(validateChoice(q, fit, byId(), prefs, grounding).reasons).toEqual([]);
+    expect(validateChoice(q, fit, byId(), prefs, grounding, { mustPick: true }).reasons).toContain("the guest asked you to choose, so pick one dish from the list instead of asking");
+  });
+  it("may name the dish a 'cheaper' request compares with, but no other dish off the card", () => {
+    const prefs = P({ diet: ["vegetarian"], course: "mains" });
+    const fit = eligible(entries, prefs, { cheaperThan: 445 });
+    const reply = { pick: "menu:chana-pindi", alternatives: [], reply: "Cheaper than the Dal Ember, the Chana Pindi at ₹395 is a tangy chickpea curry." };
+    expect(validateChoice(reply, fit, byId(), prefs, grounding).reasons.join("; ")).toMatch(/names Dal Ember/);
+    expect(validateChoice(reply, fit, byId(), prefs, grounding, { mayName: ["menu:dal-ember"] }).reasons).toEqual([]);
+  });
+  it("doesn't offer sides or drinks for a dish request unless asked; a request for a drink still gets drinks", async () => {
+    const seen: string[][] = [];
+    const call: ChooserCall = async (_a, messages) => {
+      seen.push(entries.filter((d) => messages[1].content.includes(`${d.id.slice(5)} |`) || messages[1].content.includes(d.name)).map((d) => d.course));
+      return { choice: null, code: "MODEL_UNAVAILABLE", content: "" };
+    };
+    const go = (text: string, prefs: Partial<NonNullable<Turn["prefs"]>> = {}) => recommendTurn({ turn: recTurn(prefs), text, history: [], context: { lastCitedIds: [] }, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
+    await go("I want something light.", { mild: true });
+    expect(seen[0].length).toBeGreaterThan(0);
+    expect(seen[0].some((c) => c === "drinks")).toBe(false);
+    await go("Something refreshing to drink?", { course: "drinks" });
+    expect(seen[1].every((c) => c === "drinks")).toBe(true);
+  });
+});

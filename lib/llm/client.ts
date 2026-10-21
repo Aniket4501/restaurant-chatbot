@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { MODEL } from "@/lib/config";
-import { ANSWER_MAX, TurnSchema, type Turn } from "@/lib/llm/schema";
+import { ANSWER_MAX, nullBooking, TurnSchema, type Turn } from "@/lib/llm/schema";
 
 // The chat-model boundary (§5.2, §5.8, D-05, D-12). Exactly two implementations: lib/llm/ollama.ts (local Ollama,
 // T-18) and lib/llm/fake.ts (scripted). Both return the same raw envelope, and `interpretEnvelope` is the single
@@ -72,7 +72,8 @@ export type Interpreted =
 export function interpretEnvelope(env: RawEnvelope, numCtx: number = MODEL.numCtx): Interpreted {
   const r = interpretJson(env, TurnSchema, numCtx);
   if (!r.ok) return r;
-  return { ok: true, turn: r.value, truncated: (r.value.answer?.length ?? 0) >= ANSWER_MAX, metrics: r.metrics };
+  const turn: Turn = { ...r.value, booking: r.value.booking ?? nullBooking() }; // v3: null booking → nulls (D-24)
+  return { ok: true, turn, truncated: (turn.answer?.length ?? 0) >= ANSWER_MAX, metrics: r.metrics };
 }
 
 /**

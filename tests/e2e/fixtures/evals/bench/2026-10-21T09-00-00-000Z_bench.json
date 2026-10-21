@@ -1,0 +1,116 @@
+{
+ "kind": "bench",
+ "formatVersion": 1,
+ "label": null,
+ "startedAt": "2026-10-21T09:00:00.000Z",
+ "finishedAt": "2026-10-21T09:00:00.000Z",
+ "gitSha": "e2e0001",
+ "gitDirty": false,
+ "promptVersion": "v6",
+ "model": "qwen3.5:9b",
+ "loadAverage": {
+  "start": [
+   3.2,
+   3,
+   3
+  ],
+  "end": [
+   3.6,
+   3,
+   3
+  ]
+ },
+ "trials": {
+  "warm": 5,
+  "browser": 3,
+  "cold": 3
+ },
+ "summary": [
+  {
+   "phase": "warm",
+   "key": "kind:lookup",
+   "n": 20,
+   "failed": 0,
+   "p50": 2100,
+   "p95": 3200,
+   "min": 1600,
+   "max": 3000,
+   "serverP50": 2060,
+   "stagesP50": {
+    "turnModelMs": 1800,
+    "chooserMs": null
+   },
+   "extra": {
+    "turnP50": 2100,
+    "saveP50": null,
+    "networkP50": null,
+    "renderP50": null
+   }
+  },
+  {
+   "phase": "warm",
+   "key": "kind:recommend",
+   "n": 20,
+   "failed": 0,
+   "p50": 4100,
+   "p95": 6100,
+   "min": 3600,
+   "max": 5000,
+   "serverP50": 4060,
+   "stagesP50": {
+    "turnModelMs": 3800,
+    "chooserMs": 900
+   },
+   "extra": {
+    "turnP50": 4100,
+    "saveP50": null,
+    "networkP50": null,
+    "renderP50": null
+   }
+  },
+  {
+   "phase": "cold",
+   "key": "kind:cold",
+   "n": 3,
+   "failed": 0,
+   "p50": 14500,
+   "p95": null,
+   "min": 14000,
+   "max": 15400,
+   "serverP50": 14460,
+   "stagesP50": {
+    "turnModelMs": 14200,
+    "chooserMs": null,
+    "loadMs": 6200
+   },
+   "extra": {
+    "turnP50": 14500,
+    "saveP50": null,
+    "networkP50": null,
+    "renderP50": null
+   }
+  },
+  {
+   "phase": "browser",
+   "key": "kind:lookup",
+   "n": 3,
+   "failed": 0,
+   "p50": 2160,
+   "p95": null,
+   "min": 1660,
+   "max": 3060,
+   "serverP50": 2120,
+   "stagesP50": {
+    "turnModelMs": 1860,
+    "chooserMs": null
+   },
+   "extra": {
+    "turnP50": 2160,
+    "saveP50": null,
+    "networkP50": 2120,
+    "renderP50": 40
+   }
+  }
+ ],
+ "samples": []
+}

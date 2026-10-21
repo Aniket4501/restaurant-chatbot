@@ -13,7 +13,9 @@ export type ErrorCode =
   | "UNAUTHENTICATED"
   | "NOT_FOUND"
   /** D-21: an eval run is already going (admin evals dashboard). */
-  | "BUSY";
+  | "BUSY"
+  /** D-24: an unexpected server error after which the outcome is unknown (the client retries with the same key). */
+  | "INTERNAL";
 
 export type UnavailableReason = "lead_time" | "closed" | "past_horizon" | "off_grid" | "party_size" | "branch_inactive";
 

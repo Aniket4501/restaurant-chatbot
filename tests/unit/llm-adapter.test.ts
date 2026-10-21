@@ -45,6 +45,18 @@ describe("interpretEnvelope (§5.8, D-05)", () => {
     const r = interpretEnvelope(env({}), 8192);
     expect(r).toMatchObject({ ok: true, truncated: false, metrics: { prompt_eval_count: 3500, prompt_eval_cached_count: 3400, eval_count: 60, total_ms: 900, thinking_present: false } });
   });
+  it("v3 (D-24): a null booking is valid and reaches code as an object of nulls", () => {
+    const out = { intent: "faq", booking: null, prefs: null, answer: "Yes.", citedFactIds: ["faq:wifi"], answerable: true };
+    const r = interpretEnvelope(env({ content: JSON.stringify(out) }), 8192);
+    expect(r.ok && r.turn.booking).toEqual({ branch: null, date: null, time: null, timeWindow: null, partySize: null, ambiguity: null });
+    // A filled booking passes through unchanged; a missing one is still a schema miss.
+    const booking = { branch: "hauz-khas", date: "2026-10-17", time: "20:00", timeWindow: null, partySize: 2, ambiguity: null };
+    const b = interpretEnvelope(env({ content: JSON.stringify({ ...out, intent: "booking", booking, answer: null, citedFactIds: [] }) }), 8192);
+    expect(b.ok && b.turn.booking).toEqual(booking);
+    const missing = Object.fromEntries(Object.entries(out).filter(([k]) => k !== "booking"));
+    expect(codeOf(env({ content: JSON.stringify(missing) }))).toBe("MODEL_INVALID_OUTPUT");
+  });
+
   it("maps HTTP status, never message text", () => {
     expect(codeOf(env({ status: 404, error: "model 'x' not found" }))).toBe("MODEL_NOT_PULLED");
     expect(codeOf(env({ status: 400, error: "invalid structured output grammar" }))).toBe("MODEL_INVALID_OUTPUT");

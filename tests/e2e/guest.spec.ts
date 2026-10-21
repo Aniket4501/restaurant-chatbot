@@ -250,6 +250,55 @@ test("a recommendation is a card built from the menu table, with follow-ups @cat
   await axe(page, "recommendation");
 });
 
+test("'Help me find a dish' asks what the guest is in the mood for, and an answer chip goes to the chooser (D-24) @cat:recommendation", async ({ page }) => {
+  const bodies: { action?: unknown }[] = [];
+  page.on("request", (r) => r.url().endsWith("/api/chat") && bodies.push(r.postDataJSON()));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Help me find a dish" }).click();
+  await expect(page.getByText("Happy to help. What are you in the mood for?")).toBeVisible();
+  for (const name of ["Something light", "Something filling", "Something vegetarian", "Surprise me"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await axe(page, "help question");
+  await page.getByRole("button", { name: "Surprise me", exact: true }).click();
+  await expect(page.getByRole("article", { name: "Chana Pindi, ₹395" })).toBeVisible();
+  expect(bodies.map((b) => b.action)).toEqual([{ type: "recommend", text: "Help me find a dish" }, { type: "recommend", text: "Surprise me" }]);
+});
+
+test("a busy server's 429 shows its message with Try again, which sends the same request (D-24) @cat:backend_failure", async ({ page }) => {
+  const ids: string[] = [];
+  await page.route("**/api/chat", async (route) => {
+    ids.push(route.request().postDataJSON().requestId);
+    if (ids.length === 1) await route.fulfill({ status: 429, contentType: "application/json", headers: { "retry-after": "1" }, body: JSON.stringify({ error: { code: "RATE_LIMITED", message: "We're answering a lot of guests right now. Please try again in a moment." } }) });
+    else await route.continue();
+  });
+  await page.goto("/");
+  await say(page, "can I bring my dog?");
+  const alert = page.getByRole("alert").filter({ hasText: "We're answering a lot of guests right now." });
+  await expect(alert).toBeVisible();
+  await axe(page, "busy");
+  await alert.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.").first()).toBeVisible();
+  expect(ids).toHaveLength(2);
+  expect(ids[1]).toBe(ids[0]);
+});
+
+test("Start over on a locked card starts again once the replay says nothing was booked (D-24 audit) @cat:context_loss", async ({ page, server, observed }) => {
+  observed.pii.push("Asha Rao", "98765 43210");
+  let posts = 0;
+  await page.route("**/api/reservations", async (route) => {
+    posts += 1;
+    if (posts === 1) await route.abort("failed"); // the outcome is unknown: the card locks
+    else await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "SLOT_TAKEN", message: "That time was just taken.", alternatives: [] } }) });
+  });
+  await page.goto("/");
+  await chipsToConfirm(page);
+  await (await fillDetails(page)).getByRole("button", { name: "Confirm" }).click();
+  await expect(page.getByRole("button", { name: "Start over" })).toBeVisible();
+  await page.getByRole("button", { name: "Start over" }).click();
+  await expect(page.getByText("Let's start again. What would you like to do?")).toBeVisible();
+  expect(posts).toBe(2); // the replay with the same key learned the outcome first
+  expect(rows(server.db)).toHaveLength(0);
+});
+
 test("one guest action sends one chat request, even when tapped twice (D-20) @cat:duplicate", async ({ page }) => {
   let requests = 0;
   await page.route("**/api/chat", async (route) => {

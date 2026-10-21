@@ -2,7 +2,7 @@ import { RULES } from "@/lib/config";
 import { checkStart, getAvailability, type AvailabilityBundle, type Slot } from "@/lib/booking/availability";
 import type { Fact } from "@/lib/kb/facts";
 import type { Turn } from "@/lib/llm/schema";
-import { addLocalDays, dayLabel, dayLabelLong, isoInZone, localDateOf, localTimeOf, timeLabel, timeLabelOf, todayLocal, type LocalDate } from "@/lib/time/tz";
+import { addLocalDays, dayLabel, dayLabelLong, isoInZone, localDateOf, localTimeOf, minutesOf, timeLabel, timeLabelOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 import { smalltalkShowable } from "@/lib/chat/claims";
 import { applySetField, bookingInProgress, mergeExtracted, type FieldCtx, type FieldIssue, type MergeResult } from "@/lib/chat/draft";
 import { checkGrounding, dateSpans, type GroundingContext } from "@/lib/chat/grounding";
@@ -175,9 +175,21 @@ function availabilityStep(draft: Draft, ctx: FlowCtx, lead?: string): Step {
   const windowMiss = !draft.time && !!draft.timeWindow && !r.matchedWindow;
   const reason = r.reason ?? (draft.time || windowMiss ? "time_unavailable" : null);
   const nothing = !r.slots.length && !r.alternatives.length;
+  // The guest's time falls in a service an exception closes that day ("dinner, closed for a private event"): say so
+  // instead of "8:30 PM isn't available" (D-24 audit LV-BK-005).
+  const branchRow = bundle.branches.find((x) => x.slug === q.branch);
+  const weekday = weekdayOf(q.date, b.timezone);
+  const closedService =
+    draft.time && branchRow
+      ? (bundle.exceptions.get(branchRow.id) ?? []).find(
+          (e) => e.date === q.date && e.isClosed && e.service !== null && (bundle.weekly.get(branchRow.id) ?? []).some((w) => w.weekday === weekday && w.service === e.service && minutesOf(w.opens) <= minutesOf(draft.time!) && minutesOf(draft.time!) < minutesOf(w.closes)),
+        )
+      : undefined;
   const first =
     r.reason === "closed"
       ? T.closed(b.short, dateLabelText)
+      : closedService
+        ? T.serviceClosed(b.short, closedService.service!, dateLabelText, closedService.note)
       : r.reason === "no_more_today"
         ? T.noMoreToday(b.short)
         : r.reason === "fully_booked"
@@ -208,7 +220,7 @@ function availabilityStep(draft: Draft, ctx: FlowCtx, lead?: string): Step {
 
 /** A chip or slot tap (§5.7 step 2): no model call. */
 /** Booking actions: chips and slot taps (menu browsing is handled in runTurn, which has the menu). */
-export function handleAction(action: Exclude<Action, { type: "menu" }>, draft: Draft, ctx: FlowCtx): Step {
+export function handleAction(action: Extract<Action, { type: "set_field" | "select_slot" }>, draft: Draft, ctx: FlowCtx): Step {
   if (action.type === "set_field") return nextStep(applySetField(draft, action.field, action.value, ctx), ctx);
   if (draft.partySize === null) return ask("partySize", draft, ctx);
   const bundle = loadBundle(ctx, [localDateOf(action.startsAt, ctx.zone)]);
@@ -234,7 +246,7 @@ export function handleAction(action: Exclude<Action, { type: "menu" }>, draft: D
 // ---------- model turns ----------
 
 /** The facts sent, plus (D-21) the guest's message, their food preferences in force and the menu, for FAQ claim checks. */
-export type FactCtx = GroundingContext & { staticFacts: Fact[]; guest?: string; foodPrefs?: Prefs | null; menu?: MenuEntry[] };
+export type FactCtx = GroundingContext & { staticFacts: Fact[]; guest?: string; foodPrefs?: Prefs | null; menu?: MenuEntry[]; /** The one branch named in the guest's message, if exactly one is (D-24: the model's booking is null outside bookings). */ branchNamed?: string | null };
 
 // An allergen named in the guest's message: the answer gets the allergy note (D-21 audit: FAQ answers had none).
 const ALLERGEN_WORDS = /\ballerg\w*|\banaphyla|\b(?:pea|tree )?nuts?\b|\bcashews?\b|\balmonds?\b|\bpistachios?\b|\bdairy\b|\blactose\b|\beggs?\b|\bgluten\b|\bco?eliac\b|\bsesame\b|\bshellfish\b|\bsoy\b/i;
@@ -243,19 +255,36 @@ const ALLERGEN_WORDS = /\ballerg\w*|\banaphyla|\b(?:pea|tree )?nuts?\b|\bcashews
 const QUICK_REPLIES = (): Block => ({
   type: "quick_replies",
   chips: [
-    { label: "Help me find a dish", text: "Help me find a dish" },
+    { label: "Help me find a dish", action: { type: "recommend", text: "Help me find a dish" } as Action },
     { label: "Show me the menu", action: { type: "menu", course: null } as Action },
     { label: "Find a table", action: { type: "set_field", field: "branch", value: null } as Action },
-    { label: "Opening hours", text: "What are your opening hours?" },
+    { label: "Opening hours", action: { type: "hours" } as Action },
   ],
 });
 
 /** A recommend or menu turn worked out in runTurn (it needs the menu and, for recommendations, a second model call). */
 export type Prepared = { text: string; blocks: Block[]; cited: string[]; largeParty?: boolean };
 
+const WEEK_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+
+/**
+ * Which days an hours question is about (D-24 audit): the dates "today", "tonight", "now", "tomorrow" and "the day after
+ * tomorrow" stand for, and whether it names no day at all (a general "what are your hours?").
+ */
+export function hoursScope(guest: string, now: number, zone: string): { dates: string[]; general: boolean } {
+  const t = guest.toLowerCase();
+  const today = todayLocal(now, zone);
+  const dates: string[] = [];
+  if (/\b(?:today|tonight|this (?:evening|afternoon|morning)|right now|now|currently|at the moment)\b/.test(t)) dates.push(today);
+  if (/\bday after tomorrow\b/.test(t)) dates.push(addLocalDays(today, 2, zone));
+  else if (/\btomorrow\b/.test(t)) dates.push(addLocalDays(today, 1, zone));
+  const days = /\b(?:mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?|sun)(?:day)?s?\b|\bweek(?:end|day)s?\b/.test(t);
+  return { dates, general: !dates.length && !days && !dateSpans(guest).length };
+}
+
 /** Route a validated model turn by intent (§5.7 step 5, D-10, D-15). */
 export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx, prepared: Prepared | null = null): Step {
-  const known = (draft.branch ?? turn.booking.branch) as string | null;
+  const known = (draft.branch ?? turn.booking.branch ?? facts.branchNamed ?? null) as string | null;
   if (turn.intent === "booking") return nextStep(mergeExtracted(draft, turn.booking, ctx), ctx); // templates only; prose dropped
 
   // A booking in progress is kept, and its pending question is repeated after the answer (§5.7 merge rules).
@@ -291,7 +320,18 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       const unknown = cited.length === 0 ? "no_citation" : cited.some((id) => !facts.factsById.has(id)) ? "unknown_citation" : cited.some((id) => !facts.sentIds.has(id)) ? "not_sent" : null;
       if (!unknown && isHoursOnly(cited)) {
         const mentionedDates = dateSpans(`${facts.guest ?? ""} ${turn.answer ?? ""}`);
-        const r = renderHoursAnswer(cited, facts.factsById, facts.zoneOf, (date) => mentionedDates.some((d) => d.day === Number(date.slice(8, 10)) && (d.month === null || d.month === Number(date.slice(5, 7)))));
+        const scope = hoursScope(facts.guest ?? "", ctx.now, ctx.zone);
+        const mentioned = (date: string) => scope.dates.includes(date) || mentionedDates.some((d) => d.day === Number(date.slice(8, 10)) && (d.month === null || d.month === Number(date.slice(5, 7))));
+        const slugs = facts.branchNamed ? [facts.branchNamed] : ctx.branches.map((b) => b.slug);
+        let ids = cited;
+        // "What are your opening hours?" names no day: the whole week of each branch asked about (all branches when
+        // none is named), whatever subset the model cited (D-24 audit: Golf Course Road Tue–Sun was missing, and
+        // "hours at Golf Course Road?" showed only its 27 Oct closure).
+        if (scope.general) ids = [...slugs.flatMap((s) => WEEK_KEYS.map((d) => `hours:${s}:${d}`)).filter((id) => facts.factsById.has(id)), ...cited.filter((id) => id.startsWith("branch:"))];
+        // A date asked about ("tonight", "tomorrow") with special hours: the exception replaces the usual hours even if
+        // the model cited only the weekly fact (D-24 audit: "dinner tonight?" on 22 Oct led with the usual dinner).
+        for (const date of scope.dates) for (const s of slugs) if (facts.factsById.has(`exception:${s}:${date}`) && !ids.includes(`exception:${s}:${date}`)) ids = [...ids, `exception:${s}:${date}`];
+        const r = renderHoursAnswer(ids, facts.factsById, facts.zoneOf, mentioned, { onlyMentioned: scope.dates.length > 0 || dateSpans(facts.guest ?? "").length > 0 });
         ctx.trace.push({ action: "answer_faq", ids: r.factIds, rendered: true });
         // No card repeating the cited facts under the answer (D-20: it duplicated every answer and showed internal
         // list wording); the cited IDs stay in the reply's metadata for the invariants.
@@ -337,6 +377,9 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       return reply(prose(p.text), turn.intent, { lead: [...largeNote, ...lead], cited: p.cited });
     }
     case "manage_booking":
+      // Next to a pending confirm card nothing is booked yet, so there is nothing to change or cancel by phone: the
+      // reminder to tap Confirm is the answer ("please confirm it now"; D-24 audit LV-INJ-004).
+      if (confirmShown) return reply(prose(""), "manage_redirect");
       ctx.trace.push({ action: "redirect", kind: "manage_booking" });
       return reply(T.manageBooking(phoneBranches(ctx, known)), "manage_redirect");
     case "off_topic":
