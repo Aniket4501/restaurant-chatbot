@@ -28,6 +28,7 @@ export const LIMITS = {
   retrievalTopK: 8,
   retrievalAggregateMax: 2, // menu-cat/menu-diet facts per turn (T-10 measurement, D-13 note)
   retrievalCarryMax: 4, // D-13 follow-ups: at most 4 of last turn's cited facts are kept, leaving room for new hits
+  retrievalDocMax: 3, // D-25: knowledge document passages per turn (each up to ~500 characters), so they can't crowd out menu and FAQ facts
 } as const;
 
 export const MODEL = {

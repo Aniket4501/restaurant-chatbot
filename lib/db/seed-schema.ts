@@ -4,9 +4,17 @@ import { DAY_KEYS, isLocalDate, isLocalTime } from "@/lib/time/tz";
 // Seed file format (data/seed/*.json and evals/fixtures/base.json share it). Validated before anything
 // touches the database; cross-file rules in superRefine (D-08 exception rules, references, uniqueness).
 
-const slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase slug");
-const hhmm = z.string().refine(isLocalTime, "zero-padded HH:MM");
-const closeTime = z.string().refine((s) => s === "24:00" || isLocalTime(s), "zero-padded HH:MM or 24:00");
+export const slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase slug");
+export const hhmm = z.string().refine(isLocalTime, "zero-padded HH:MM");
+export const closeTime = z.string().refine((s) => s === "24:00" || isLocalTime(s), "zero-padded HH:MM or 24:00");
+/** The dietary and allergen labels the chatbot understands (facts, cards, filters). Shared with the staff menu editor (D-25). */
+export const DIETARY_TAGS = ["vegetarian", "vegan", "gluten-free", "jain-available", "contains-dairy", "contains-nuts", "egg"] as const;
+export type DietaryTag = (typeof DIETARY_TAGS)[number];
+/** E.164 as the seed stores it. */
+export const E164 = /^\+[1-9]\d{7,14}$/;
+/** FAQ categories (D-25); a seed entry without one is "general". */
+export const FAQ_CATEGORIES = ["bookings", "food", "payment", "facilities", "house-rules", "general"] as const;
+export type FaqCategory = (typeof FAQ_CATEGORIES)[number];
 const zone = z.string().refine((tzName) => {
   try {
     new Intl.DateTimeFormat("en", { timeZone: tzName });
@@ -29,7 +37,7 @@ export const SeedSchema = z
           slug,
           name: z.string().min(1),
           address: z.string().min(1),
-          phone: z.string().regex(/^\+[1-9]\d{7,14}$/, "E.164"),
+          phone: z.string().regex(E164, "E.164"),
           timezone: zone,
           isActive: z.boolean().default(true),
         }),
@@ -64,13 +72,13 @@ export const SeedSchema = z
         name: z.string().min(1),
         description: z.string().min(1),
         priceInr: z.number().int().positive(),
-        dietary: z.array(z.enum(["vegetarian", "vegan", "gluten-free", "jain-available", "contains-dairy", "contains-nuts", "egg"])),
+        dietary: z.array(z.enum(DIETARY_TAGS)),
         spiceLevel: z.number().int().min(0).max(3).nullable(),
         branches: z.array(slug).min(1).nullable(),
         isAvailable: z.boolean(),
       }),
     ),
-    faq: z.array(z.strictObject({ slug, branch: slug.nullable(), question: z.string().min(1), answer: z.string().min(1) })),
+    faq: z.array(z.strictObject({ slug, branch: slug.nullable(), category: z.enum(FAQ_CATEGORIES).optional(), question: z.string().min(1), answer: z.string().min(1) })),
   })
   .superRefine((s, ctx) => {
     const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
@@ -111,7 +119,8 @@ export const SeedSchema = z
   });
 
 const minutes = (t: string) => (t === "24:00" ? 1440 : Number(t.slice(0, 2)) * 60 + Number(t.slice(3)));
-function overlaps(ws: { opens: string; closes: string }[]): boolean {
+/** True if any two windows overlap (lunch and dinner on one day, or two open exception windows). */
+export function overlaps(ws: { opens: string; closes: string }[]): boolean {
   const sorted = [...ws].sort((a, b) => minutes(a.opens) - minutes(b.opens));
   return sorted.some((w, i) => i > 0 && minutes(w.opens) < minutes(sorted[i - 1].closes));
 }

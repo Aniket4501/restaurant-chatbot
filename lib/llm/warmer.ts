@@ -4,6 +4,7 @@ import { getConfig, MODEL } from "@/lib/config";
 import { getDb } from "@/lib/db/client";
 import { currentJob } from "@/lib/evals/jobs";
 import { warmModel, type Run } from "@/lib/llm/warm";
+import { onWarmRequest } from "@/lib/llm/warm-signal";
 import { getNow } from "@/lib/time/now";
 import { resultsDir } from "@/evals/paths";
 import { listRuns } from "@/evals/report";
@@ -44,4 +45,14 @@ export function startWarmer(): void {
   };
   setTimeout(once, 1_000);
   setInterval(once, MODEL.rewarmEveryMs).unref();
+  // D-25: a staff edit changed the system prompt; warm again shortly after the last such edit.
+  let pending: ReturnType<typeof setTimeout> | null = null;
+  onWarmRequest(() => {
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(() => {
+      pending = null;
+      void once();
+    }, 3_000);
+    pending.unref?.();
+  });
 }

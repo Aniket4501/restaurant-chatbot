@@ -9,7 +9,7 @@ import { RULES } from "@/lib/config";
 // was selected on; tests compare against its --dump-facts output. Additions since the probe: the restaurant
 // fact, menu-cat/menu-diet aggregates (D-13), and weekly hours facts naming their exceptions (D-10).
 
-export type FactKind = "restaurant" | "branch" | "hours" | "exception" | "menu" | "faq" | "menu-cat" | "menu-diet";
+export type FactKind = "restaurant" | "branch" | "hours" | "exception" | "menu" | "faq" | "menu-cat" | "menu-diet" | "doc";
 export type Fact = {
   id: string;
   kind: FactKind;
@@ -40,9 +40,17 @@ export type FactSource = {
     isAvailable: boolean;
   }[];
   faq: { slug: string; question: string; answer: string; branchId: number | null }[];
+  /**
+   * Passages of staff knowledge documents (D-25): only active documents whose ingestion succeeded, in document then
+   * passage order. Optional so hand-built sources in tests stay valid; absent means none.
+   */
+  docs?: { factId: string; title: string; heading: string | null; text: string; branchId: number | null }[];
 };
 
-/** Everything facts are rendered from, read in seed order (row id). */
+/**
+ * Everything facts are rendered from, read in seed order (row id). Menu items removed from the menu, inactive FAQs and
+ * documents that are inactive or not successfully ingested are left out (D-25), so they reach no prompt, index or check.
+ */
 export function loadFactSource(db: DB): FactSource {
   const restaurant = db.prepare("SELECT name, cuisine, about FROM restaurant WHERE id = 1").get() as FactSource["restaurant"] | undefined;
   const branches = (db.prepare("SELECT id, slug, name, address, phone, timezone, is_active FROM branches ORDER BY id").all() as (Omit<FactSource["branches"][number], "isActive"> & { is_active: number })[]).map(
@@ -63,7 +71,7 @@ export function loadFactSource(db: DB): FactSource {
     }[]
   ).map((r) => ({ branchId: r.branch_id, date: r.date, service: r.service, isClosed: r.is_closed === 1, opens: r.opens, closes: r.closes, note: r.note }));
   const menu = (
-    db.prepare("SELECT slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available FROM menu_items ORDER BY id").all() as {
+    db.prepare("SELECT slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available FROM menu_items WHERE is_listed = 1 ORDER BY id").all() as {
       slug: string;
       category: string;
       name: string;
@@ -85,13 +93,21 @@ export function loadFactSource(db: DB): FactSource {
     branches: r.branch_slugs ? (JSON.parse(r.branch_slugs) as string[]) : null,
     isAvailable: r.is_available === 1,
   }));
-  const faq = (db.prepare("SELECT slug, question, answer, branch_id FROM faq_entries ORDER BY id").all() as { slug: string; question: string; answer: string; branch_id: number | null }[]).map((r) => ({
+  const faq = (db.prepare("SELECT slug, question, answer, branch_id FROM faq_entries WHERE is_active = 1 ORDER BY id").all() as { slug: string; question: string; answer: string; branch_id: number | null }[]).map((r) => ({
     slug: r.slug,
     question: r.question,
     answer: r.answer,
     branchId: r.branch_id,
   }));
-  return { restaurant: restaurant ?? null, branches, weekly, exceptions, menu, faq };
+  const docs = (
+    db
+      .prepare(
+        `SELECT d.slug, d.title, d.branch_id, c.seq, c.heading, c.text FROM kb_chunks c JOIN kb_documents d ON d.id = c.document_id
+         WHERE d.is_active = 1 AND d.status = 'ready' ORDER BY d.id, c.seq`,
+      )
+      .all() as { slug: string; title: string; branch_id: number | null; seq: number; heading: string | null; text: string }[]
+  ).map((r) => ({ factId: docFactId(r.slug, r.seq), title: r.title, heading: r.heading, text: r.text, branchId: r.branch_id }));
+  return { restaurant: restaurant ?? null, branches, weekly, exceptions, menu, faq, docs };
 }
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -218,7 +234,8 @@ export function renderKbFacts(src: FactSource): Fact[] {
   for (const m of menu) {
     const where = m.scope ? ` ${scopeText(m.scope)}.` : "";
     const avail = m.isAvailable ? "" : " Currently unavailable.";
-    const itemText = (alsoVegetarian: boolean) => `${m.name} (${categoryLabel(m.category)}), ₹${m.priceInr}. ${m.description}. ${dietText(m.dietary, alsoVegetarian)} Spice: ${SPICE[m.spiceLevel ?? 0]}.${where}${avail}`;
+    // A spice level the menu doesn't give is "not listed", never "not spicy" (D-25: staff can leave it blank; the seed always sets it).
+    const itemText = (alsoVegetarian: boolean) => `${m.name} (${categoryLabel(m.category)}), ₹${m.priceInr}. ${m.description}. ${dietText(m.dietary, alsoVegetarian)} Spice: ${m.spiceLevel === null ? "not listed" : SPICE[m.spiceLevel]}.${where}${avail}`;
     facts.push({
       id: `menu:${m.slug}`,
       kind: "menu",
@@ -263,8 +280,18 @@ export function renderKbFacts(src: FactSource): Fact[] {
     const items = menu.filter((m) => d.has(m.dietary));
     if (items.length) facts.push({ id: `menu-diet:${d.tag}`, kind: "menu-diet", text: listText(d.label, items, true), indexText: indexTextFor(d.label, d.about) });
   }
+  // Knowledge document passages (D-25) come last, so the menu, FAQ and aggregate facts keep their order and text. A
+  // passage reads "(Branch) Title (Section): text"; documents scoped to an inactive branch are left out, as FAQs are.
+  for (const d of src.docs ?? []) {
+    if (d.branchId !== null && !activeById.has(d.branchId)) continue;
+    const scope = d.branchId === null ? "" : `(${branchShortName(activeById.get(d.branchId)!.name)}) `;
+    facts.push({ id: d.factId, kind: "doc", text: `${scope}${d.title}${d.heading ? ` (${d.heading})` : ""}: ${d.text}` });
+  }
   return facts;
 }
+
+/** The retrievable fact ID of a document passage: "doc:<document slug>:<passage number>". */
+export const docFactId = (slug: string, seq: number) => `doc:${slug}:${seq}`;
 
 /** The text FTS5 and the embedder see for a fact. */
 export const indexedText = (f: Fact) => f.indexText ?? f.text;

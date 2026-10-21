@@ -4,8 +4,8 @@ import path from "node:path";
 import type { DB } from "@/lib/db/client";
 import { immediate } from "@/lib/db/tx";
 import { exceptionProblems, SeedSchema, type SeedData } from "@/lib/db/seed-schema";
-import { windowsFor, type HoursException, type Service, type WeeklyHours } from "@/lib/booking/hours";
-import { addLocalDays, DAY_KEYS, instantAtMinutes, localDateOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
+import { findConflicts, type SeedConflict } from "@/lib/booking/conflicts";
+import { addLocalDays, DAY_KEYS, todayLocal, type LocalDate } from "@/lib/time/tz";
 import { loadFactSource, renderKbFacts } from "@/lib/kb/facts";
 import { rebuildLexical } from "@/lib/kb/index";
 
@@ -21,7 +21,7 @@ export function parseSeed(raw: unknown): SeedData {
   return SeedSchema.parse(raw);
 }
 
-export type SeedConflict = { ref: string; branch: string; startsAt: number; reason: "table_inactive" | "table_size" | "outside_hours" };
+export { findConflicts, type SeedConflict } from "@/lib/booking/conflicts";
 
 export class SeedConflictError extends Error {
   constructor(readonly conflicts: SeedConflict[]) {
@@ -37,6 +37,24 @@ export class SeedValidationError extends Error {
   }
 }
 
+/**
+ * D-25: staff have changed the database in the admin since it was last seeded. A reseed replaces hours and exceptions,
+ * overwrites seeded rows and deletes staff-created menu items and FAQs, so it needs an explicit go-ahead.
+ */
+export class StaffChangesError extends Error {
+  constructor(readonly changes: number) {
+    super(`the database has ${changes} staff change(s) made in the admin since it was seeded; reseeding would overwrite them. Re-run with --overwrite-staff-changes to apply anyway`);
+    this.name = "StaffChangesError";
+  }
+}
+
+/** Staff changes (admin_changes rows) since the last seed. */
+export function staffChangesSinceSeed(db: DB): number {
+  const seeded = Number((db.prepare("SELECT value FROM app_meta WHERE key = 'seeded_change_id'").get() as { value: string } | undefined)?.value ?? 0);
+  // Booking cancellations are staff actions too, but a reseed never touches reservations, so they don't count.
+  return (db.prepare("SELECT count(*) AS n FROM admin_changes WHERE id > ? AND area <> 'bookings'").get(seeded) as { n: number }).n;
+}
+
 export type SeedReport = { anchorDate: LocalDate; counts: Record<string, number>; deactivated: { branches: string[]; tables: string[] }; conflicts: SeedConflict[] };
 
 /**
@@ -47,9 +65,11 @@ export type SeedReport = { anchorDate: LocalDate; counts: Record<string, number>
  * - Confirmed future bookings that the new data would invalidate abort the load unless acceptConflicts.
  * - kb_fts is rebuilt from the new menu and FAQ rows in the same transaction.
  */
-export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptConflicts?: boolean }): SeedReport {
+export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptConflicts?: boolean; overwriteStaffChanges?: boolean }): SeedReport {
   const zone = seed.branches[0].timezone;
   return immediate(db, () => {
+    const staff = staffChangesSinceSeed(db);
+    if (staff > 0 && !opts.overwriteStaffChanges) throw new StaffChangesError(staff);
     const anchorRow = db.prepare("SELECT value FROM app_meta WHERE key = 'seed_anchor_date'").get() as { value: string } | undefined;
     const anchorDate = anchorRow?.value ?? todayLocal(opts.now, zone);
     if (!anchorRow) db.prepare("INSERT INTO app_meta (key, value) VALUES ('seed_anchor_date', ?)").run(anchorDate);
@@ -96,9 +116,9 @@ export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptCon
     const menuSlugs = seed.menu.map((m) => m.slug);
     db.prepare(`DELETE FROM menu_items WHERE slug NOT IN (${menuSlugs.map(() => "?").join(",") || "''"})`).run(...menuSlugs);
 
-    const upsertFaq = db.prepare(`INSERT INTO faq_entries (slug, question, answer, branch_id) VALUES (?, ?, ?, ?)
-      ON CONFLICT(slug) DO UPDATE SET question = excluded.question, answer = excluded.answer, branch_id = excluded.branch_id`);
-    for (const f of seed.faq) upsertFaq.run(f.slug, f.question, f.answer, f.branch ? branchId.get(f.branch) : null);
+    const upsertFaq = db.prepare(`INSERT INTO faq_entries (slug, question, answer, branch_id, category) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(slug) DO UPDATE SET question = excluded.question, answer = excluded.answer, branch_id = excluded.branch_id, category = excluded.category`);
+    for (const f of seed.faq) upsertFaq.run(f.slug, f.question, f.answer, f.branch ? branchId.get(f.branch) : null, f.category ?? "general");
     const faqSlugs = seed.faq.map((f) => f.slug);
     db.prepare(`DELETE FROM faq_entries WHERE slug NOT IN (${faqSlugs.map(() => "?").join(",") || "''"})`).run(...faqSlugs);
 
@@ -108,6 +128,9 @@ export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptCon
     db.prepare("INSERT INTO app_meta (key, value) VALUES ('seed_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
       createHash("sha256").update(JSON.stringify(seed)).digest("hex").slice(0, 16),
     );
+
+    // Staff changes from here on count against the next reseed (D-25).
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('seeded_change_id', (SELECT coalesce(max(id), 0) FROM admin_changes)) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
 
     const conflicts = findConflicts(db, opts.now);
     if (conflicts.length && !opts.acceptConflicts) throw new SeedConflictError(conflicts);
@@ -121,42 +144,3 @@ export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptCon
     };
   });
 }
-
-/** Confirmed bookings from `now` on that the current tables, hours and exceptions no longer support. */
-export function findConflicts(db: DB, now: number): SeedConflict[] {
-  const rows = db
-    .prepare(`SELECT r.ref, r.branch_id, r.party_size, r.starts_at, r.ends_at, b.slug, b.timezone, b.is_active AS branch_active,
-        t.is_active AS table_active, t.min_seats, t.max_seats
-      FROM reservations r JOIN branches b ON b.id = r.branch_id JOIN dining_tables t ON t.id = r.table_id
-      WHERE r.status = 'confirmed' AND r.ends_at > ?`)
-    .all(now) as {
-    ref: string; branch_id: number; party_size: number; starts_at: number; ends_at: number; slug: string; timezone: string;
-    branch_active: number; table_active: number; min_seats: number; max_seats: number;
-  }[];
-  const weeklyStmt = db.prepare("SELECT weekday, service, opens, closes FROM service_hours WHERE branch_id = ?");
-  const exStmt = db.prepare("SELECT date, service, is_closed, opens, closes, note FROM hours_exceptions WHERE branch_id = ? AND date = ?");
-  const out: SeedConflict[] = [];
-  for (const r of rows) {
-    const base = { ref: r.ref, branch: r.slug, startsAt: r.starts_at };
-    if (!r.table_active || !r.branch_active) {
-      out.push({ ...base, reason: "table_inactive" });
-      continue;
-    }
-    if (r.party_size < r.min_seats || r.party_size > r.max_seats) {
-      out.push({ ...base, reason: "table_size" });
-      continue;
-    }
-    const date = localDateOf(r.starts_at, r.timezone);
-    const weekly = weeklyStmt.all(r.branch_id) as WeeklyHours[];
-    const ex = (exStmt.all(r.branch_id, date) as { date: string; service: Service | null; is_closed: number; opens: string | null; closes: string | null; note: string | null }[]).map(
-      (e): HoursException => ({ date: e.date, service: e.service, isClosed: e.is_closed === 1, opens: e.opens, closes: e.closes, note: e.note }),
-    );
-    const midnight = instantAtMinutes(date, 0, r.timezone);
-    const startMin = (r.starts_at - midnight) / 60_000;
-    const endMin = (r.ends_at - midnight) / 60_000;
-    const fits = windowsFor(date, weekdayOf(date, r.timezone), weekly, ex).some((w) => startMin >= w.opensMin && endMin <= w.closesMin);
-    if (!fits) out.push({ ...base, reason: "outside_hours" });
-  }
-  return out;
-}
-

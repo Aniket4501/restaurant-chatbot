@@ -15,6 +15,8 @@ export type AvailabilityBundle = {
   tables: TableRow[];
   /** Confirmed bookings only. */
   bookings: BookingInterval[];
+  /** Start times staff have blocked (D-25), per branch id, as "YYYY-MM-DD|HH:MM" in the branch zone. Absent: none. */
+  blocks?: Map<number, Set<string>>;
 };
 
 export type AvailabilityQuery = { branch: string; date: LocalDate; partySize: number; time?: string | null; window?: Service | null };
@@ -40,29 +42,59 @@ const PER_SERVICE = 3;
 const ALT_PER_GROUP = 3;
 const ALT_DAYS = 2;
 
-/** §5.5 steps 1–5 for one branch and date: every grid start that is open right now. */
-export function openStarts(bundle: AvailabilityBundle, branch: BranchRow, date: LocalDate, partySize: number, now: number): { open: Slot[]; hadWindows: boolean; hadCandidates: boolean } {
+/** Why a grid start can or can't be booked right now (D-25 admin view; openStarts keeps the "open" ones). */
+export type StartStatus = "open" | "lead_time" | "blocked" | "full";
+export type GridStart = {
+  time: string;
+  minute: number;
+  startsAt: number;
+  endsAt: number;
+  service: Service;
+  status: StartStatus;
+  /** Active tables that seat the party, and how many of them are free for the whole sitting. */
+  fittingTables: number;
+  freeTables: number;
+};
+
+/** A start staff have blocked (D-25). */
+export function isBlocked(bundle: AvailabilityBundle, branchId: number, date: LocalDate, time: string): boolean {
+  return bundle.blocks?.get(branchId)?.has(`${date}|${time}`) ?? false;
+}
+
+/**
+ * §5.5 steps 2–5 for one branch and date: every grid start of the day's service windows with its status. Lead time
+ * comes first, then a staff block, then table fit, so a fully blocked evening reads as fully booked to guests, not closed.
+ */
+export function gridStarts(bundle: AvailabilityBundle, branch: BranchRow, date: LocalDate, partySize: number, now: number): { starts: GridStart[]; hadWindows: boolean } {
   const sitting = RULES.sittingMinutes(partySize);
   const windows = windowsFor(date, weekdayOf(date, branch.timezone), bundle.weekly.get(branch.id) ?? [], bundle.exceptions.get(branch.id) ?? []);
   const earliest = now + RULES.leadMinutes * 60_000;
   const fitting = bundle.tables.filter((t) => t.branchId === branch.id && t.isActive && t.minSeats <= partySize && partySize <= t.maxSeats);
-  const open: Slot[] = [];
+  const starts: GridStart[] = [];
   const seen = new Set<number>();
-  let hadCandidates = false;
   for (const w of windows) {
     for (let m = w.opensMin; m + sitting <= w.closesMin; m += RULES.slotMinutes) {
       const startsAt = instantAtMinutes(date, m, branch.timezone);
       if (seen.has(startsAt)) continue; // overlapping windows offer each start once (review AV-1)
       seen.add(startsAt);
-      if (startsAt < earliest) continue; // step 4: lead time
-      hadCandidates = true;
       const endsAt = startsAt + sitting * 60_000;
-      if (fitting.some((t) => isFree(bundle.bookings, t.id, startsAt, endsAt))) {
-        open.push({ branch: branch.slug, date, time: timeOfMinutes(m), startsAt, endsAt, service: w.service, label: timeLabel(startsAt, branch.timezone) });
-      }
+      const time = timeOfMinutes(m);
+      const freeTables = fitting.filter((t) => isFree(bundle.bookings, t.id, startsAt, endsAt)).length;
+      const status: StartStatus = startsAt < earliest ? "lead_time" : isBlocked(bundle, branch.id, date, time) ? "blocked" : freeTables > 0 ? "open" : "full";
+      starts.push({ time, minute: m, startsAt, endsAt, service: w.service, status, fittingTables: fitting.length, freeTables });
     }
   }
-  return { open, hadWindows: windows.length > 0, hadCandidates };
+  return { starts, hadWindows: windows.length > 0 };
+}
+
+/** §5.5 steps 1–5 for one branch and date: every grid start that is open right now. */
+export function openStarts(bundle: AvailabilityBundle, branch: BranchRow, date: LocalDate, partySize: number, now: number): { open: Slot[]; hadWindows: boolean; hadCandidates: boolean } {
+  const { starts, hadWindows } = gridStarts(bundle, branch, date, partySize, now);
+  const open = starts
+    .filter((s) => s.status === "open")
+    .map((s) => ({ branch: branch.slug, date, time: s.time, startsAt: s.startsAt, endsAt: s.endsAt, service: s.service, label: timeLabel(s.startsAt, branch.timezone) }));
+  // Step 4 removes starts within the lead time; anything after it (blocked or full) still counts as a candidate.
+  return { open, hadWindows, hadCandidates: starts.some((s) => s.status !== "lead_time") };
 }
 
 function isFree(bookings: BookingInterval[], tableId: number, start: number, end: number): boolean {
@@ -170,13 +202,14 @@ export function isOpenStart(bundle: AvailabilityBundle, branch: BranchRow, date:
 
 export type StartCheck =
   | { ok: true; branch: BranchRow; date: LocalDate; endsAt: number }
-  | { ok: false; reason: "unknown_branch" | "branch_inactive" | "party_size" | "lead_time" | "past_horizon" | "closed" | "off_grid" | "full" };
+  | { ok: false; reason: "unknown_branch" | "branch_inactive" | "party_size" | "lead_time" | "past_horizon" | "closed" | "off_grid" | "blocked" | "full" };
 
 /**
  * Re-validate one requested start with the engine's rules (§5.6 step 2). It says why a start can't be booked:
  * - `lead_time`: in the past or within 60 minutes;
  * - `closed`: the branch isn't serving at that time;
  * - `off_grid`: not on the 30-minute grid, or past the last seating;
+ * - `blocked`: staff blocked this start (D-25);
  * - `full`: no free fitting table.
  */
 export function checkStart(bundle: AvailabilityBundle, branchSlug: string, partySize: number, startsAt: number, now: number): StartCheck {
@@ -196,6 +229,7 @@ export function checkStart(bundle: AvailabilityBundle, branchSlug: string, party
   if (!containing.length) return { ok: false, reason: "closed" };
   if (instantAtMinutes(date, minute, branch.timezone) !== startsAt) return { ok: false, reason: "off_grid" };
   if (!containing.some((w) => (minute - w.opensMin) % RULES.slotMinutes === 0 && minute + sitting <= w.closesMin)) return { ok: false, reason: "off_grid" };
+  if (isBlocked(bundle, branch.id, date, timeOfMinutes(minute))) return { ok: false, reason: "blocked" };
   const endsAt = startsAt + sitting * 60_000;
   if (!pickTable(bundle, branch.id, partySize, startsAt, endsAt)) return { ok: false, reason: "full" };
   return { ok: true, branch, date, endsAt };

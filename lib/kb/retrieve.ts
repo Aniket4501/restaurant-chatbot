@@ -47,6 +47,7 @@ export function rrf(lists: string[][], k = RRF_K): { id: string; score: number }
 }
 
 const isAggregate = (id: string) => id.startsWith("menu-cat:") || id.startsWith("menu-diet:");
+const isDoc = (id: string) => id.startsWith("doc:");
 
 function dot(a: Float32Array, b: Float32Array): number {
   let s = 0;
@@ -120,12 +121,16 @@ export async function retrieveFacts(query: string, opts: { carry?: string[]; top
   // At most 2 aggregates per turn, carried ones included: they are long, and generic "… dishes" queries would
   // otherwise fill the top 8 with them and push out the items asked about (T-10 measurement: cap 1/2/3 → probe
   // hybrid recall 0.958/0.950/0.942, list-question hit 0.9/1.0/1.0).
+  // Knowledge document passages (D-25) are capped the same way, at LIMITS.retrievalDocMax per turn.
   let aggregates = 0;
+  let docs = 0;
   const carry = [...new Set(opts.carry ?? [])]
     .filter((id) => current.has(id))
     .filter((id) => !isAggregate(id) || ++aggregates <= LIMITS.retrievalAggregateMax)
+    .filter((id) => !isDoc(id) || ++docs <= LIMITS.retrievalDocMax)
     .slice(0, LIMITS.retrievalCarryMax);
   aggregates = carry.filter(isAggregate).length;
+  docs = carry.filter(isDoc).length;
   const hits: Hit[] = carry.map((id) => ({ factId: id, score: fused.find((f) => f.id === id)?.score ?? 0, source: "carry" }));
   for (const f of fused) {
     if (hits.length >= topK) break;
@@ -133,6 +138,10 @@ export async function retrieveFacts(query: string, opts: { carry?: string[]; top
     if (isAggregate(f.id)) {
       if (aggregates >= LIMITS.retrievalAggregateMax) continue;
       aggregates++;
+    }
+    if (isDoc(f.id)) {
+      if (docs >= LIMITS.retrievalDocMax) continue;
+      docs++;
     }
     hits.push({ factId: f.id, score: f.score, source: inLex.has(f.id) && inSem.has(f.id) ? "both" : inLex.has(f.id) ? "lexical" : "semantic" });
   }

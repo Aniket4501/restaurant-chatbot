@@ -48,15 +48,17 @@ function enableWal(db: DB, timeoutMs: number): unknown {
   }
 }
 
-let shared: DB | null = null;
+// Kept on globalThis (D-25): the route bundles and the page (SSR) bundle each get their own copy of this module, and
+// they must share one connection, so the E2E reset (which closes and deletes the file) leaves no page reading an old one.
+const g = globalThis as typeof globalThis & { __rcDb?: DB | null };
 
 /** Process-wide connection, opened lazily (never at module import: `next build` evaluates route modules). */
 export function getDb(): DB {
-  shared ??= openDb(getConfig().databasePath);
-  return shared;
+  g.__rcDb ??= openDb(getConfig().databasePath);
+  return g.__rcDb;
 }
 
 export function closeDb(): void {
-  shared?.close();
-  shared = null;
+  g.__rcDb?.close();
+  g.__rcDb = null;
 }

@@ -47,7 +47,7 @@ describe("admin reservations (AC-07, BR-13)", () => {
     expect((await list("")).status).toBe(200);
     expect((await cancel("NE-00000000")).status).toBe(404);
   });
-  it("lists today's bookings (branch zone) by time with name, time, party and status; totals count confirmed only", async () => {
+  it("lists today's bookings (branch zone) by time with name, time, party and status; totals count the day's confirmed bookings and cancellations", async () => {
     book("20:00", "9800000001");
     book("12:30", "9800000002", "gurugram", 2);
     const third = book("19:00", "9800000003");
@@ -56,8 +56,11 @@ describe("admin reservations (AC-07, BR-13)", () => {
     const j = await res.json();
     expect(j.date).toBe("2026-10-17");
     expect(j.items.map((i: { timeLabel: string; status: string }) => `${i.timeLabel} ${i.status}`)).toEqual(["12:30 PM confirmed", "7:00 PM cancelled", "8:00 PM confirmed"]);
-    expect(j.items[0]).toMatchObject({ guestName: "Guest 02", partySize: 2, branch: { slug: "gurugram" }, phone: "+919800000002", note: "birthday" });
-    expect(j.totals).toEqual({ confirmed: 2, covers: 6 });
+    // D-25: the list shows a masked mobile and whether there's a note; the number, email and note are in the details only.
+    expect(j.items[0]).toMatchObject({ guestName: "Guest 02", partySize: 2, branch: { slug: "gurugram" }, phoneMasked: "+91 98••• ••002", hasNote: true });
+    expect(JSON.stringify(j)).not.toContain("9800000002");
+    expect(JSON.stringify(j)).not.toContain("birthday");
+    expect(j.totals).toEqual({ confirmed: 2, covers: 6, cancelled: 1 });
     expect(j.branches.map((b: { slug: string }) => b.slug)).toEqual(["hauz-khas", "gurugram"]);
   });
   it("filters by date, branch and status", async () => {

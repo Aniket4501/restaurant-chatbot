@@ -3,6 +3,7 @@ import { createModelGate, turnLimiter, type ModelGate, type TurnLimiter } from "
 import { getDb, type DB } from "@/lib/db/client";
 import { createLimiter, type Limiter } from "@/lib/http/ratelimit";
 import { embedderFor, type Embedder } from "@/lib/kb/embedder";
+import { createRefresher, type Refresher } from "@/lib/kb/refresh";
 import type { ModelClient } from "@/lib/llm/client";
 import { modelFor } from "@/lib/llm/provider";
 import { loadedChecker } from "@/lib/llm/warmth";
@@ -20,7 +21,18 @@ export type ApiDeps = {
   limits: { createsPerPhone: Limiter; createsGlobal: Limiter };
   /** Chat turn dependencies (D-12): the configured model and embedder, turn limits and the model-call gate (D-14). */
   chat: { model: () => ModelClient; embedder: () => Embedder | null; limiter: TurnLimiter; gate: ModelGate; modelLoaded?: () => Promise<boolean | null> };
+  /** D-25: the knowledge index refresher (embeds after staff edits). Optional: `refresherOf` makes one from `db`/`chat`. */
+  kb?: { refresher: Refresher };
 };
+
+const refreshers = new WeakMap<ApiDeps, Refresher>();
+/** The deps' index refresher, or one made (once per deps object) from its database and embedder. */
+export function refresherOf(deps: ApiDeps): Refresher {
+  if (deps.kb) return deps.kb.refresher;
+  let r = refreshers.get(deps);
+  if (!r) refreshers.set(deps, (r = createRefresher({ db: deps.db, embedder: deps.chat.embedder, now: deps.now })));
+  return r;
+}
 
 function lazy<T>(make: () => T): () => T {
   let v: { value: T } | null = null;

@@ -2,150 +2,175 @@
   {
     "slug": "parking-hauz-khas",
     "branch": "hauz-khas",
+    "category": "facilities",
     "question": "Is there parking at Hauz Khas?",
     "answer": "Hauz Khas Village has paid public parking at the village entrance, about a 3-minute walk away. We don't offer valet at Hauz Khas."
   },
   {
     "slug": "parking-gurugram",
     "branch": "gurugram",
+    "category": "facilities",
     "question": "Is there parking at Golf Course Road?",
     "answer": "Golf Course Road has free valet parking from 12:00 PM to 11:00 PM."
   },
   {
     "slug": "alcohol-gurugram",
     "branch": "gurugram",
+    "category": "food",
     "question": "Do you serve alcohol at Golf Course Road?",
     "answer": "Yes. Golf Course Road has a licensed bar serving beer, wine and cocktails. Guests must be of legal drinking age and may be asked for ID."
   },
   {
     "slug": "alcohol-hauz-khas",
     "branch": "hauz-khas",
+    "category": "food",
     "question": "Do you serve alcohol at Hauz Khas?",
     "answer": "Hauz Khas is not licensed to serve alcohol, and outside alcohol isn't allowed."
   },
   {
     "slug": "children",
     "branch": null,
+    "category": "house-rules",
     "question": "Are children welcome?",
     "answer": "Yes. High chairs are available, and the kitchen can make child-sized portions of dal, rice and naan on request."
   },
   {
     "slug": "pets",
     "branch": null,
+    "category": "house-rules",
     "question": "Can I bring my dog?",
     "answer": "Well-behaved dogs are welcome on the Golf Course Road terrace. Only assistance animals are allowed indoors at either branch."
   },
   {
     "slug": "dress-code",
     "branch": null,
+    "category": "house-rules",
     "question": "Is there a dress code?",
     "answer": "No formal dress code. Most guests dress smart casual."
   },
   {
     "slug": "accessibility-hauz-khas",
     "branch": "hauz-khas",
+    "category": "facilities",
     "question": "Is Hauz Khas wheelchair accessible?",
     "answer": "The Hauz Khas dining room is on the first floor and reached by stairs only. For step-free dining, we recommend Golf Course Road."
   },
   {
     "slug": "accessibility-gurugram",
     "branch": "gurugram",
+    "category": "facilities",
     "question": "Is Golf Course Road wheelchair accessible?",
     "answer": "Yes. Golf Course Road has a step-free entrance and an accessible washroom."
   },
   {
     "slug": "large-groups",
     "branch": null,
+    "category": "bookings",
     "question": "Can you seat a large group?",
     "answer": "Online bookings are for 1 to 8 guests. For 9 or more, please call the branch and we'll arrange seating and a set menu."
   },
   {
     "slug": "change-or-cancel",
     "branch": null,
+    "category": "bookings",
     "question": "How do I change or cancel my booking?",
     "answer": "Please call the branch to change or cancel a booking. There is no cancellation fee."
   },
   {
     "slug": "late-arrival",
     "branch": null,
+    "category": "bookings",
     "question": "What if I'm running late?",
     "answer": "We hold your table for 15 minutes after the booking time. Call the branch if you'll be later than that."
   },
   {
     "slug": "sitting-time",
     "branch": null,
+    "category": "bookings",
     "question": "How long can we keep the table?",
     "answer": "Tables are booked for 90 minutes for 1 to 4 guests and 2 hours for 5 to 8 guests."
   },
   {
     "slug": "celebration-cake",
     "branch": null,
+    "category": "food",
     "question": "Can I bring a cake?",
     "answer": "Yes, you can bring a celebration cake. There is a ₹300 cakeage charge per cake. Mention it in the booking note."
   },
   {
     "slug": "allergies",
     "branch": null,
+    "category": "food",
     "question": "Can you handle food allergies?",
     "answer": "Tell your server about any allergy. Our kitchen handles nuts, dairy, gluten and shellfish, so we can't guarantee any dish is free of traces."
   },
   {
     "slug": "vegan-options",
     "branch": null,
+    "category": "food",
     "question": "Do you have vegan options?",
     "answer": "Yes. Dishes marked vegan contain no dairy, egg or honey, and there are vegan choices in every section of the menu."
   },
   {
     "slug": "jain-food",
     "branch": null,
+    "category": "food",
     "question": "Do you serve Jain food?",
     "answer": "Dishes marked Jain-available can be made without onion, garlic or root vegetables. Please ask your server when ordering."
   },
   {
     "slug": "payment",
     "branch": null,
+    "category": "payment",
     "question": "How can I pay?",
     "answer": "We accept cards, UPI and cash."
   },
   {
     "slug": "service-charge",
     "branch": null,
+    "category": "payment",
     "question": "Do you add a service charge?",
     "answer": "No service charge is added to the bill. Tipping is optional."
   },
   {
     "slug": "walk-ins",
     "branch": null,
+    "category": "bookings",
     "question": "Do you take walk-ins?",
     "answer": "Walk-ins are welcome when a table is free. We recommend booking for Friday and Saturday dinner."
   },
   {
     "slug": "booking-window",
     "branch": null,
+    "category": "bookings",
     "question": "How far ahead can I book?",
     "answer": "You can book up to 30 days ahead, and at least 60 minutes before your arrival time."
   },
   {
     "slug": "outdoor-seating",
     "branch": null,
+    "category": "facilities",
     "question": "Do you have outdoor seating?",
     "answer": "Golf Course Road has a covered terrace; ask for it in the booking note and we'll try to seat you there. Hauz Khas has indoor seating only."
   },
   {
     "slug": "private-dining",
     "branch": "gurugram",
+    "category": "facilities",
     "question": "Do you have a private dining room?",
     "answer": "Golf Course Road has a private room for up to 16 guests. Please call the branch to arrange it."
   },
   {
     "slug": "wifi",
     "branch": null,
+    "category": "facilities",
     "question": "Do you have Wi-Fi?",
     "answer": "Yes, free Wi-Fi is available at both branches. Ask your server for the password."
   },
   {
     "slug": "deposit",
     "branch": null,
+    "category": "bookings",
     "question": "Do I need to pay a deposit to book?",
     "answer": "No. Bookings need no deposit and no card."
   }

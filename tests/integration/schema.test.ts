@@ -6,6 +6,8 @@ import Database from "better-sqlite3";
 import { openDb, type DB } from "@/lib/db/client";
 import { migrate, MIGRATIONS_DIR } from "@/lib/db/migrate";
 import { immediate } from "@/lib/db/tx";
+import { applySeed, parseSeed } from "@/lib/db/seed";
+import { loadFactSource, renderKbFacts } from "@/lib/kb/facts";
 import { sqlError, tempDb } from "./helpers/db";
 
 // The 30 behaviour checks from docs/research/2026-10-19-schema-check/, ported to better-sqlite3 13.0.3
@@ -53,7 +55,7 @@ describe("connection settings (D-08)", () => {
 
 describe("migrations", () => {
   it("records each migration once and is idempotent", () => {
-    expect((db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as { version: string }[]).map((r) => r.version)).toEqual(["001_init", "002_chat_turns_food"]);
+    expect((db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as { version: string }[]).map((r) => r.version)).toEqual(["001_init", "002_chat_turns_food", "003_staff_workspace"]);
     expect(migrate(db, 1)).toEqual([]);
   });
   it("002 keeps existing chat_turns rows and accepts the menu and recommend intents (D-20)", () => {
@@ -63,16 +65,39 @@ describe("migrations", () => {
     migrate(old, 1, dir);
     old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('a', 's', 'faq', 'faq_answer', 1)").run();
     expect(() => old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('b', 's', 'recommend', 'recommend', 2)").run()).toThrow(/CHECK/);
-    expect(migrate(old, 2)).toEqual(["002_chat_turns_food"]);
+    expect(migrate(old, 2)).toEqual(["002_chat_turns_food", "003_staff_workspace"]);
     old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('b', 's', 'recommend', 'recommend', 2)").run();
     old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('c', 's', 'menu', 'menu', 3)").run();
     expect(old.prepare("SELECT id, intent FROM chat_turns ORDER BY created_at").all()).toEqual([{ id: "a", intent: "faq" }, { id: "b", intent: "recommend" }, { id: "c", intent: "menu" }]);
     old.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
-  it("creates the twelve tables and the FTS5 index", () => {
+  it("creates the seventeen tables and the FTS5 index (D-25 adds documents, passages, jobs, slot blocks and the change log)", () => {
     const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'kb_fts_%' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
-    expect(names).toEqual(["app_meta", "branches", "chat_turns", "dining_tables", "fact_embeddings", "faq_entries", "hours_exceptions", "kb_fts", "menu_items", "reservations", "restaurant", "schema_migrations", "service_hours"]);
+    expect(names).toEqual(["admin_changes", "app_meta", "branches", "chat_turns", "dining_tables", "fact_embeddings", "faq_entries", "hours_exceptions", "kb_chunks", "kb_documents", "kb_fts", "kb_jobs", "menu_items", "reservations", "restaurant", "schema_migrations", "service_hours", "slot_blocks"]);
+  });
+  it("003 on an existing seeded database keeps every row and fact, and gives the seeded FAQs their categories (D-25)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mig-"));
+    for (const f of ["001_init.sql", "002_chat_turns_food.sql"]) fs.copyFileSync(path.join(MIGRATIONS_DIR, f), path.join(dir, f));
+    const old = openDb(":memory:");
+    migrate(old, 1, dir);
+    const seed = parseSeed(JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../evals/fixtures/base.json"), "utf8")));
+    // The pre-003 seed loader wrote FAQs without a category column; insert the same rows the old way.
+    const id = (slug: string) => (old.prepare("SELECT id FROM branches WHERE slug = ?").get(slug) as { id: number } | undefined)?.id ?? null;
+    for (const b of seed.branches) old.prepare("INSERT INTO branches (slug, name, address, phone, timezone, is_active) VALUES (?, ?, ?, ?, ?, 1)").run(b.slug, b.name, b.address, b.phone, b.timezone);
+    for (const m of seed.menu) old.prepare("INSERT INTO menu_items (slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(m.slug, m.category, m.name, m.description, m.priceInr, JSON.stringify(m.dietary), m.spiceLevel, m.branches ? JSON.stringify(m.branches) : null, m.isAvailable ? 1 : 0);
+    for (const f of seed.faq) old.prepare("INSERT INTO faq_entries (slug, question, answer, branch_id) VALUES (?, ?, ?, ?)").run(f.slug, f.question, f.answer, f.branch ? id(f.branch) : null);
+    expect(migrate(old, 2)).toEqual(["003_staff_workspace"]);
+    // The same retrievable facts as a database built fresh from the same seed: 003 changes no fact text.
+    const fresh = openDb(":memory:");
+    migrate(fresh, 2);
+    applySeed(fresh, seed, { now: Date.parse("2026-10-16T14:00:00+05:30") });
+    expect(renderKbFacts(loadFactSource(old))).toEqual(renderKbFacts(loadFactSource(fresh)));
+    fresh.close();
+    expect(old.prepare("SELECT count(*) AS n FROM menu_items WHERE is_listed = 1 AND created_by = 'seed' AND updated_at IS NULL").get()).toEqual({ n: 48 });
+    expect(old.prepare("SELECT count(*) AS n FROM faq_entries WHERE category = 'general'").get()).toEqual({ n: 0 });
+    old.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 

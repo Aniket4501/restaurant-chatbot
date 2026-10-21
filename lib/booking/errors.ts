@@ -15,9 +15,13 @@ export type ErrorCode =
   /** D-21: an eval run is already going (admin evals dashboard). */
   | "BUSY"
   /** D-24: an unexpected server error after which the outcome is unknown (the client retries with the same key). */
-  | "INTERNAL";
+  | "INTERNAL"
+  /** D-25 staff workspace: the record already exists, or the change would leave bookings unsupported (needs confirm). */
+  | "CONFLICT"
+  /** D-25: an upload that isn't a supported text file. */
+  | "UNSUPPORTED_FILE";
 
-export type UnavailableReason = "lead_time" | "closed" | "past_horizon" | "off_grid" | "party_size" | "branch_inactive";
+export type UnavailableReason = "lead_time" | "closed" | "past_horizon" | "off_grid" | "party_size" | "branch_inactive" | "blocked";
 
 export type ExistingBooking = { ref: string; branch: string; startsAt: number; label: string; dateLabel: string };
 

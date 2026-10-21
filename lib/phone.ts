@@ -12,6 +12,16 @@ export function normalizeIndianMobile(input: string): string | null {
   return type === "MOBILE" || type === "FIXED_LINE_OR_MOBILE" ? pn.number : null;
 }
 
+/** Normalise any valid Indian phone number (landline or mobile) to E.164, or null: branch contact numbers (D-25). */
+export function normalizeIndianPhone(input: string): string | null {
+  try {
+    const pn = parsePhoneNumber(input, { defaultCountry: "IN", extract: false });
+    return pn && pn.country === "IN" && !pn.ext && pn.isValid() ? pn.number : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Every phone number libphonenumber finds in text, with its E.164 form and character span. */
 export function findPhones(text: string): { start: number; end: number; e164: string }[] {
   return findPhoneNumbersInText(text, { defaultCountry: "IN" }).map((m) => ({ start: m.startsAt, end: m.endsAt, e164: m.number.number }));

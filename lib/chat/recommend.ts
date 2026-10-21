@@ -237,6 +237,9 @@ const INGREDIENTS = ["paneer", "chicken", "lamb", "mutton", "goat", "prawn", "sh
 const ATTRIBUTE_RE = /\b(?:halal|kosher|organic|keto|paleo|low[- ]carb|low[- ]fat|low[- ]calorie|sugar[- ]free|diabetic[- ]friendly|msg|preservatives?|free[- ]range|grass[- ]fed|non[- ]gmo|locally sourced)\b/gi;
 const INGREDIENT_RE = new RegExp(`\\b(${INGREDIENTS.join("|")})(?:e?s)?\\b`, "gi");
 
+/** Words that say a dish can't be ordered now (D-25). */
+const UNAVAILABLE_WORDS = /\b(?:unavailable|not available|(?:is|are)n['’]t available|sold out|off the menu|not on the menu|not serving|not being served|not on today)\b/i;
+
 /**
  * Claims in model prose that the menu data doesn't support, tied to the dish each is about (the nearest dish named
  * before it in the sentence, else after, else the only dish cited): allergen safety, diet labels, main ingredients.
@@ -262,6 +265,10 @@ export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry
   const pool = [...new Set([...dishes, ...mentionsOf(text, menu, false, menu).map((m) => m.d)])];
   if (!pool.length) return reasons;
   const named = mentionsOf(text, pool, true, menu);
+  // A dish marked unavailable may be named only in an answer that says so (D-25: when staff mark a dish unavailable,
+  // "Yes, the Tandoori Pomfret is ₹895" would present it as orderable; its fact says "Currently unavailable.").
+  const out = named.find((m) => !m.d.available);
+  if (out && !UNAVAILABLE_WORDS.test(text)) reasons.push(`${out.d.name} is currently unavailable`);
   const sentences = [...text.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
   const subjectAt = (pos: number): MenuEntry | null => {
     const sent = sentences.find((s) => s.start <= pos && pos < s.end) ?? { start: 0, end: text.length };

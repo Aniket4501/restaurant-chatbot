@@ -157,7 +157,7 @@ function unmetShown(i: MenuView, s: NonNullable<NonNullable<Expectation["recomme
  * D-21 response-shape checks on every reply, whatever the case: fact IDs, JSON, prompt tags or internal list wording
  * shown to the guest, and the same text shown twice (the D-20 duplicate card, the degraded notice). These fail the case.
  */
-const LEAK_ID = /\b(?:menu|faq|branch|hours|exception|restaurant):[a-z0-9][a-z0-9-]+/i;
+const LEAK_ID = /\b(?:menu|faq|branch|hours|exception|restaurant|doc):[a-z0-9][a-z0-9-]+/i;
 const LEAK_JSON = /[{}]|"[a-zA-Z_]+"\s*:/;
 const INTERNAL = /cheapest first|\(\d+ available\)|(?:^|\n)\s*[QA]:\s|citedFactIds|answerable|<\/?(?:guest_message|history)>|\bmodel_call\b|\bprefs\b/i;
 export function checkUx(t: Pick<TurnView, "index" | "shown" | "kind">): Check[] {

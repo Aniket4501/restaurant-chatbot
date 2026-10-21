@@ -36,5 +36,10 @@ export function loadAvailabilityData(db: DB, dates: LocalDate[]): AvailabilityBu
   const bookings = (db.prepare("SELECT table_id, starts_at, ends_at FROM reservations WHERE status = 'confirmed' AND starts_at < ? AND ends_at > ?").all(to, from) as { table_id: number; starts_at: number; ends_at: number }[]).map(
     (b) => ({ tableId: b.table_id, startsAt: b.starts_at, endsAt: b.ends_at }),
   );
-  return { branches, weekly, exceptions, tables, bookings };
+  // Staff slot blocks (D-25), with the same date margin as the exceptions.
+  const blocks = new Map<number, Set<string>>();
+  for (const r of db.prepare("SELECT branch_id, date, time FROM slot_blocks WHERE date BETWEEN ? AND ?").all(addLocalDays(first, -1, zone), addLocalDays(last, 1, zone)) as { branch_id: number; date: string; time: string }[]) {
+    blocks.set(r.branch_id, (blocks.get(r.branch_id) ?? new Set()).add(`${r.date}|${r.time}`));
+  }
+  return { branches, weekly, exceptions, tables, bookings, blocks };
 }
