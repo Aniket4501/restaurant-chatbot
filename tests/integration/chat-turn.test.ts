@@ -683,8 +683,10 @@ describe("popularity questions are answered from the restaurant's own mark (D-26
     const veg = await runTurn(say("What is your best vegetarian seller?"), deps({ model: sequenceModel([rec("recommend", { diet: ["vegetarian"] })]) }));
     expect(veg.reply.text).toBe("Of the vegetarian dishes, the restaurant marks the Dal Ember as a bestseller.");
     expect(veg.reply.blocks[0]).toMatchObject({ type: "recommendation", lead: false, items: [{ id: "menu:dal-ember" }] });
-    expect(veg.meta.timing.calls).toBe(1);
-    // The model read a dessert question as a menu request: still answered from the mark, with an offer instead.
+    expect(veg.meta.timing.calls).toBe(0); // no chooser, and no intent call either (D-29: answered from the data)
+    expect(veg.trace).toContainEqual({ action: "intent_skipped", reason: "evidence" });
+    // A dessert popularity question is answered from the mark (since D-29 without the intent call, so the model's
+    // reading of it as a menu request is never asked for), with an offer instead.
     const dessert = await runTurn(say("What's your most popular dessert?"), deps({ model: sequenceModel([rec("menu", { course: "desserts" })]) }));
     expect(dessert.reply.text).toBe("None of the dishes the restaurant marks as bestsellers is a dessert. I can suggest a dessert that suits you instead.");
     expect(dessert.reply.blocks.some((b) => b.type === "recommendation" || b.type === "menu_list")).toBe(false);
@@ -692,6 +694,16 @@ describe("popularity questions are answered from the restaurant's own mark (D-26
     const facts = renderKbFacts(loadFactSource(t.db));
     expect(facts.find((f) => f.id === "menu:dal-ember")?.text).toMatch(/Marked as a bestseller by the restaurant\.$/);
     expect(facts.find((f) => f.id === "menu:chana-pindi")?.text).not.toMatch(/bestseller/i);
+  });
+  it("D-29: the intent call is skipped only for a plain popularity question, not with booking words or a staff FAQ about it", async () => {
+    const plain = await runTurn(say("Which dish is the most popular?"), deps({ model: sequenceModel([]) }));
+    expect(plain.meta.timing.calls).toBe(0);
+    const booking = await runTurn(say("What's your bestseller? And book a table for 2 tomorrow at 8 pm"), deps({ model: sequenceModel([rec("booking")]) }));
+    expect(booking.meta.timing.calls).toBe(1);
+    const { createFaq } = await import("@/lib/admin/faq");
+    createFaq(t.db, NOW, { question: "What is your most popular dish?", answer: "Our kitchen team's favourite is the Dal Ember.", category: "general", branch: null });
+    const staff = await runTurn(say("Which dish is the most popular?"), deps({ model: sequenceModel([rec("recommend")]) }));
+    expect(staff.meta.timing.calls).toBe(1);
   });
   it("with nothing marked, says there is no such data and asks the one diet question", async () => {
     const r = await runTurn(say("What is your best seller?"), deps({ model: sequenceModel([rec("recommend")]) }));

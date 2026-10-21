@@ -258,6 +258,7 @@ export type TraceEntry =
   | { action: "ignore_field"; field: Field; reason: "not_stated" }
   /** A model value replaced by a deterministic reading of the guest's message (D-17). */
   | { action: "correct_field"; field: Field; reason: "weekday" | "day_of_month" | "large_party" | "stated" | "relative_day" }
+  | { action: "intent_skipped"; reason: "evidence" }
   /** Food preferences in force after this turn (D-20); `added` lists what code read from the guest's own words. */
   | { action: "prefs"; prefs: Prefs; added: string[]; /** D-28: what the model proposed that the guest didn't state (not applied). */ inferred?: string[] }
   /** The menu filtered by the preferences (D-20): how many dishes fit, and why none did. */

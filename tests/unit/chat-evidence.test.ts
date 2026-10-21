@@ -115,6 +115,9 @@ describe("failure-mode audit FM-001/FM-023", () => {
       expect(r.blocks.some((b) => b.type === "recommendation"), t).toBe(false);
     }
     expect(step("What's the chef's special today?", { asked: ["diet"] }).text).toMatch(/^The menu doesn't name a chef's special or a signature dish/);
+    // "Which dish is the most popular?" is a popularity question too; a branch or a time isn't a dish.
+    for (const t of ["Which dish is the most popular?", "Which dessert sells the most?", "Which main gets ordered most?"]) expect(evidenceQuestion(t, false, names()), t).toBe("sales");
+    for (const t of ["Which branch is the most popular?", "Which day is the most popular?"]) expect(evidenceQuestion(t, false, names()), t).toBeNull();
   });
 });
 

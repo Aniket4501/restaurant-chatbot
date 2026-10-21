@@ -429,6 +429,29 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     return hits.length === 1 ? hits[0].slug : null;
   };
 
+  /** A popularity or evidence answer from the data (D-26); `turn` is the model's reading, or none when it was skipped. */
+  const evidenceRoute = (kind: NonNullable<typeof evidenceKind>, turn: Turn): Step => {
+    const { prefs, added, inferred } = resolvePrefs(turn.prefs, prefsOut, latest, entries);
+    trace.push({ action: "prefs", prefs, added, ...(inferred.length ? { inferred } : {}) });
+    prefsOut = prefs;
+    const branchNamed = branchIn(latest);
+    const ev = evidenceStep({ kind, text: latest, prefs, entries, context: { ...input.context, asked: askedOut }, branch: draft0.branch ?? branchNamed, trace });
+    ask(ev.asked);
+    if (ev.recommended) recommendedOut = [...new Set([...ev.recommended, ...recommendedOut])].slice(0, 6);
+    if (ev.asked) trace.push({ action: "ask_pref", args: { field: ev.asked } });
+    const prepared: Prepared = { text: ev.text, blocks: ev.blocks, cited: ev.cited, largeParty: largePartyStated(latest) !== null };
+    return routeTurn({ ...turn, intent: "recommend" }, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries, branchNamed }, prepared);
+  };
+  // A popularity question with nothing else in it is answered from the data without the intent call (D-29: the call
+  // took about 3 s, and here its reading matters only for a booking in the same message, a staff FAQ or document that
+  // answers the question, or preferences the guest's words don't state). So it is skipped only when the message has no
+  // booking words and no retrieved staff FAQ or document talks about popularity; preferences come from the guest's words.
+  const staffOnPopularity = retrieved.some((f) => /^(?:faq|doc):/.test(f.id) && /\b(?:popular|best[- ]?sell\w*|signature|speciality|specialty|famous|favou?rite|most[- ]ordered|known for)\b/i.test(f.text));
+  if (evidenceKind === "sales" && !/\b(?:book\w*|reserv\w*|tables?|seats?|seating)\b/i.test(latest) && !staffOnPopularity) {
+    trace.push({ action: "intent_skipped", reason: "evidence" });
+    return finish(evidenceRoute("sales", { intent: "recommend", booking: nullBooking(), prefs: null, answer: null, citedFactIds: [], answerable: true }), "recommend");
+  }
+
   let outcome: { result: Interpreted; content: string };
   const q0 = elapsed();
   try {
@@ -523,16 +546,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   if (evidenceKind && turn.intent !== "booking" && turn.intent !== "manage_booking" && !groundedFaq) {
     // A popularity or evidence question (D-26), whichever intent the model read ("most popular dessert?" can read as a
     // menu request). A staff FAQ or document that answers it (a grounded FAQ answer citing one) takes the FAQ path.
-    const { prefs, added, inferred } = resolvePrefs(turn.prefs, prefsOut, latest, entries);
-    trace.push({ action: "prefs", prefs, added, ...(inferred.length ? { inferred } : {}) });
-    prefsOut = prefs;
-    const ev = evidenceStep({ kind: evidenceKind, text: latest, prefs, entries, context: { ...input.context, asked: askedOut }, branch: draft0.branch ?? branchNamed, trace });
-    ask(ev.asked);
-    if (ev.recommended) recommendedOut = [...new Set([...ev.recommended, ...recommendedOut])].slice(0, 6);
-    if (ev.asked) trace.push({ action: "ask_pref", args: { field: ev.asked } });
-    prepared = { text: ev.text, blocks: ev.blocks, cited: ev.cited, largeParty };
-    const step = routeTurn({ ...turn, intent: "recommend" }, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries, branchNamed }, prepared);
-    return finish(step, "recommend");
+    return finish(evidenceRoute(evidenceKind, turn), "recommend");
   }
   if (turn.intent === "menu") {
     const previous = prefsOut;
