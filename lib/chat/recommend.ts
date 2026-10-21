@@ -740,10 +740,14 @@ export async function recommendTurn(
   // D-28: "something light" with no meal type known (no section stated, nothing suggested yet): one question about it,
   // instead of a mix of snacks and desserts that happen to share a label.
   // Only when nothing else is said: "light and not spicy for my kid" is answered at once (live LV-RET-001).
-  // Gated on what the guest's words say, not on a section the model guessed (FM-003: a model-read "desserts" skipped it).
+  // Gated on what is known about the guest, not on a section the model guessed (FM-003: a model-read "desserts" skipped
+  // it). Preferences stated earlier count ("vegetarian under ₹300", then "which of those is light?": live LV-SAF-005
+  // regressed when only this message was checked), and so does a list just shown that the message refers to.
   const saidNow = explicitPrefs(input.text);
   const saidSomething = !!(saidNow.diet?.length || saidNow.avoid?.length || saidNow.maxPrice !== undefined || saidNow.mild || saidNow.allergy || saidNow.spicy || saidNow.exclude?.length);
-  if (APPETITE.test(input.text) && courseIn(input.text) === null && !saidSomething && !relation && !previous.length && !asked.includes("course") && !DELEGATE.test(input.text) && !foodWords(input.text, input.entries).length) {
+  const knownBefore = hasPrefs({ ...prefs, course: null }) || prefs.allergy;
+  const refersToShown = !!input.context?.shown?.length && /\b(?:those|these|them|that list|the list|of the(?:se|m))\b/i.test(input.text);
+  if (APPETITE.test(input.text) && courseIn(input.text) === null && !saidSomething && !knownBefore && !refersToShown && !relation && !previous.length && !asked.includes("course") && !DELEGATE.test(input.text) && !foodWords(input.text, input.entries).length) {
     input.trace.push({ action: "ask_pref", args: { field: "course" } });
     const q = courseQuestion(/\b(?:filling|hearty|heavy|something big)\b/i.test(input.text));
     return { ...q, cited: [], prefs, recommended: previous, asked: "course" };

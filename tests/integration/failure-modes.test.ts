@@ -77,6 +77,13 @@ describe("failure modes: conversation and grounding (full turns)", () => {
     expect(r.reply.text).toBe("Happy to help. A light snack, a main course or a dessert?");
     expect(m.sent).toHaveLength(1); // no chooser call
   });
+  it("FM-003 the question isn't asked when preferences are already known or the guest points at a list just shown (live LV-SAF-005)", async () => {
+    const ctx = { prefs: { diet: ["vegetarian" as const], avoid: [], maxPrice: 300, course: null, mild: false, allergy: false, unlisted: [], spicy: false, exclude: [] }, shown: ["menu:gulab-jamun-rabri", "menu:shahi-tukda"] };
+    const m = recorder([recTurn({ diet: ["vegetarian"], maxPrice: 300 }), { pick: "gulab-jamun-rabri", alternatives: [], reply: "The Gulab Jamun Rabri at ₹295 is warm milk dumplings in rose syrup with thickened milk." }]);
+    const r = await runTurn(say("Which of those is light?", ctx), deps(m.model));
+    expect(r.reply.text).not.toMatch(/A light snack, a main course or a dessert\?/);
+    expect(m.sent.length).toBeGreaterThanOrEqual(2); // the chooser was asked
+  });
   it("FM-007 a mixed answer on a special date can't use the weekly dinner hours; the guest gets the day's card", async () => {
     const q = "Is Hauz Khas open for dinner on 22 October, and is there parking?";
     const m = recorder([turn("faq", { answer: "Yes, Hauz Khas serves dinner from 7:00 PM to 11:00 PM, and there is paid public parking at the village entrance.", citedFactIds: ["hours:hauz-khas:thu", "faq:parking-hauz-khas"] })]);
