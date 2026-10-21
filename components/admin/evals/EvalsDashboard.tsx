@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AdminHeader } from "@/components/admin/AdminHeader";
 import { BarChart, LineChart, Sparkline } from "@/components/admin/evals/Charts";
 import { CaseDetailDialog } from "@/components/admin/evals/CaseDetail";
 import { FailureExplorer } from "@/components/admin/evals/FailureExplorer";
@@ -118,8 +117,7 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
   const baselineId = run ? overview.baseline[`${run.mode}-${run.suite}`]?.id ?? null : null;
 
   return (
-    <div className="min-h-dvh">
-      <AdminHeader current="evals" />
+    <div>
       <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-8">
         <div>
           <h1 className="font-display text-3xl sm:text-4xl">Evals</h1>

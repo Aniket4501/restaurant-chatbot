@@ -74,3 +74,60 @@ export const DishIcon = (p: P) => (
     <path d="M12 8.5V7M10.5 7h3M3 20h18" />
   </svg>
 );
+
+// D-25 staff workspace navigation and actions.
+export const HomeIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M4 11.5 12 5l8 6.5" />
+    <path d="M6.5 10v9.5h11V10M10 19.5v-5h4v5" />
+  </svg>
+);
+export const BookIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M12 6.5c-2-1.5-5-1.8-7.5-1v13c2.5-.8 5.5-.5 7.5 1 2-1.5 5-1.8 7.5-1v-13c-2.5-.8-5.5-.5-7.5 1Z" />
+    <path d="M12 6.5v13" />
+  </svg>
+);
+export const QuestionIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.4v.4M12 16.6v.1" />
+  </svg>
+);
+export const ChartIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M4 19.5h16M6.5 16v-4M11 16V8M15.5 16v-6M20 16V5.5" />
+  </svg>
+);
+export const ListIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </svg>
+);
+export const CloseIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);
+export const SearchIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <circle cx="11" cy="11" r="6" />
+    <path d="m15.5 15.5 4 4" />
+  </svg>
+);
+export const PlusIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+export const AlertIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M12 4.5 20.5 19h-17L12 4.5Z" />
+    <path d="M12 10v4M12 16.6v.1" />
+  </svg>
+);
+export const UploadIcon = (p: P) => (
+  <svg {...svg(p)}>
+    <path d="M12 15.5V5M7.5 9.5 12 5l4.5 4.5M5 15v4h14v-4" />
+  </svg>
+);

@@ -9,9 +9,9 @@ async function axe(page: Page, state: string) {
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`), `axe (${state})`).toEqual([]);
 }
 
-// No sign-in (D-22): the staff page opens directly.
+// No sign-in (D-22): the staff page opens directly. Bookings moved to /admin/bookings in D-25 (/admin is the overview).
 async function openAdmin(page: Page) {
-  await page.goto("/admin");
+  await page.goto("/admin/bookings");
   await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible();
 }
 
@@ -32,7 +32,7 @@ test("AC-07 a booking made in chat appears in admin, by date and branch @cat:boo
   const ref = await page.locator("[data-confirmation-ref]").getAttribute("data-confirmation-ref");
 
   await openAdmin(page);
-  await expect(page.getByRole("heading", { name: "Bookings" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Friday, 16 October 2026" })).toBeVisible(); // opens on today
   await expect(page.getByText("No bookings for this day.")).toBeVisible();
   await axe(page, "admin empty");
@@ -79,13 +79,13 @@ test("J10 cancelling in admin frees the slot straight away @cat:booking_success"
   expect(observed.cancelResponses).toEqual([{ status: 200, ref: expect.stringMatching(/^NE-/) }]);
 });
 
-test("the staff pages open without a password, and the old sign-in address opens Bookings (D-22)", async ({ page, request, server }) => {
+test("the staff pages open without a password, and the old sign-in address opens the staff overview (D-22, D-25)", async ({ page, request, server }) => {
   await page.goto("/admin/login");
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
   await expect(page.getByLabel("Password")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
-  await page.getByRole("link", { name: "Evals" }).click();
+  await page.getByRole("navigation", { name: "Staff pages" }).getByRole("link", { name: "Evals" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Evals" })).toBeVisible();
   expect((await request.get(`${server.origin}/api/admin/reservations`)).status()).toBe(200);
   // Changes still need the app's own origin: another site can't cancel a booking.

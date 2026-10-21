@@ -25,6 +25,7 @@ npm install
 cp .env.example .env.local     # optional: only to override the defaults
 npm run setup                  # migrate and seed data/app.db, index the menu and FAQ facts, check the model
 npm run model:warm             # optional: the server also warms the model when it starts
+npm run db:migrate             # once after pulling D-25: adds migration 003 (additive; back up data/app.db first if you like)
 npm run dev                    # http://127.0.0.1:3000 for guests, http://127.0.0.1:3000/admin for staff
 ```
 
@@ -41,7 +42,14 @@ The app listens on 127.0.0.1 only. The staff pages have no password (anyone usin
 
 The booking reference appears only after the booking has been saved. Full times, invalid party sizes (online booking is for 1 to 8 guests), past dates and dates more than 30 days ahead are explained, with alternatives where there are any.
 
-**Staff** (`/admin`, no sign-in): pick a date (it opens on today) and optionally a branch. You see the day's booking and guest counts and a table of each booking's time, guest, party size, branch and status. Cancelling a booking frees its table straight away.
+**Staff** (`/admin`, no sign-in, D-25): a workspace with a page for each part of the restaurant the chatbot answers from.
+- **Overview:** today's bookings and guests, the next six days, the health of the menu, FAQs and knowledge base, and warnings (only real ones: bookings that no longer fit the hours or tables, failed documents, keyword-only search).
+- **Bookings:** pick a date and branch, filter by status, or search a guest name or reference across all dates. The list masks mobile numbers; Details shows the full booking. Cancelling frees the table straight away.
+- **Menu:** every dish the chatbot knows, with search, filters, sorting and pages. Add a dish, edit its price, description, labels, spice and branches, mark it unavailable or remove it. Each dish page shows the guest card and the exact fact the chatbot reads.
+- **Knowledge base:** add policies and guides as articles or `.txt`/`.md` uploads. Each is split into passages, keyword-indexed at once and embedded in the background, with every stage's status. Try a guest question to see what the chatbot's search finds and how it answers.
+- **FAQs:** curated questions and answers, with categories, branch scope, an active switch, conflict warnings and a real test of the chatbot.
+- **Availability:** a day view of every start time and table, computed by the booking engine; block or reopen times; edit weekly hours, special dates and tables. Changes that would strand confirmed bookings ask first.
+- **Branches:** restaurant-wide details and each branch's address, phone, hours and what is specific to it.
 
 **Evals** (`/admin/evals`, no sign-in): how the chatbot scores on its test cases. Start a scripted or live run (smoke or full, optionally one quality area), follow its progress, compare any run with the saved baseline or another run, see quality by area with each metric's definition and case count, trends across runs, new failures and resolved cases, and the Latency section: turn time by kind of turn (p50, and p95 from 20 turns), where a model turn's time goes, and the latest benchmark against the one labelled baseline. Filter the failing cases by area, category, severity or failure type, rerun the ones not passing, and open any case to see each turn's input, reply, timing, tool calls, validation results and checks, with the command that reruns it. Every number comes from the results files in `evals/results`; see `evals/README.md`.
 

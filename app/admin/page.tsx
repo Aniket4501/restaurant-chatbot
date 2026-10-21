@@ -1,20 +1,12 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { AdminDashboard } from "@/components/admin/AdminDashboard";
-import { RULES } from "@/lib/config";
-import { getDb } from "@/lib/db/client";
+import { OverviewPage } from "@/components/admin/OverviewPage";
 import { getNow } from "@/lib/time/now";
-import { todayLocal } from "@/lib/time/tz";
 
-export const metadata: Metadata = { title: "Bookings · Neem & Ember" };
+export const metadata: Metadata = { title: "Overview · Neem & Ember" };
 
-// The staff bookings page. No sign-in (D-22): the app is a local demo bound to 127.0.0.1.
+// D-25: the staff landing page. Data loads client-side from /api/admin/overview.
 export default async function AdminPage() {
   await connection();
-  const branches = getDb().prepare("SELECT slug, name FROM branches WHERE is_active = 1 ORDER BY id").all() as { slug: string; name: string }[];
-  return (
-    <main>
-      <AdminDashboard today={todayLocal(getNow(), RULES.timezone)} branches={branches} zone={RULES.timezone} />
-    </main>
-  );
+  return <OverviewPage serverNow={getNow()} />;
 }
