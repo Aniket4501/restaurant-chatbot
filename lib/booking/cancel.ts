@@ -3,13 +3,20 @@ import { immediate } from "@/lib/db/tx";
 import { MESSAGES } from "@/lib/booking/errors";
 import { viewByRef, type ReservationView } from "@/lib/booking/view";
 
-/** Staff cancel (BR-13): idempotent. Cancelling a cancelled booking returns it unchanged. The slot reopens at once. */
-export function cancelReservation(db: DB, ref: string, now: number): { status: 200; reservation: ReservationView; changed: boolean } | { code: "NOT_FOUND"; status: 404; message: string } {
+/**
+ * Staff cancel (BR-13): idempotent. Cancelling a cancelled booking returns it unchanged. The slot reopens at once.
+ * `onChanged` runs in the same transaction when the booking was cancelled now (the change log): if it fails, the cancel
+ * is rolled back with it (failure-mode audit FM-039: a failed log write left a committed cancel and no log entry).
+ */
+export function cancelReservation(db: DB, ref: string, now: number, onChanged?: () => void): { status: 200; reservation: ReservationView; changed: boolean } | { code: "NOT_FOUND"; status: 404; message: string } {
   return immediate(db, () => {
     const row = db.prepare("SELECT status FROM reservations WHERE ref = ?").get(ref) as { status: string } | undefined;
     if (!row) return { code: "NOT_FOUND" as const, status: 404 as const, message: MESSAGES.NOT_FOUND };
     const changed = row.status === "confirmed";
-    if (changed) db.prepare("UPDATE reservations SET status = 'cancelled', cancelled_at = ? WHERE ref = ?").run(now, ref);
+    if (changed) {
+      db.prepare("UPDATE reservations SET status = 'cancelled', cancelled_at = ? WHERE ref = ?").run(now, ref);
+      onChanged?.();
+    }
     return { status: 200 as const, reservation: viewByRef(db, ref)!, changed };
   });
 }

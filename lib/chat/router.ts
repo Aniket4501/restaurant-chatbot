@@ -8,6 +8,7 @@ import { applySetField, bookingInProgress, mergeExtracted, type FieldCtx, type F
 import { checkGrounding, dateSpans, type GroundingContext } from "@/lib/chat/grounding";
 import { isHoursOnly, renderHoursAnswer } from "@/lib/chat/hours";
 import { hoursAnswer, readHoursQuestion, type HoursQuestion } from "@/lib/chat/hours-card";
+import { statedClockTime } from "@/lib/chat/guards";
 import { T, type BranchInfo } from "@/lib/chat/templates";
 import { ALLERGY_NOTE, needsAllergyNote, type MenuEntry } from "@/lib/chat/menu";
 import { claimProblems, explicitPrefs, SAFETY_QUESTION } from "@/lib/chat/recommend";
@@ -186,11 +187,18 @@ function availabilityStep(draft: Draft, ctx: FlowCtx, lead?: string): Step {
           (e) => e.date === q.date && e.isClosed && e.service !== null && (bundle.weekly.get(branchRow.id) ?? []).some((w) => w.weekday === weekday && w.service === e.service && minutesOf(w.opens) <= minutesOf(draft.time!) && minutesOf(draft.time!) < minutesOf(w.closes)),
         )
       : undefined;
+  // A time in a service the branch never opens that weekday ("lunch at Golf Course Road on Monday"): that reason, not
+  // "1:00 PM isn't available" (FM-042).
+  const weekly = branchRow ? (bundle.weekly.get(branchRow.id) ?? []) : [];
+  const serviceOfTime = draft.time ? weekly.find((w) => minutesOf(w.opens) <= minutesOf(draft.time!) && minutesOf(draft.time!) < minutesOf(w.closes))?.service : undefined;
+  const noService = !closedService && serviceOfTime && !weekly.some((w) => w.weekday === weekday && w.service === serviceOfTime) ? serviceOfTime : null;
   const first =
     r.reason === "closed"
       ? T.closed(b.short, dateLabelText)
       : closedService
         ? T.serviceClosed(b.short, closedService.service!, dateLabelText, closedService.note)
+      : noService
+        ? T.windowUnavailable(noService, b.short, dateLabelText)
       : r.reason === "no_more_today"
         ? T.noMoreToday(b.short)
         : r.reason === "fully_booked"
@@ -297,7 +305,17 @@ export function hoursScope(guest: string, now: number, zone: string): { dates: s
 /** Route a validated model turn by intent (§5.7 step 5, D-10, D-15). */
 export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx, prepared: Prepared | null = null): Step {
   const known = (draft.branch ?? turn.booking.branch ?? facts.branchNamed ?? null) as string | null;
-  if (turn.intent === "booking") return nextStep(mergeExtracted(draft, turn.booking, ctx), ctx); // templates only; prose dropped
+  if (turn.intent === "booking") {
+    // With no clock time, a meal that contradicts the held time ("lunch is better after all" with 8 PM held) or a relative
+    // change ("an hour later") clears the old time, so the guest picks a new one instead of the old card coming back
+    // (failure-mode audit FM-014).
+    const g = (facts.guest ?? "").toLowerCase();
+    const meal = /\blunch\b|\bafternoon\b/.test(g) ? "lunch" : /\b(?:dinner|supper|tonight|this evening)\b/.test(g) ? "dinner" : null;
+    const storedMeal = draft.time ? (minutesOf(draft.time) < 17 * 60 ? "lunch" : "dinner") : null;
+    const relative = /\b(?:(?:an?|one|two|half an?|\d+)\s*(?:hours?|hrs?|bit|little|min(?:ute)?s?)|half an hour)\s+(?:later|earlier)\b|\b(?:later|earlier)\s+(?:time|slot|one)\b/.test(g);
+    const clearTime = !statedClockTime(g) && ((meal !== null && storedMeal !== null && meal !== storedMeal) || relative);
+    return nextStep(mergeExtracted(draft, turn.booking, ctx, { clearTime }), ctx); // templates only; prose dropped
+  }
 
   // A booking in progress is kept, and its pending question is repeated after the answer (§5.7 merge rules).
   const resumed = bookingInProgress(draft) ? nextStep({ draft, issues: [], ambiguity: null, largeParty: false }, ctx) : null;

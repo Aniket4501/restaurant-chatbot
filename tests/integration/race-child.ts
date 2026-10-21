@@ -6,14 +6,19 @@ import { immediate } from "@/lib/db/tx";
 // One racer in the AC-04 test. Opens its own connection, reports "ready", and on "go" tries to book the shared
 // slot, either through the booking service ("service") or by inserting straight onto T5 to prove the trigger
 // alone holds the invariant ("trigger").
-const [file, mode, idx, nowStr, startsAtStr, endsAtStr] = process.argv.slice(2);
+// FM-012 (failure-mode audit): "replay" sends one shared idempotency key and body from every process (a retried
+// submit); "same-guest" sends one guest's details with a new key each (a double tap that made new keys).
+const [file, mode, idx, nowStr, startsAtStr, endsAtStr, sharedKey] = process.argv.slice(2);
 const db = openDb(file);
 const send = (m: unknown) => new Promise<void>((resolve) => process.send!(m, () => resolve()));
 
 process.on("message", async (m: { type: string }) => {
   if (m.type !== "go") return;
-  let result: { kind: "created" | "error"; status?: number; code?: string; message?: string };
-  if (mode === "service") {
+  let result: { kind: "created" | "error"; status?: number; code?: string; message?: string; ref?: string };
+  if (mode === "replay" || mode === "same-guest") {
+    const r = createReservation(db, { branch: "hauz-khas", startsAt: Number(startsAtStr), partySize: 5, name: "Asha Rao", phone: "9876543210", email: null, note: null }, mode === "replay" ? sharedKey : randomUUID(), Number(nowStr));
+    result = "reservation" in r ? { kind: "created", status: r.status, ref: r.reservation.ref } : { kind: "error", code: r.code };
+  } else if (mode === "service") {
     const r = createReservation(
       db,
       { branch: "hauz-khas", startsAt: Number(startsAtStr), partySize: 5, name: `Racer ${idx}`, phone: `98${String(idx).padStart(8, "0")}`, email: null, note: null },

@@ -2,6 +2,7 @@ import type { Block, TraceEntry } from "@/lib/chat/types";
 import type { DB } from "@/lib/db/client";
 import type { Offered } from "@/lib/chat/offered";
 import { foldDigits } from "@/lib/llm/redact";
+import { dayLabelLong, localDateOf, timeLabel } from "@/lib/time/tz";
 
 // Invariants checked after every eval case and every E2E spec (MASTER_PROMPT §6.4). INV-04 and INV-05 use their own,
 // stricter patterns and deliberately import nothing from lib/chat/claims or lib/chat/grounding, so the evals cannot
@@ -13,10 +14,10 @@ export type Violation = { inv: Inv; turn: number | null; detail: string };
 
 export { offeredStarts } from "@/lib/chat/offered";
 
-export type RowSnap = { id: string; ref: string; status: string; table_id: number; branch_id: number; starts_at: number; ends_at: number; party_size: number; phone_e164: string; guest_name: string };
+export type RowSnap = { id: string; ref: string; status: string; table_id: number; branch_id: number; starts_at: number; ends_at: number; party_size: number; phone_e164: string; guest_name: string; branch_name: string; timezone: string };
 
 export function snapshotRows(db: DB): RowSnap[] {
-  return db.prepare("SELECT id, ref, status, table_id, branch_id, starts_at, ends_at, party_size, phone_e164, guest_name FROM reservations ORDER BY id").all() as RowSnap[];
+  return db.prepare("SELECT r.id, r.ref, r.status, r.table_id, r.branch_id, r.starts_at, r.ends_at, r.party_size, r.phone_e164, r.guest_name, b.name AS branch_name, b.timezone FROM reservations r JOIN branches b ON b.id = r.branch_id ORDER BY r.id").all() as RowSnap[];
 }
 
 export type TurnRecord = {
@@ -94,7 +95,9 @@ export function checkCase(db: DB, rec: CaseRecord): Violation[] {
         const row = finalRows.find((r) => r.ref === b.ref);
         if (!row) v.push({ inv: "INV-01", turn: t.index, detail: `confirmation ${b.ref} has no row` });
         else if (rec.setupRefs.has(b.ref)) v.push({ inv: "INV-01", turn: t.index, detail: `confirmation ${b.ref} was not created in this run` });
-        else if (row.status !== "confirmed" || row.party_size !== b.partySize) v.push({ inv: "INV-01", turn: t.index, detail: `confirmation ${b.ref} does not match its row` });
+        // Every detail the card shows must be the row's (failure-mode audit FM-038: only the party size was compared).
+        else if (row.status !== "confirmed" || row.party_size !== b.partySize || row.guest_name !== b.guestName || row.branch_name !== b.branchName || b.dateLabel !== dayLabelLong(localDateOf(row.starts_at, row.timezone), row.timezone) || b.timeLabel !== timeLabel(row.starts_at, row.timezone))
+          v.push({ inv: "INV-01", turn: t.index, detail: `confirmation ${b.ref} does not match its row` });
       }
 
     // INV-03: every offered time was open in the engine at that moment.

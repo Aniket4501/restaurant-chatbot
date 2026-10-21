@@ -1,4 +1,5 @@
 import { fork, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -16,9 +17,10 @@ const START = toInstant("2026-10-17", "20:00", "Asia/Kolkata");
 const END = START + 120 * 60_000;
 const seed = parseSeed(JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../evals/fixtures/base.json"), "utf8")));
 
-type Done = { type: "done"; result: { kind: "created" | "error"; status?: number; code?: string; message?: string }; rows: number };
+type Done = { type: "done"; result: { kind: "created" | "error"; status?: number; code?: string; message?: string; ref?: string }; rows: number };
 
-async function race(mode: "service" | "trigger") {
+async function race(mode: "service" | "trigger" | "replay" | "same-guest") {
+  const sharedKey = randomUUID();
   const t = tempDb("race");
   applySeed(t.db, seed, { now: NOW });
   t.db.close(); // the parent migrated, set WAL and seeded; children open their own connections
@@ -30,7 +32,7 @@ async function race(mode: "service" | "trigger") {
     await new Promise<void>((resolve, reject) => {
       let ready = 0;
       for (let i = 0; i < RACERS; i++) {
-        const c = fork(CHILD, [t.file, mode, String(i), String(NOW), String(START), String(END)], {
+        const c = fork(CHILD, [t.file, mode, String(i), String(NOW), String(START), String(END), sharedKey], {
           execArgv: ["--import", "tsx"],
           stdio: ["ignore", "ignore", "pipe", "ipc"],
         });
@@ -79,3 +81,22 @@ describe("20-process race on the last fitting table (AC-04, G-1)", () => {
     expect(rows).toHaveLength(1);
   });
 });
+
+// Failure-mode audit FM-012: retries and double taps from separate processes at the same moment.
+describe("FM-012 concurrent retries never create a second booking", () => {
+  it.each([1, 2, 3])("FM-012 run %i: one shared key from 20 processes: 1 created (201), 19 replays (200) of the same booking", async () => {
+    const { results, exits, rows } = await race("replay");
+    expect(exits.every((c) => c === 0)).toBe(true);
+    expect(results.filter((r) => r.result.status === 201)).toHaveLength(1);
+    expect(results.filter((r) => r.result.status === 200)).toHaveLength(RACERS - 1);
+    expect(new Set(results.map((r) => r.result.ref)).size).toBe(1);
+    expect(rows).toHaveLength(1);
+  });
+  it.each([1, 2])("FM-012 run %i: one guest with a new key from 20 processes: 1 created, 19 DUPLICATE_BOOKING", async () => {
+    const { results, rows } = await race("same-guest");
+    expect(results.filter((r) => r.result.kind === "created")).toHaveLength(1);
+    expect(results.filter((r) => r.result.code === "DUPLICATE_BOOKING")).toHaveLength(RACERS - 1);
+    expect(rows).toHaveLength(1);
+  });
+});
+

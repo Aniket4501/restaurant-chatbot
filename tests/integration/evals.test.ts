@@ -91,15 +91,35 @@ describe("invariants detect violations (§6.4)", () => {
     if (!("reservation" in r)) throw new Error(r.code);
     return r.reservation;
   };
-  const confirmation = (ref: string, partySize = 2): Block => ({ type: "confirmation", ref, status: "confirmed", branchName: "x", address: "x", phone: "x", dateLabel: "x", timeLabel: "x", partySize, guestName: "x" });
+  // The card the client builds from a 201/200 body (lib/chat/submit.ts), with any detail overridden.
+  const confirmation = (r: ReturnType<typeof book>, o: Partial<Extract<Block, { type: "confirmation" }>> = {}): Block => ({
+    type: "confirmation",
+    ref: r.ref,
+    status: "confirmed",
+    branchName: r.branch.name,
+    address: r.branch.address,
+    phone: r.branch.phone,
+    dateLabel: r.dateLabel,
+    timeLabel: r.timeLabel,
+    partySize: r.partySize,
+    guestName: r.guestName,
+    ...o,
+  });
 
   it("INV-01: a confirmation needs a matching confirmed row created in the run", () => {
     const r = book("20:00");
     const rows = snapshotRows(t.db);
-    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r.ref)] }, rowsBefore: rows, rowsAfter: rows })]))).toEqual([]);
-    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation("NE-AAAAAAAA")] }, rowsBefore: rows, rowsAfter: rows })]))).toEqual(["INV-01"]);
-    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r.ref, 4)] }, rowsBefore: rows, rowsAfter: rows })]))).toEqual(["INV-01"]);
-    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r.ref)] }, rowsBefore: rows, rowsAfter: rows })], { setupRefs: new Set([r.ref]) }))).toEqual(["INV-01"]);
+    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r)] }, rowsBefore: rows, rowsAfter: rows })]))).toEqual([]);
+    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r, { ref: "NE-AAAAAAAA" })] }, rowsBefore: rows, rowsAfter: rows })]))).toEqual(["INV-01"]);
+    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r, { partySize: 4 })] }, rowsBefore: rows, rowsAfter: rows })]))).toEqual(["INV-01"]);
+    expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r)] }, rowsBefore: rows, rowsAfter: rows })], { setupRefs: new Set([r.ref]) }))).toEqual(["INV-01"]);
+  });
+
+  it("FM-038 INV-01: a card whose branch, date, time or guest name differs from the saved row is a violation", () => {
+    const r = book("20:00");
+    const rows = snapshotRows(t.db);
+    for (const o of [{ branchName: "Neem & Ember, Golf Course Road" }, { dateLabel: "Sunday, 18 October" }, { timeLabel: "8:30 PM" }, { guestName: "Ravi Rao" }])
+      expect(invs(record([turn({ shown: { text: "", blocks: [confirmation(r, o)] }, rowsBefore: rows, rowsAfter: rows })])), JSON.stringify(o)).toEqual(["INV-01"]);
   });
 
   it("INV-02: overlapping confirmed rows on one table (triggers bypassed to plant one)", () => {

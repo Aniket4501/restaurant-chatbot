@@ -17,7 +17,7 @@ export const test = base.extend<{ server: Server; observed: Observed; api: Api; 
     const f = serverFiles(port);
     await provide({ port, origin: `http://127.0.0.1:${port}`, db: path.resolve(f.db), trace: path.resolve(f.trace), log: path.resolve(f.log) });
   },
-  observed: async ({}, provide) => provide({ reservationResponses: [], cancelResponses: [], renderedConfirmationRefs: [], pageTextOutsideConfirmations: "", pii: [] }),
+  observed: async ({}, provide) => provide({ reservationResponses: [], cancelResponses: [], renderedConfirmationRefs: [], renderedConfirmationText: {}, pageTextOutsideConfirmations: "", pii: [] }),
   api: async ({ request, server, observed }, provide) => {
     await provide({
       async post(pathname, body, headers = {}) {
@@ -70,6 +70,7 @@ export const test = base.extend<{ server: Server; observed: Observed; api: Api; 
       // INV-04's page check covers guest-facing pages (D-12); admin pages list "Confirmed" bookings by design.
       if (page.url() !== "about:blank" && !new URL(page.url()).pathname.startsWith("/admin")) {
         observed.renderedConfirmationRefs = await page.locator("[data-confirmation-ref]").evaluateAll((els) => els.map((e) => e.getAttribute("data-confirmation-ref")!));
+        observed.renderedConfirmationText = Object.fromEntries(await page.locator("[data-confirmation-ref]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-confirmation-ref")!, (e as HTMLElement).innerText])));
         observed.pageTextOutsideConfirmations = await page.evaluate(() => {
           const clone = document.body.cloneNode(true) as HTMLElement;
           clone.querySelectorAll("[data-confirmation-ref]").forEach((e) => e.remove());

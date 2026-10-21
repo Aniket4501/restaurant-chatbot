@@ -18,7 +18,6 @@ import { overview } from "@/lib/admin/overview";
 import { DOC_LIMITS } from "@/lib/kb/documents";
 import { loadFactSource, renderKbFacts, renderStaticFacts } from "@/lib/kb/facts";
 import { requestWarm } from "@/lib/llm/warm-signal";
-import { immediate } from "@/lib/db/tx";
 
 // The staff workspace API (D-25). Every route is under /api/admin, so proxy.ts already requires a loopback Host and,
 // for anything but GET, the app's own Origin (D-16, D-22). Handlers validate with zod in lib/admin/*, answer with the
@@ -311,9 +310,9 @@ export const bookingItemHandlers = (deps: ApiDeps) => ({
     const b = await body(req);
     if (!z.object({ status: z.literal("cancelled") }).safeParse(b).success) throw new AdminError(400, "VALIDATION", "Only status 'cancelled' is supported.", { fields: { status: "must be 'cancelled'" } });
     const db = deps.db();
-    const r = cancelReservation(db, p.ref, deps.now());
+    const now = deps.now();
+    const r = cancelReservation(db, p.ref, now, () => logChange(db, now, { area: "bookings", action: "cancelled", target: p.ref, summary: `Cancelled booking ${p.ref}` }));
     if ("code" in r) throw new AdminError(404, "NOT_FOUND", r.message);
-    if (r.changed) immediate(db, () => logChange(db, deps.now(), { area: "bookings", action: "cancelled", target: p.ref, summary: `Cancelled booking ${p.ref}` }));
     return { body: { reservation: reservationJson(r.reservation), changed: r.changed } };
   }),
 });

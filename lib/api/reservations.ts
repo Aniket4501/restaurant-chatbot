@@ -1,6 +1,5 @@
-import { createReservation } from "@/lib/booking/create";
+import { CreateBodySchema, createReservation } from "@/lib/booking/create";
 import { errorResponse, okResponse, readJson } from "@/lib/http/json";
-import { normalizeIndianMobile } from "@/lib/phone";
 import type { ApiDeps } from "@/lib/api/deps";
 import { reservationJson, slotJson } from "@/lib/api/serialize";
 
@@ -15,17 +14,6 @@ export function reservationsHandler(deps: ApiDeps) {
     const key = req.headers.get("idempotency-key") ?? "";
     const now = deps.now();
 
-    // Rate limits (D-14): a global cap, plus 5 creates per minute per normalised phone. Replays of a known key
-    // still count, which is fine at these limits.
-    const g = deps.limits.createsGlobal.hit("global", now);
-    const raw = body.value as { phone?: unknown } | null;
-    const phone = typeof raw?.phone === "string" ? normalizeIndianMobile(raw.phone) : null;
-    const p = phone ? deps.limits.createsPerPhone.hit(phone, now) : ({ ok: true } as const);
-    if (!g.ok || !p.ok) {
-      const retry = Math.ceil(Math.max(g.ok ? 0 : g.retryAfterMs, p.ok ? 0 : p.retryAfterMs) / 1000);
-      return errorResponse(429, "RATE_LIMITED", "Too many booking attempts. Please wait a moment.", {}, { "retry-after": String(retry) });
-    }
-
     // An error opening the database happens before any write, so it is "nothing booked, try again" (503). One later on
     // may come after the row was committed, so it is reported as unknown (500), which the client retries with the same
     // key to learn the outcome (D-24 audit: the handler threw and Next answered 500 with no body).
@@ -35,6 +23,26 @@ export function reservationsHandler(deps: ApiDeps) {
     } catch (e) {
       console.error(JSON.stringify({ event: "reservation_error", stage: "open", code: (e as { code?: string }).code ?? (e as Error).name }));
       return errorResponse(503, "UNAVAILABLE", "We couldn't reach the booking system. Nothing was booked; please try again.", {}, { "retry-after": "1" });
+    }
+
+    // Rate limits (D-14): a global cap, plus 5 creates per minute per normalised phone. Only well-formed booking requests
+    // are charged, and a retry of a key that already saved a booking is a replay that isn't, so malformed requests can't
+    // lock a guest's number or everyone out, and a guest can always learn a saved booking's outcome (failure-mode audit
+    // FM-050). A malformed request is refused by createReservation without a write.
+    let replay = false;
+    try {
+      replay = /^[0-9a-f-]{36}$/i.test(key) && !!db.prepare("SELECT 1 FROM reservations WHERE idempotency_key = ?").get(key.toLowerCase());
+    } catch {
+      // The create below reads the same table and reports the error.
+    }
+    const parsed = replay ? null : CreateBodySchema.safeParse(body.value);
+    if (parsed?.success) {
+      const g = deps.limits.createsGlobal.hit("global", now);
+      const p = deps.limits.createsPerPhone.hit(parsed.data.phone, now);
+      if (!g.ok || !p.ok) {
+        const retry = Math.ceil(Math.max(g.ok ? 0 : g.retryAfterMs, p.ok ? 0 : p.retryAfterMs) / 1000);
+        return errorResponse(429, "RATE_LIMITED", "Too many booking attempts. Please wait a moment.", {}, { "retry-after": String(retry) });
+      }
     }
     let r: ReturnType<typeof createReservation>;
     try {

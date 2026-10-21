@@ -2,6 +2,7 @@ import fs from "node:fs";
 import Database from "better-sqlite3";
 import { loadFactSource, renderKbFacts, renderStaticFacts } from "@/lib/kb/facts";
 import { claimIn, guestPii, unsupportedToken, type Violation } from "@/evals/invariants";
+import { dayLabelLong, localDateOf, timeLabel } from "@/lib/time/tz";
 
 // The §6.4 invariants after an E2E spec (D-12), from what the spec observed (network responses, rendered DOM) and what
 // the server recorded (its database, the TEST_TRACE_PATH lines and its log). INV-04 is checked as D-12 defines it for
@@ -11,6 +12,8 @@ export type Observed = {
   reservationResponses: { status: number; ref: string | null; at: number }[];
   cancelResponses: { status: number; ref: string }[];
   renderedConfirmationRefs: string[];
+  /** Each rendered card's text by reference, to compare its details with the saved row (FM-038). */
+  renderedConfirmationText: Record<string, string>;
   /** Page text outside confirmation cards, collected at the end of the spec. */
   pageTextOutsideConfirmations: string;
   /** Strings the spec typed that must never be logged or reach a prompt (names, phones, emails, messages). */
@@ -23,13 +26,22 @@ export function checkE2E(files: { db: string; trace: string; log: string; logOff
   const v: Violation[] = [];
   const db = new Database(files.db, { readonly: true, fileMustExist: true });
   try {
-    const rows = db.prepare("SELECT ref, status, cancelled_at FROM reservations").all() as { ref: string; status: string; cancelled_at: number | null }[];
+    const rows = db
+      .prepare("SELECT r.ref, r.status, r.cancelled_at, r.starts_at, r.party_size, r.guest_name, b.name AS branch_name, b.timezone FROM reservations r JOIN branches b ON b.id = r.branch_id")
+      .all() as { ref: string; status: string; cancelled_at: number | null; starts_at: number; party_size: number; guest_name: string; branch_name: string; timezone: string }[];
     const created = new Set(o.reservationResponses.filter((r) => (r.status === 201 || r.status === 200) && r.ref).map((r) => r.ref!));
     const cancelled = new Set(o.cancelResponses.filter((r) => r.status === 200).map((r) => r.ref));
     for (const ref of o.renderedConfirmationRefs) {
       const row = rows.find((r) => r.ref === ref);
       if (!created.has(ref)) v.push({ inv: "INV-01", turn: null, detail: `rendered ${ref} without a 201/200 in this test` });
       else if (!row || (row.status !== "confirmed" && !cancelled.has(ref))) v.push({ inv: "INV-01", turn: null, detail: `rendered ${ref} has no matching row` });
+      else {
+        // Failure-mode audit FM-038: the card must show the saved row's branch, date, time, party and name.
+        const text = o.renderedConfirmationText[ref] ?? "";
+        const want = [row.branch_name, dayLabelLong(localDateOf(row.starts_at, row.timezone), row.timezone), timeLabel(row.starts_at, row.timezone), String(row.party_size), row.guest_name];
+        const missing = want.filter((w) => !text.includes(w));
+        if (missing.length) v.push({ inv: "INV-01", turn: null, detail: `rendered ${ref} does not show its row's ${missing.length} detail(s)` });
+      }
     }
     const overlaps = db
       .prepare("SELECT a.ref AS a, b.ref AS b FROM reservations a JOIN reservations b ON a.table_id = b.table_id AND a.id < b.id WHERE a.status = 'confirmed' AND b.status = 'confirmed' AND a.starts_at < b.ends_at AND b.starts_at < a.ends_at")

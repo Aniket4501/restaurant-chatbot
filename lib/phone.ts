@@ -12,6 +12,17 @@ export function normalizeIndianMobile(input: string): string | null {
   return type === "MOBILE" || type === "FIXED_LINE_OR_MOBILE" ? pn.number : null;
 }
 
+/**
+ * A guest's mobile as typed into a field that starts with "+91 ": also accepts the country code typed twice ("+91
+ * +91 98765 43210", "+91 919876543210"; failure-mode audit FM-041). A genuine number starting 91 keeps working.
+ */
+export function normalizeGuestMobile(input: string): string | null {
+  const direct = normalizeIndianMobile(input);
+  if (direct) return direct;
+  const digits = input.replace(/\D/g, "");
+  return /^9191\d{10}$/.test(digits) ? normalizeIndianMobile(`+${digits.slice(2)}`) : null;
+}
+
 /** Normalise any valid Indian phone number (landline or mobile) to E.164, or null: branch contact numbers (D-25). */
 export function normalizeIndianPhone(input: string): string | null {
   try {

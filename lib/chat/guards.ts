@@ -95,7 +95,8 @@ export function plainWeekday(raw: string): number | null {
 // people word counts, and the last one stated is the one that stands ("we were 10, now just 6 of us").
 const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, dozen: 12, "a dozen": 12 };
 const COUNT = `\\d{1,3}|a dozen|${Object.keys(COUNT_WORDS).filter((k) => k !== "a dozen").join("|")}`;
-const PARTY_RE = new RegExp(`\\b(?:party|group|table)\\s+(?:of|for)\\s+(${COUNT})\\b|\\b(${COUNT})\\s*(?:people|persons|guests|pax|adults|of us)\\b|\\b(${COUNT})\\s+(?:colleagues|friends|coworkers|co-workers|family members|relatives|teammates)\\b(\\s+and\\s+(?:i|me|myself)\\b)?`, "gi");
+// "A table for 9:30" / "for 12 noon" is a time, not 9 or 12 guests (failure-mode audit FM-036).
+const PARTY_RE = new RegExp(`\\b(?:party|group|table)\\s+(?:of|for)\\s+(${COUNT})\\b(?!\\s*(?:[:.][0-5]\\d|a\\.?m\\b|p\\.?m\\b|noon|midnight|o'?\\s?clock|ish\\b|hrs?\\b|baje))|\\b(${COUNT})\\s*(?:people|persons|guests|pax|adults|of us)\\b|\\b(${COUNT})\\s+(?:colleagues|friends|coworkers|co-workers|family members|relatives|teammates)\\b(\\s+and\\s+(?:i|me|myself)\\b)?`, "gi");
 const BOOKING_CUE_RE = /\b(?:book\w*|reserv\w*|table|seat\w*|come|coming|visit)\b/i;
 
 /** The party size stated with a people word ("2 people", "two of us", "a group of 5"), the last one stated, or null. */
@@ -139,6 +140,27 @@ export function plainDayOfMonth(raw: string): number | null {
   return dated[0];
 }
 
+/**
+ * Days from today for a message whose only date words are "today"/"tonight", "tomorrow" or "the day after tomorrow", else
+ * null (any weekday, month, day number or relative word leaves it to the other checks and the model).
+ */
+export function relativeDay(raw: string): number | null {
+  const t = foldDigits(raw).toLowerCase();
+  const DAY_AFTER = /\bday after (?:tomorrow|tomm?orr?ow)\b/g;
+  const TOMORROW = /\b(?:tomorrow|tomm?orr?ow|tmrw|tmr)\b/g;
+  const TODAY = /\b(?:today|tonight|this (?:evening|afternoon))\b/g;
+  const found = new Set<number>();
+  if (DAY_AFTER.test(t)) found.add(2);
+  const rest = t.replace(DAY_AFTER, " ");
+  if (TOMORROW.test(rest)) found.add(1);
+  if (TODAY.test(rest)) found.add(0);
+  if (found.size !== 1) return null;
+  const other = rest.replace(TOMORROW, " ").replace(TODAY, " ");
+  const DATE_WORDS =
+    /\b(?:sun|mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?)(?:day)?\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\b\d{1,2}\s*(?:st|nd|rd|th)\b|\d{1,2}\s*[/-]\s*\d{1,2}|\b(?:next|after|before|week|weekend|instead|not|no|or|yesterday|day)\b/;
+  return DATE_WORDS.test(other) ? null : [...found][0];
+}
+
 /** The first date from today (inclusive) within the horizon with this day number: rule 2's reading of "the 28th". */
 function dayOfMonthDate(now: number, zone: string, day: number): string | null {
   const today = todayLocal(now, zone);
@@ -153,9 +175,10 @@ function dayOfMonthDate(now: number, zone: string, day: number): string | null {
 export function guardExtraction(turn: Turn, text: string, now: number, zone: string): { turn: Turn; trace: TraceEntry[] } {
   const trace: TraceEntry[] = [];
   let b = turn.booking;
-  // A booking message with one unambiguous clock time the model left out: code fills it in.
-  const clock = turn.intent === "booking" && b.time === null && b.ambiguity?.field !== "time" ? statedClockTime(text) : null;
-  if (clock) {
+  // A booking message with one unambiguous clock time: code's reading wins, whether the model left it out or misread it
+  // ("7:30 pm" read as 19:00, "8 pm" as 08:00; failure-mode audit FM-013).
+  const clock = turn.intent === "booking" && b.ambiguity?.field !== "time" ? statedClockTime(text) : null;
+  if (clock && b.time !== clock) {
     b = { ...b, time: clock };
     trace.push({ action: "correct_field", field: "time", reason: "stated" });
   }
@@ -185,6 +208,16 @@ export function guardExtraction(turn: Turn, text: string, now: number, zone: str
   if (domDate && (b.date !== domDate || b.ambiguity?.field === "date")) {
     b = { ...b, date: domDate, ambiguity: b.ambiguity?.field === "date" ? null : b.ambiguity };
     trace.push({ action: "correct_field", field: "date", reason: "day_of_month" });
+  }
+  // "Today", "tonight", "tomorrow", "the day after tomorrow" with no other date words: code reads the date (FM-013: a
+  // model reading of "tomorrow" as the day after was booked as is).
+  const rel = intent === "booking" ? relativeDay(text) : null;
+  if (rel !== null) {
+    const date = addLocalDays(todayLocal(now, zone), rel, zone);
+    if (b.date !== date || b.ambiguity?.field === "date") {
+      b = { ...b, date, ambiguity: b.ambiguity?.field === "date" ? null : b.ambiguity };
+      trace.push({ action: "correct_field", field: "date", reason: "relative_day" });
+    }
   }
   const wd = intent === "booking" ? plainWeekday(text) : null;
   if (wd !== null && wd !== weekdayOf(todayLocal(now, zone), zone)) {

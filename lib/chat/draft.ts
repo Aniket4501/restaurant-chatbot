@@ -54,9 +54,11 @@ function withSelection(prev: Draft, next: Draft): Draft {
  * - a value we can't use (9+ guests, a date outside the horizon, an inactive branch) clears that field, so the flow asks
  *   again instead of offering the old slot.
  */
-function latestWins(prev: Draft, next: Draft, statedTime: boolean, rejected: Field[]): Draft {
+function latestWins(prev: Draft, next: Draft, statedTime: boolean, rejected: Field[], clearTime = false): Draft {
   const out = { ...next };
-  if (!statedTime && next.timeWindow !== prev.timeWindow && next.timeWindow !== null) out.time = null;
+  // `clearTime`: the guest named a meal or a relative change ("lunch is better after all", "an hour later") and no
+  // clock time, so the old time no longer stands, even if the meal is the one stored (failure-mode audit FM-014).
+  if (!statedTime && ((next.timeWindow !== prev.timeWindow && next.timeWindow !== null) || clearTime)) out.time = null;
   for (const f of rejected) if (f === "branch" || f === "date" || f === "partySize") (out as Record<Field, unknown>)[f] = null;
   return out;
 }
@@ -75,7 +77,7 @@ export type MergeResult = {
 const ISSUE_RANK: FieldIssue[] = ["large_party", "past_horizon", "branch_inactive", "past_date", "bad_party", "bad_date", "bad_branch", "bad_time"];
 
 /** Merge the model's extracted booking fields into the draft. */
-export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldCtx): MergeResult {
+export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldCtx, opts: { clearTime?: boolean } = {}): MergeResult {
   let ambiguity: MergeResult["ambiguity"] = null;
   let unusable: { field: Field; issue: FieldIssue } | null = null;
   let clearAsk: Field | null = null;
@@ -120,7 +122,7 @@ export function mergeExtracted(draft: Draft, booking: BookingFields, ctx: FieldC
   }
   const rejected: Field[] = [...issues.map((i) => i.field), ...(largeParty ? (["partySize"] as Field[]) : [])];
   if (clearAsk && booking[clearAsk] === null && !changed.includes(clearAsk)) rejected.push(clearAsk);
-  return { draft: withSelection(draft, latestWins(draft, next, booking.time !== null, rejected)), issues, ambiguity, largeParty, changed };
+  return { draft: withSelection(draft, latestWins(draft, next, booking.time !== null, rejected, opts.clearTime)), issues, ambiguity, largeParty, changed };
 }
 
 /** A chip or form action. Unlike model extraction, an explicit null clears the field ("change date"). */

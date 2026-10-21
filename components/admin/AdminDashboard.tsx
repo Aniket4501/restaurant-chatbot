@@ -112,7 +112,11 @@ export function AdminDashboard({ today, branches, zone }: Props) {
     const r = await api<{ changed: boolean }>(`/api/admin/reservations/${cancelling.ref}`, { method: "PATCH", body: { status: "cancelled" } });
     setBusy(false);
     if (!r.ok) {
-      setCancelError(r.status === 404 ? "This booking no longer exists." : "Couldn't cancel this booking. Nothing changed; try again.");
+      // A refused request changed nothing; a lost connection or a server error leaves the outcome unknown, so the list is
+      // reloaded to show what was saved (failure-mode audit FM-039).
+      const unknown = r.status === 0 || r.status >= 500;
+      setCancelError(r.status === 404 ? "This booking no longer exists." : unknown ? "We couldn't confirm whether this booking was cancelled. The list has been reloaded: check its status." : `Couldn't cancel this booking: ${r.error.message}`);
+      if (unknown) await load();
       return;
     }
     setNotice(r.data.changed ? `Cancelled ${cancelling.ref}. The table is free for other guests now.` : `${cancelling.ref} was already cancelled.`);

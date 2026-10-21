@@ -8,7 +8,7 @@ import { loadAvailabilityData } from "@/lib/booking/load";
 import { MESSAGES, type BookingError, type ExistingBooking, type UnavailableReason } from "@/lib/booking/errors";
 import { randomRef } from "@/lib/booking/ref";
 import { viewByKey, viewByRef, type ReservationView } from "@/lib/booking/view";
-import { normalizeIndianMobile } from "@/lib/phone";
+import { normalizeGuestMobile } from "@/lib/phone";
 import { dayLabelLong, localDateOf, localTimeOf, timeLabel } from "@/lib/time/tz";
 
 // Booking write path (MASTER_PROMPT §5.6 with D-08 and D-14). Guarantees G-1…G-4 rest on: one synchronous
@@ -22,7 +22,9 @@ export const CreateBodySchema = z.object({
   partySize: z.number().int().min(RULES.onlinePartyMin, "Please choose how many guests"),
   name: z
     .string()
-    .refine((s) => !/[\p{Cc}\p{Cf}]/u.test(s.replace(/[\t\n\r]/g, " ")), "Please use letters, spaces and punctuation only")
+    // Zero-width joiners are part of Malayalam, Marathi and some Hindi spellings (failure-mode audit FM-040); other
+    // format characters (bidi overrides, BOM) and controls are refused.
+    .refine((s) => !/(?![\u200C\u200D])[\p{Cc}\p{Cf}]/u.test(s.replace(/[\t\n\r]/g, " ")), "Please use letters, spaces and punctuation only")
     .transform((s) => s.trim().replace(/\s+/g, " "))
     .pipe(
       z
@@ -32,7 +34,7 @@ export const CreateBodySchema = z.object({
         .refine((s) => (s.match(/\p{L}/gu) ?? []).length >= 2, "Please enter your name"),
     ),
   phone: z.string().transform((s, ctx) => {
-    const e164 = normalizeIndianMobile(s);
+    const e164 = normalizeGuestMobile(s);
     if (!e164) {
       ctx.addIssue({ code: "custom", message: "Please enter a valid Indian mobile number" });
       return z.NEVER;
@@ -92,41 +94,59 @@ export function createReservation(db: DB, raw: unknown, key: string, now: number
   const newId = deps.newId ?? randomUUID;
 
   let outcome: TxOutcome;
+  // An error thrown inside the transaction is rolled back, so the guest can be told nothing was booked; only an error at
+  // or after COMMIT leaves the outcome unknown (failure-mode audit FM-037: every error was "we couldn't confirm").
+  let rolledBack = false;
   try {
     outcome = immediate(db, (): TxOutcome => {
-      // 1. Idempotency lookup.
-      const prior = viewByKey(db, key);
-      if (prior) return prior.requestHash === hash ? { kind: "replayed", ref: prior.ref } : { kind: "mismatch" };
-      // 2. Re-validate with the engine's rules, on a snapshot read inside the write lock.
-      const bundle = loadAvailabilityData(db, [localDateOf(body.startsAt, branchZone(db, body.branch))]);
-      const check = checkStart(bundle, body.branch, body.partySize, body.startsAt, now);
-      if (!check.ok) {
-        if (check.reason === "unknown_branch") return { kind: "validation", field: "branch", message: "Unknown branch" };
-        if (check.reason !== "full") return { kind: "unavailable", reason: check.reason };
+      try {
+        // 1. Idempotency lookup.
+        const prior = viewByKey(db, key);
+        if (prior) return prior.requestHash === hash ? { kind: "replayed", ref: prior.ref } : { kind: "mismatch" };
+        // 2. Re-validate with the engine's rules, on a snapshot read inside the write lock.
+        const bundle = loadAvailabilityData(db, [localDateOf(body.startsAt, branchZone(db, body.branch))]);
+        const check = checkStart(bundle, body.branch, body.partySize, body.startsAt, now);
+        if (!check.ok) {
+          if (check.reason === "unknown_branch") return { kind: "validation", field: "branch", message: "Unknown branch" };
+          if (check.reason !== "full") return { kind: "unavailable", reason: check.reason };
+        }
+        const branch = bundle.branches.find((b) => b.slug === body.branch)!;
+        const endsAt = body.startsAt + RULES.sittingMinutes(body.partySize) * 60_000;
+        // 3. Guest overlap before table choice (§5.6): a guest who already holds the last table hears about it.
+        const dup = duplicateOf(db, branch.id, branch.slug, branch.timezone, body, endsAt);
+        if (dup) return dup;
+        // 4. Smallest free fitting table.
+        if (!check.ok) return { kind: "taken" };
+        const table = pickTableFresh(db, branch.id, body.partySize, body.startsAt, endsAt);
+        if (!table) return { kind: "taken" };
+        // 5. Reference (collision-checked inside the lock) and insert; the triggers re-check overlaps.
+        let ref = newRef();
+        for (let i = 0; i < 5 && db.prepare("SELECT 1 FROM reservations WHERE ref = ?").get(ref); i++) ref = newRef();
+        db.prepare(
+          `INSERT INTO reservations (id, ref, branch_id, table_id, guest_name, phone_e164, email, note, party_size, starts_at, ends_at, status, source, idempotency_key, request_hash, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'chat', ?, ?, ?)`,
+        ).run(newId(), ref, branch.id, table, body.name, body.phone, body.email, body.note, body.partySize, body.startsAt, endsAt, key, hash, now);
+        return { kind: "created", ref };
+      } catch (inner) {
+        rolledBack = true;
+        throw inner;
       }
-      const branch = bundle.branches.find((b) => b.slug === body.branch)!;
-      const endsAt = body.startsAt + RULES.sittingMinutes(body.partySize) * 60_000;
-      // 3. Guest overlap before table choice (§5.6): a guest who already holds the last table hears about it.
-      const dup = duplicateOf(db, branch.id, branch.slug, branch.timezone, body, endsAt);
-      if (dup) return dup;
-      // 4. Smallest free fitting table.
-      if (!check.ok) return { kind: "taken" };
-      const table = pickTableFresh(db, branch.id, body.partySize, body.startsAt, endsAt);
-      if (!table) return { kind: "taken" };
-      // 5. Reference (collision-checked inside the lock) and insert; the triggers re-check overlaps.
-      let ref = newRef();
-      for (let i = 0; i < 5 && db.prepare("SELECT 1 FROM reservations WHERE ref = ?").get(ref); i++) ref = newRef();
-      db.prepare(
-        `INSERT INTO reservations (id, ref, branch_id, table_id, guest_name, phone_e164, email, note, party_size, starts_at, ends_at, status, source, idempotency_key, request_hash, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'chat', ?, ?, ?)`,
-      ).run(newId(), ref, branch.id, table, body.name, body.phone, body.email, body.note, body.partySize, body.startsAt, endsAt, key, hash, now);
-      return { kind: "created", ref };
     });
   } catch (e) {
     const err = e as { code?: string; message?: string };
     if (err.code?.startsWith("SQLITE_BUSY")) return { code: "UNAVAILABLE", status: 503, message: MESSAGES.UNAVAILABLE };
-    if (err.code?.startsWith("SQLITE_CONSTRAINT")) outcome = mapConstraintError(db, err, key, hash, body);
-    else throw e;
+    if (err.code?.startsWith("SQLITE_CONSTRAINT")) {
+      try {
+        outcome = mapConstraintError(db, err, key, hash, body);
+      } catch (unmapped) {
+        if (!rolledBack) throw unmapped;
+        console.error(JSON.stringify({ event: "reservation_error", stage: "rolled_back", code: err.code ?? "unknown" }));
+        return { code: "UNAVAILABLE", status: 503, message: MESSAGES.UNAVAILABLE };
+      }
+    } else if (rolledBack) {
+      console.error(JSON.stringify({ event: "reservation_error", stage: "rolled_back", code: err.code ?? (e as Error).name }));
+      return { code: "UNAVAILABLE", status: 503, message: MESSAGES.UNAVAILABLE };
+    } else throw e;
   }
   return toResult(db, outcome, body, now);
 }
