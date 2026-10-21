@@ -271,15 +271,17 @@ const WEEK_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
  * Which days an hours question is about (D-24 audit): the dates "today", "tonight", "now", "tomorrow" and "the day after
  * tomorrow" stand for, and whether it names no day at all (a general "what are your hours?").
  */
-export function hoursScope(guest: string, now: number, zone: string): { dates: string[]; general: boolean } {
+export function hoursScope(guest: string, now: number, zone: string): { dates: string[]; general: boolean; weekday: boolean } {
   const t = guest.toLowerCase();
   const today = todayLocal(now, zone);
   const dates: string[] = [];
-  if (/\b(?:today|tonight|this (?:evening|afternoon|morning)|right now|now|currently|at the moment)\b/.test(t)) dates.push(today);
+  // "Open now?" is about today; "your hours currently" is not (review of D-24).
+  if (/\b(?:today|tonight|this (?:evening|afternoon|morning)|right now|open now|still open|open at the moment)\b/.test(t)) dates.push(today);
   if (/\bday after tomorrow\b/.test(t)) dates.push(addLocalDays(today, 2, zone));
   else if (/\btomorrow\b/.test(t)) dates.push(addLocalDays(today, 1, zone));
-  const days = /\b(?:mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?|sun)(?:day)?s?\b|\bweek(?:end|day)s?\b/.test(t);
-  return { dates, general: !dates.length && !days && !dateSpans(guest).length };
+  // Full day names, or a short one next to a date ("Sat 31"), not "we sat outside" or "the sun" (review of D-24).
+  const weekday = /\b(?:mon|tues|wednes|thurs|fri|satur|sun)days?\b|\b(?:mon|tue|wed|thu|fri|sat|sun)\.?\s+\d|\bweek(?:end|day)s?\b/.test(t);
+  return { dates, general: !dates.length && !weekday && !dateSpans(guest).length, weekday };
 }
 
 /** Route a validated model turn by intent (§5.7 step 5, D-10, D-15). */
@@ -327,11 +329,14 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
         // "What are your opening hours?" names no day: the whole week of each branch asked about (all branches when
         // none is named), whatever subset the model cited (D-24 audit: Golf Course Road Tue–Sun was missing, and
         // "hours at Golf Course Road?" showed only its 27 Oct closure).
-        if (scope.general) ids = [...slugs.flatMap((s) => WEEK_KEYS.map((d) => `hours:${s}:${d}`)).filter((id) => facts.factsById.has(id)), ...cited.filter((id) => id.startsWith("branch:"))];
+        // Only for an hours question: an address or phone answer cites branch facts alone (review of D-24).
+        if (scope.general && cited.some((id) => /^(?:hours|exception):/.test(id))) ids = [...slugs.flatMap((s) => WEEK_KEYS.map((d) => `hours:${s}:${d}`)).filter((id) => facts.factsById.has(id)), ...cited.filter((id) => id.startsWith("branch:"))];
         // A date asked about ("tonight", "tomorrow") with special hours: the exception replaces the usual hours even if
         // the model cited only the weekly fact (D-24 audit: "dinner tonight?" on 22 Oct led with the usual dinner).
         for (const date of scope.dates) for (const s of slugs) if (facts.factsById.has(`exception:${s}:${date}`) && !ids.includes(`exception:${s}:${date}`)) ids = [...ids, `exception:${s}:${date}`];
-        const r = renderHoursAnswer(ids, facts.factsById, facts.zoneOf, mentioned, { onlyMentioned: scope.dates.length > 0 || dateSpans(facts.guest ?? "").length > 0 });
+        // Only the asked dates' exceptions, unless a weekday is asked about too ("tomorrow and on Tuesday" keeps
+        // Tuesday's closure; review of D-24).
+        const r = renderHoursAnswer(ids, facts.factsById, facts.zoneOf, mentioned, { onlyMentioned: (scope.dates.length > 0 || dateSpans(facts.guest ?? "").length > 0) && !scope.weekday });
         ctx.trace.push({ action: "answer_faq", ids: r.factIds, rendered: true });
         // No card repeating the cited facts under the answer (D-20: it duplicated every answer and showed internal
         // list wording); the cited IDs stay in the reply's metadata for the invariants.
@@ -379,7 +384,10 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
     case "manage_booking":
       // Next to a pending confirm card nothing is booked yet, so there is nothing to change or cancel by phone: the
       // reminder to tap Confirm is the answer ("please confirm it now"; D-24 audit LV-INJ-004).
-      if (confirmShown) return reply(prose(""), "manage_redirect");
+      // A request to change or cancel is about a confirmed booking, so the phone line stays, with the reminder after it
+      // (review of D-24).
+      if (confirmShown && !/\b(?:cancel|change|modify|move|reschedul|amend|postpone)\w*/i.test(facts.guest ?? "")) return reply(prose(""), "manage_redirect");
+      if (confirmShown) return reply(prose(T.manageBooking(phoneBranches(ctx, known))), "manage_redirect");
       ctx.trace.push({ action: "redirect", kind: "manage_booking" });
       return reply(T.manageBooking(phoneBranches(ctx, known)), "manage_redirect");
     case "off_topic":

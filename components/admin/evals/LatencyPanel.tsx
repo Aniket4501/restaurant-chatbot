@@ -24,8 +24,8 @@ const STAGE_TONE = ["bg-line", "bg-sage", "bg-ash", "bg-warn-tint", "bg-warn", "
 
 export function LatencyPanel({ run, base, benches }: { run: RunSummary; base: RunSummary | null; benches: BenchSummary[] }) {
   const lat = run.latency;
-  // Scripted runs time a fake model: comparing a live run's latency with one would read as a huge slowdown.
-  const b = base && base.mode === run.mode ? (base.latency ?? null) : null;
+  // Only like with like: scripted runs time a fake model, and a rerun of a few cases isn't the full run's mix of turns.
+  const b = base && base.mode === run.mode && base.suite === run.suite && base.suite !== "subset" ? (base.latency ?? null) : null;
   const [benchId, setBenchId] = useState<string | null>(benches[0]?.id ?? null);
   const bench = benches.find((x) => x.id === benchId) ?? null;
   const benchBase = bench ? (benches.find((x) => x.id !== bench.id && x.label === "baseline" && x.startedAt < bench.startedAt) ?? benches.find((x) => x.startedAt < bench.startedAt) ?? null) : null;

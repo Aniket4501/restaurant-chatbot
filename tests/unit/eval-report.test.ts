@@ -85,6 +85,17 @@ describe("latency summary (D-24)", () => {
 });
 
 describe("comparisons", () => {
+  it("compares a rerun of a few cases with its full run case by case, but not by area rate (review of D-24)", () => {
+    const full = run("full-run", [res({ id: "A" }), res({ id: "B" }), fail({ id: "C" }), fail({ id: "D" })], { suite: "full" });
+    const rerun = run("rerun", [res({ id: "C" }), fail({ id: "D" })], { selection: { case: "C,D" } });
+    const cmp = compareRuns(full, rerun);
+    expect(cmp.resolved.map((c) => c.id)).toEqual(["C"]);
+    expect(cmp.areas.every((x) => x.delta === null)).toBe(true);
+    expect(cmp.stats.every((x) => x.delta === null && !x.regressed)).toBe(true);
+    expect(cmp.note).toMatch(/different sets of cases/);
+    // Two full runs still compare by area, even when cases were added since.
+    expect(compareRuns(full, run("full-2", [res({ id: "A" }), res({ id: "B" }), res({ id: "C" }), fail({ id: "D" }), res({ id: "E" })], { suite: "full" })).areas.some((x) => x.delta !== null)).toBe(true);
+  });
   const base = run("base", [res({ id: "A" }), fail({ id: "B" }), res({ id: "C", severity: "critical" }), res({ id: "GONE" })]);
   const head = run("headrun", [res({ id: "A" }), res({ id: "B" }), fail({ id: "C", severity: "critical" }), res({ id: "NEW" })]);
   it("finds new failures, resolved and still-failing cases, and critical regressions", () => {

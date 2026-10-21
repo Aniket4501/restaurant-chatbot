@@ -6,7 +6,7 @@ import { migrate } from "@/lib/db/migrate";
 import { applySeed, parseSeed } from "@/lib/db/seed";
 import { loadFactSource, renderKbFacts, renderStaticFacts, type Fact } from "@/lib/kb/facts";
 import { describePrefs, eligible, menuEntries, menuStep, unmet, type MenuEntry } from "@/lib/chat/menu";
-import { claimProblems, explicitPrefs, recommendTurn, resolvePrefs, shortlist, suitabilityClaim, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
+import { claimProblems, explicitPrefs, isSide, recommendTurn, resolvePrefs, shortlist, suitabilityClaim, validateChoice, type ChooserCall } from "@/lib/chat/recommend";
 import { noPrefs, type Prefs, type TraceEntry } from "@/lib/chat/types";
 import type { Choice } from "@/lib/llm/chooser";
 import type { GroundingContext } from "@/lib/chat/grounding";
@@ -445,16 +445,58 @@ describe("D-24 audit: safety wording, allergen lists, attributes, sides and the 
     expect(validateChoice(reply, fit, byId(), prefs, grounding, { mayName: ["menu:dal-ember"] }).reasons).toEqual([]);
   });
   it("doesn't offer sides or drinks for a dish request unless asked; a request for a drink still gets drinks", async () => {
-    const seen: string[][] = [];
+    const seen: MenuEntry[][] = [];
     const call: ChooserCall = async (_a, messages) => {
-      seen.push(entries.filter((d) => messages[1].content.includes(`${d.id.slice(5)} |`) || messages[1].content.includes(d.name)).map((d) => d.course));
+      seen.push(entries.filter((d) => messages[1].content.includes(`${d.id.slice(5)} |`) || messages[1].content.includes(d.name)));
       return { choice: null, code: "MODEL_UNAVAILABLE", content: "" };
     };
     const go = (text: string, prefs: Partial<NonNullable<Turn["prefs"]>> = {}) => recommendTurn({ turn: recTurn(prefs), text, history: [], context: { lastCitedIds: [] }, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
     await go("I want something light.", { mild: true });
     expect(seen[0].length).toBeGreaterThan(0);
-    expect(seen[0].some((c) => c === "drinks")).toBe(false);
+    expect(seen[0].some(isSide)).toBe(false); // no naan, roti, plain rice or drink (a biryani is a dish)
     await go("Something refreshing to drink?", { course: "drinks" });
-    expect(seen[1].every((c) => c === "drinks")).toBe(true);
+    expect(seen[1].every((d) => d.course === "drinks")).toBe(true);
+  });
+});
+
+describe("review of D-24: the reviewers' failing inputs", () => {
+  it("names the compared dish only while it fits, and checks what is said about it against its own facts", async () => {
+    const prefs = P({ avoid: ["nuts"], allergy: true, course: "desserts" });
+    const fit = eligible(entries, prefs);
+    // The nut dish suggested before is not allowed back once the guest says they're allergic to nuts.
+    const r = await recommendTurn(
+      { turn: recTurn({ avoid: ["nuts"], allergy: true, course: "desserts", relation: "another" }), text: "I'm allergic to nuts, show me another option", history: [], context: { lastCitedIds: [], prefs: P({ course: "desserts" }), recommended: ["menu:pistachio-kulfi"] }, entries, restaurant: "Neem & Ember", grounding, trace: [] },
+      async () => ({ choice: { pick: "mango-sorbet", alternatives: [], reply: "The Mango Sorbet at ₹245 is an Alphonso mango sorbet, or you could stay with the Ember Pistachio Kulfi." }, code: "ok", content: "{}" }),
+    );
+    expect(r.text).not.toContain("Pistachio Kulfi");
+    // A false label or price for the compared dish is rejected, though it may be named.
+    const veg = P({ diet: ["vegetarian"], course: "mains" });
+    const cheaper = eligible(entries, veg, { cheaperThan: 445 });
+    const v = (reply: string) => validateChoice({ pick: "menu:chana-pindi", alternatives: [], reply }, cheaper, byId(), veg, grounding, { mayName: ["menu:dal-ember"] }).reasons;
+    expect(v("Like the vegan Dal Ember, the Chana Pindi at ₹395 is a dark, tangy chickpea curry.").join("; ")).toMatch(/Dal Ember is not vegan/);
+    expect(v("Cheaper than the Dal Ember at ₹395, the Chana Pindi is a dark, tangy chickpea curry.").join("; ")).toMatch(/Dal Ember the wrong price/);
+    expect(v("Cheaper than the Dal Ember at ₹445, the Chana Pindi at ₹395 is a dark, tangy chickpea curry.")).toEqual([]);
+    void fit;
+  });
+  it("reads allergen lists with any punctuation, and doesn't take trailing words for allergens", () => {
+    for (const t of ["I'm allergic to kiwi & nuts", "I'm allergic to kiwi/strawberry, what dessert?", "I'm allergic to kiwi (badly). What dessert?", "I'm allergic to kiwi — what dessert?", "I'm allergic to kiwi don't want it", "My daughter is allergic to kiwi she's 5, what dessert?", "allergic to kiwi 2 of us tonight", "allergic to kiwi 🙏 any dessert?"]) expect(explicitPrefs(t).unlisted, t).toEqual(["other"]);
+    for (const t of ["I'm allergic to tree nuts tonight", "allergic to cashew nuts badly, suggest a dessert", "I'm allergic to nuts and need something sweet", "My kid is allergic to peanuts and eggs and wants dessert", "I'm allergic to nuts and dairy. Which dessert can I have?", "allergic to nuts 🙏 any dessert?", "allergic to peanuts (badly) — dessert ideas?", "I'm allergic to nuts, show me another option", "allergic to dairy, what do you suggest?", "I'm allergic to eggs, can you help?"]) expect(explicitPrefs(t).unlisted, t).toBeUndefined();
+    expect(explicitPrefs("allergic to peanuts, kiwi and soy").unlisted).toEqual(["soy"]); // kiwi and soy have no label; soy is a known unlisted one
+    expect(explicitPrefs("I'm allergic to kiwi & nuts").avoid).toEqual(["nuts"]);
+  });
+  it("catches allergy-framed recommendations despite an unrelated negation, and lets honest advice through", () => {
+    for (const s of ["The Mango Sorbet at ₹245 isn't heavy, making it a good option for your severe peanut allergy.", "It's not too sweet, so the Mango Sorbet is a good option for your severe peanut allergy.", "Given your peanut allergy, the Mango Sorbet at ₹245 is a lovely choice.", "For your nut allergy, I'd go with the Mango Sorbet at ₹245."]) expect(suitabilityClaim(s), s).toBe(true);
+    for (const s of ["The Mango Sorbet at ₹245 is a great light finish; just let your server know about your allergy.", "It's a good idea to tell your server about any allergies when you order.", "Our kitchen works with nuts, dairy and other allergens every day.", "I can't say whether it suits your allergy; please ask your server."]) expect(suitabilityClaim(s), s).toBe(false);
+  });
+  it("keeps sides out when 'another option' has used up the section and falls back to the whole menu", async () => {
+    let listed = "";
+    const call: ChooserCall = async (_a, messages) => {
+      listed = messages[1].content;
+      return { choice: null, code: "MODEL_UNAVAILABLE", content: "" };
+    };
+    const prefs = P({ diet: ["vegan"] });
+    await recommendTurn({ turn: recTurn({ diet: ["vegan"], relation: "another" }), text: "Show me another option", history: [], context: { lastCitedIds: [], prefs, recommended: ["menu:chana-pindi", "menu:yellow-dal-tadka", "menu:baingan-bharta"] }, entries, restaurant: "Neem & Ember", grounding, trace: [] }, call);
+    expect(listed).not.toBe("");
+    for (const side of ["Tandoori Roti", "Missi Roti", "Steamed Basmati Rice", "Jeera Rice", "Kokum Cooler", "Fresh Lime Soda"]) expect(listed, side).not.toContain(side);
   });
 });

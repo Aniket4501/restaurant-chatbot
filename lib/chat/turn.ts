@@ -196,7 +196,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
 
   // 3. Mask every message once, whatever its role (D-15).
   const masked = maskMessages(input.messages);
-  const latest = masked.at(-1)!.content;
+  // A chip action may come with no messages (the schema allows it); the chip carries its own text (review of D-24).
+  const latest = masked.at(-1)?.content ?? "";
   const history = masked.slice(0, -1).slice(-(LIMITS.historyMax - 1));
   const previousGuest = history.filter((m) => m.role === "guest").at(-1)?.content ?? null;
   // A blank message gets the clarify reply without retrieval or a model call (D-21: it used to call the model).
@@ -218,12 +219,17 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       return finish(routeTurn(fixed("faq", weekly), draft0, ctx, { ...facts, guest: "What are your opening hours?" }), "faq");
     }
     if (chip.text === HELP_CHIP_TEXT) return finish(routeTurn(fixed("recommend"), draft0, ctx, { ...facts, guest: chip.text }, { text: HELP_QUESTION, blocks: [ANSWER_CHIPS()], cited: [] }), "recommend");
+    // A fresh request ("Something filling", "Surprise me") keeps the preferences but not a stored menu section, as the
+    // model would; "cheaper", "another" and the relax chips refine the last search, section included (review of D-24).
+    const refines = /^(?:Anything cheaper\?|Show me another option|Any price is fine|Forget the vegan|Forget the vegetarian|Spicy is fine)$/.test(chip.text);
+    const stored = input.context?.prefs ?? null;
+    const proposal: Turn["prefs"] = refines || !stored ? null : { diet: stored.diet, avoid: stored.avoid, maxPrice: stored.maxPrice, course: null, mild: stored.mild, allergy: stored.allergy, relation: null };
     let rec: RecommendResult;
     const q0 = elapsed();
     try {
       rec = await (deps.gate ?? openGate).run(async () => {
         t.queueMs = elapsed() - q0;
-        return recommendTurn({ turn: fixed("recommend"), text: chip.text, history, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: [], branch: draft0.branch }, chooser);
+        return recommendTurn({ turn: { ...fixed("recommend"), prefs: proposal }, text: chip.text, history, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: [], branch: draft0.branch }, chooser);
       });
     } catch (e) {
       if (e instanceof GateFullError) {

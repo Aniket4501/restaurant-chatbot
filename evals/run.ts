@@ -798,7 +798,8 @@ async function main(): Promise<number> {
   }
   for (let run = 1; run <= runs; run++)
     for (const c of cases) {
-      if (mode === "live") await plantFor(Date.parse(c.now));
+      // A failed re-plant only costs that case a cold prefill; it never stops the run (review of D-24).
+      if (mode === "live") await plantFor(Date.parse(c.now)).catch((e: Error) => console.log(`warm-up for ${c.id} failed (not scored): ${e.message}`));
       const r = await runCase(c, { mode, run, model, embedder, template });
       results.push(r);
       if (partial) fs.appendFileSync(partial, `${JSON.stringify(r)}\n`);

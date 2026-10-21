@@ -362,14 +362,19 @@ export function compareRuns(base: Run, head: Run): Comparison {
   const both = changes.filter((c) => c.before && c.after);
   const newFailures = both.filter((c) => c.before === "pass" && failing(c.after));
   const sameKind = base.summary.mode === head.summary.mode;
+  // Area and metric deltas only between runs of the same kind and suite (two full runs, even if cases were added since),
+  // or over the same cases: a rerun of five failing cases against the full run it came from would show "−38 pts" for
+  // fixing three of them (review of D-24). Case-level changes are always compared.
+  const sameSet = a.size === b.size && [...b.keys()].every((id) => a.has(id));
+  const sameCases = sameKind && ((head.summary.suite !== "subset" && head.summary.suite === base.summary.suite) || sameSet);
   const areas = head.summary.areas.map((h) => {
     const p = base.summary.areas.find((x) => x.key === h.key);
-    return { key: h.key, label: h.label, before: { rate: p?.rate ?? null, n: p?.n ?? 0 }, after: { rate: h.rate, n: h.n }, delta: p?.rate != null && h.rate != null ? h.rate - p.rate : null };
+    return { key: h.key, label: h.label, before: { rate: p?.rate ?? null, n: p?.n ?? 0 }, after: { rate: h.rate, n: h.n }, delta: sameCases && p?.rate != null && h.rate != null ? h.rate - p.rate : null };
   });
   const stats = head.summary.areas.flatMap((h) =>
     h.stats.map((s) => {
       const p = base.summary.areas.find((x) => x.key === h.key)?.stats.find((x) => x.key === s.key);
-      const delta = p?.value != null && s.value != null ? s.value - p.value : null;
+      const delta = sameCases && p?.value != null && s.value != null ? s.value - p.value : null;
       // Counts and latency are compared as they are; a rate only when both sides have data.
       const regressed = delta !== null && (s.better === "higher" ? delta < 0 : delta > 0) && (s.kind !== "ms" || Math.abs(delta) > 0.2 * (p?.value ?? 0));
       return { area: h.key, key: s.key, label: s.label, kind: s.kind, better: s.better, before: { value: p?.value ?? null, n: p?.n ?? 0 }, after: { value: s.value, n: s.n }, delta, regressed };
@@ -380,7 +385,7 @@ export function compareRuns(base: Run, head: Run): Comparison {
     base: { id: base.summary.id, startedAt: base.summary.startedAt },
     head: { id: head.summary.id, startedAt: head.summary.startedAt },
     comparable: sameKind,
-    note: !sameKind ? "Different modes (scripted vs live): case statuses are compared, but the model differs." : base.summary.datasetHash !== head.summary.datasetHash ? "The case files changed between these runs: only cases both ran are compared, and an edited case may score differently for that reason." : null,
+    note: !sameKind ? "Different modes (scripted vs live): case statuses are compared, but the model differs." : !sameCases ? "These runs ran different sets of cases: case-level changes are compared, but not area rates or metrics." : base.summary.datasetHash !== head.summary.datasetHash ? "The case files changed between these runs: only cases both ran are compared, and an edited case may score differently for that reason." : null,
     newFailures,
     resolved: both.filter((c) => failing(c.before) && c.after === "pass"),
     stillFailing: both.filter((c) => failing(c.before) && failing(c.after)),
