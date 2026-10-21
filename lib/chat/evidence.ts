@@ -1,5 +1,5 @@
-import { describePrefs, hasPrefs, servedAt, unmet, view, type MenuEntry } from "@/lib/chat/menu";
-import { courseIn, DIET_CHIPS, DIET_QUESTION } from "@/lib/chat/recommend";
+import { ALLERGY_NOTE, describePrefs, hasPrefs, needsAllergyNote, servedAt, unlistedReferral, unmet, view, type MenuEntry } from "@/lib/chat/menu";
+import { courseIn, DIET_CHIPS, DIET_QUESTION, SAFETY_QUESTION } from "@/lib/chat/recommend";
 import type { Block, Chip, Course, Prefs, TraceEntry, TurnContext } from "@/lib/chat/types";
 
 // Popularity, review and evidence questions (D-26). "What is your best seller?", "most popular dessert?", "which dish
@@ -12,16 +12,30 @@ import type { Block, Chip, Course, Prefs, TraceEntry, TurnContext } from "@/lib/
 
 export type EvidenceKind = "sales" | "reviews" | "evidence";
 
-const SALES = /\b(?:(?:best|top|biggest)[- ]?(?:[a-z]+[- ]){0,2}?sell(?:er|ers|ing)|sells? (?:the )?(?:most|best)|most (?:popular|ordered|loved|liked|requested|famous)|popular(?:ity)?|(?:fan|guest|customer|crowd)(?:'s|s')? favou?rites?|signature (?:dish|dishes)|what (?:do|does) (?:most )?(?:people|guests|everyone|customers|others) (?:usually |normally |mostly |tend to )?(?:order|get|eat|like|choose|pick))\b/i;
+// Popularity of food: a dish, a course or "on the menu" is the subject (review of D-26: bare "popular" caught "is
+// Saturday a popular time?" and "is Hauz Khas popular?").
+const SALES = /\b(?:best[- ]?sell(?:er|ers|ing)|top[- ]sell(?:er|ers|ing)|(?:best|top|biggest)[- ]?(?:[a-z]+[- ]){0,2}?sell(?:er|ers|ing)|sells? (?:the )?(?:most|best)|most (?:popular|ordered|loved|liked|requested|famous) (?:dish|dishes|item|items|food|dessert|desserts|main|mains|course|starter|starters|drink|drinks|thing|one|on the menu)|(?:what|which)(?:'s| is| are)? (?:your |the )?most (?:popular|ordered|loved|liked|requested|famous)\b(?! (?:time|day|night|branch|location|place|hours?))|popular (?:dish|dishes|item|items|food|dessert|desserts|main|mains|starter|starters|drink|drinks|choice|choices|on the menu)|popularity|(?:fan|guest|customer|crowd)(?:'s|s')? favou?rites?|signature (?:dish|dishes)|what (?:do|does) (?:most )?(?:people|guests|everyone|customers|others) (?:usually |normally |mostly |tend to )?(?:order|get|eat|choose|pick))\b/i;
+const IS_POPULAR = /\bis (?:the |your )?([a-z][a-z' -]{2,40}?) (?:very |really |quite )?popular\b(?! (?:time|day|night|place|branch|location|spot|hours?|area))/i;
 const REVIEWS = /\b(?:reviews?|reviewed|ratings?|rated|stars?)\b/i;
-const EVIDENCE = /\b(?:sales (?:data|figures|numbers|records)|data (?:to (?:support|back)|behind|for that)|any (?:data|evidence|proof)|how do you know|based on what|what (?:is|'s) that based on|is that (?:really )?(?:popular|a bestseller|true|right))\b/i;
+const FOOD_CONTEXT = /\b(?:dish|dishes|food|menu|item|items|dessert|desserts|main|mains|starter|starters|drink|drinks|curry|curries|biryani|best|top|highest|which|what)\b/i;
+// Asking for data in so many words.
+const DATA_ASK = /\b(?:sales (?:data|figures|numbers|records)|data (?:to (?:support|back)|behind|for that)|any (?:data|evidence|proof)|actual (?:data|evidence|numbers))\b/i;
+// Challenging the last suggestion: only right after one, and not about hours, safety or a booking.
+const CHALLENGE = /\b(?:how do you know|based on what|what (?:is|'s) that based on|is that (?:really )?(?:popular|a bestseller|true|right))\b/i;
+const OTHER_TOPIC = /\b(?:open|close|hours?|timings?|safe|allerg\w*|book\w*|table|reservation|parking|address)\b/i;
 
-/** The kind of popularity question the message asks, or null. */
-export function evidenceQuestion(text: string): EvidenceKind | null {
+/**
+ * The kind of popularity question the message asks, or null. `suggested`: a dish was suggested in this conversation;
+ * `dishes`: the menu's dish names, so "is the butter chicken popular?" counts and "is Hauz Khas popular?" doesn't.
+ */
+export function evidenceQuestion(text: string, suggested = false, dishes: string[] = []): EvidenceKind | null {
   const t = text.toLowerCase().replace(/[’‘]/g, "'");
-  if (EVIDENCE.test(t)) return "evidence";
-  if (REVIEWS.test(t) && /\b(?:best|top|highest|good|great|which|what|any|most|well)\b/.test(t)) return "reviews";
+  if (DATA_ASK.test(t) || (suggested && CHALLENGE.test(t) && !OTHER_TOPIC.test(t))) return "evidence";
+  if (REVIEWS.test(t) && FOOD_CONTEXT.test(t) && !/\b(?:for kids|for children|age)\b/.test(t)) return "reviews";
   if (SALES.test(t)) return "sales";
+  const m = IS_POPULAR.exec(t);
+  const subject = m?.[1].trim() ?? "";
+  if (m && (FOOD_CONTEXT.test(subject) || dishes.some((n) => n.toLowerCase().includes(subject.replace(/^(?:the|your) /, "")) || subject.includes(n.toLowerCase())))) return "sales";
   return null;
 }
 
@@ -39,6 +53,16 @@ export type EvidenceResult = { text: string; blocks: Block[]; cited: string[]; a
 
 export function evidenceStep(input: { kind: EvidenceKind; text: string; prefs: Prefs; entries: MenuEntry[]; context: Partial<TurnContext> | undefined; branch: string | null; trace: TraceEntry[] }): EvidenceResult {
   const p: Prefs = { ...input.prefs, course: input.prefs.course ?? courseIn(input.text) };
+  // Allergies apply here as on every food path (review of D-26): an allergen the labels can't cover goes to staff, and
+  // the note shows when it hasn't for these allergies, or the guest asks about safety.
+  const referral = unlistedReferral(p);
+  if (referral) return { text: referral.text, blocks: referral.blocks, cited: [] };
+  const note: Block[] = needsAllergyNote(p) && (!input.context?.allergyNoted || SAFETY_QUESTION.test(input.text)) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
+  const withNote = (r: EvidenceResult): EvidenceResult => ({ ...r, blocks: [...note, ...r.blocks] });
+  return withNote(answer(input, p));
+}
+
+function answer(input: { kind: EvidenceKind; text: string; prefs: Prefs; entries: MenuEntry[]; context: Partial<TurnContext> | undefined; branch: string | null; trace: TraceEntry[] }, p: Prefs): EvidenceResult {
   const marked = input.entries.filter((e) => e.bestseller && e.available && servedAt(e, input.branch));
   const fit = marked.filter((e) => unmet(e, { ...p, maxPrice: p.maxPrice }) === null);
   input.trace.push({ action: "evidence", args: { kind: input.kind, bestsellers: fit.length } });
@@ -53,20 +77,26 @@ export function evidenceStep(input: { kind: EvidenceKind; text: string; prefs: P
   };
   const card = (ds: MenuEntry[]): Block => ({ type: "recommendation", lead: false, items: ds.slice(0, 3).map(view) });
 
-  // "Is the butter chicken popular?": about one dish.
+  // "Is the Dal Ember popular?", "how is the Dal Ember rated?": about one dish. A review question never gets a "yes"
+  // (there are no reviews); a marked dish is offered only if it is available, served here and fits the guest's needs.
   const named = input.entries.filter((e) => new RegExp(`\\b${e.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(input.text));
   if (named.length === 1 && input.kind !== "evidence") {
     const d = named[0];
-    if (d.bestseller) return { text: `Yes: the restaurant marks the ${d.name} as a bestseller.`, blocks: [card([d])], cited: [d.id], recommended: [d.id] };
-    return { text: `We don't keep sales figures, ratings or reviews, so I can't say how popular the ${d.name} is. The restaurant hasn't marked it as a bestseller.`, blocks: [], cited: [d.id] };
+    const reviews = input.kind === "reviews";
+    if (!d.bestseller)
+      return { text: reviews ? `We don't collect reviews or ratings, so I can't say how the ${d.name} is rated.` : `We don't keep sales figures, ratings or reviews, so I can't say how popular the ${d.name} is. The restaurant hasn't marked it as a bestseller.`, blocks: [], cited: [d.id] };
+    const head = reviews ? `We don't collect reviews or ratings. The restaurant does mark the ${d.name} as a bestseller` : `Yes: the restaurant marks the ${d.name} as a bestseller`;
+    const reason = !d.available ? "it's currently unavailable" : !servedAt(d, input.branch) ? "it isn't served at this branch" : unmet(d, { ...p, course: null, maxPrice: null });
+    if (reason) return { text: `${head}, but ${reason.startsWith("it") ? reason : `it doesn't suit you: ${reason}`}.`, blocks: [], cited: [d.id] };
+    return { text: `${head}.`, blocks: [card([d])], cited: [d.id], recommended: [d.id] };
   }
 
   if (input.kind === "evidence") {
     const lastId = input.context?.recommended?.[0] ?? null;
     const last = lastId ? input.entries.find((e) => e.id === lastId) ?? null : null;
-    const why = last
-      ? ` I suggested the ${last.name} because ${hasPrefs(input.prefs) ? `it fits what you asked for (${describePrefs(input.prefs)})` : "its menu description matched your request"}${last.bestseller ? ", and the restaurant marks it as a bestseller" : ""}.`
-      : " My suggestions come from the menu and what you tell me.";
+    // A marked dish: the mark is the only evidence there is, and it is said first (review of D-26).
+    if (last?.bestseller) return { text: `The restaurant marks the ${last.name} as a bestseller; beyond that we don't keep sales figures, ratings or reviews.`, blocks: [], cited: [last.id] };
+    const why = last ? ` I suggested the ${last.name} ${hasPrefs(input.prefs) ? `because it fits what you asked for (${describePrefs(input.prefs)})` : "from its menu description, not from popularity"}.` : " My suggestions come from the menu and what you tell me.";
     return { text: `No, we don't keep sales or popularity figures, ratings or reviews.${why}`, blocks: [], cited: last ? [last.id] : [] };
   }
 
@@ -84,6 +114,6 @@ export function evidenceStep(input: { kind: EvidenceKind; text: string; prefs: P
     return { text: `${among} restaurant marks ${names(shown)} as ${shown.length === 1 ? "a bestseller" : "bestsellers"}.`, blocks: [card(shown)], cited: shown.map((d) => d.id), recommended: shown.map((d) => d.id) };
   }
   const o = offer();
-  if (marked.length) return { text: `None of the dishes the restaurant marks as bestsellers is ${article(w)}.${o.text}`, blocks: o.blocks, cited: [], asked: o.asked };
+  if (marked.length) return { text: hasPrefs({ ...p, course: null, diet: [] }) ? `None of the dishes the restaurant marks as bestsellers fits what you asked for (${describePrefs(p)}).${o.text}` : `None of the dishes the restaurant marks as bestsellers is ${article(w)}.${o.text}`, blocks: o.blocks, cited: [], asked: o.asked };
   return { text: `We don't keep sales or popularity figures, so I can't say which ${w} sells best.${o.text}`, blocks: o.blocks, cited: [], asked: o.asked };
 }

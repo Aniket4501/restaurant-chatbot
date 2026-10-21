@@ -35,7 +35,11 @@ The app listens on 127.0.0.1 only. The staff pages have no password (anyone usin
 
 **Guests** (`/`):
 - Ask a question, for example "Do you have parking at Hauz Khas?" or "How much is the butter chicken?". Unknown or unrelated questions get a short fallback with the branch phone number.
-- Ask for a suggestion in your own words: "the best vegetarian dish under ₹400", "something light", "surprise me". Then refine it: "anything cheaper?", "another option", "actually, a dessert instead". Preferences, including an allergy, carry over until you change them, even across a booking. The buttons ("Help me find a dish", "Something cheaper", "Opening hours"…) skip the step that works out what a typed message means, so they answer sooner.
+- Ask for a suggestion in your own words: "the best vegetarian dish under ₹400", "a light dessert", "surprise me". Then refine it: "anything cheaper?", "less spicy", "another option, but not paneer", "actually, a dessert instead". If you say nothing about yourself ("what would you recommend?"), the chat asks one question first. Preferences you state, including an allergy, carry over until you change them, even across a booking; the allergy note shows when an allergy comes up, not under every reply.
+- Ask "what's your best seller?" or "which dish has the best reviews?": the chat answers from what the restaurant has marked, and says plainly that there are no sales figures or reviews otherwise.
+- Plan a meal for a group: "can two of us eat here under ₹1,000?" or "₹400 per person for 3". The chat asks once whether you're vegetarian, eat meat or a mix, then shows a meal with quantities and a total worked out from menu prices. "Make it cheaper" or a new budget plans again; a budget too small for the group is said plainly.
+- Ask about opening hours for a branch and a day ("are you open tonight at Golf Course Road?", "what about 22 October?"): the answer is a card with lunch and dinner, and only the special hours that apply to that day. Without a branch, both are shown side by side.
+- The buttons ("Help me find a dish", "Something cheaper", the branch choices for hours…) skip the step that works out what a typed message means, so they answer sooner.
 - Browse the menu by section, or ask for "the vegan dishes".
 - Tap **Book a table**, then choose a branch, date, party size and one of the open times. Enter your name and mobile number, then tap Confirm.
 - You can also type a request, for example "table for 2 tomorrow at 8pm at Golf Course Road".
@@ -45,7 +49,7 @@ The booking reference appears only after the booking has been saved. Full times,
 **Staff** (`/admin`, no sign-in, D-25): a workspace with a page for each part of the restaurant the chatbot answers from.
 - **Overview:** today's bookings and guests, the next six days, the health of the menu, FAQs and knowledge base, and warnings (only real ones: bookings that no longer fit the hours or tables, failed documents, keyword-only search).
 - **Bookings:** pick a date and branch, filter by status, or search a guest name or reference across all dates. The list masks mobile numbers; Details shows the full booking. Cancelling frees the table straight away.
-- **Menu:** every dish the chatbot knows, with search, filters, sorting and pages. Add a dish, edit its price, description, labels, spice and branches, mark it unavailable or remove it. Each dish page shows the guest card and the exact fact the chatbot reads.
+- **Menu:** every dish the chatbot knows, with search, filters, sorting and pages. Add a dish, edit its price, description, labels, spice and branches, mark it unavailable or remove it, or tick it as a bestseller (the only popularity the chatbot will mention; tick only what your sales show). Each dish page shows the guest card and the exact fact the chatbot reads.
 - **Knowledge base:** add policies and guides as articles or `.txt`/`.md` uploads. Each is split into passages, keyword-indexed at once and embedded in the background, with every stage's status. Try a guest question to see what the chatbot's search finds and how it answers.
 - **FAQs:** curated questions and answers, with categories, branch scope, an active switch, conflict warnings and a real test of the chatbot.
 - **Availability:** a day view of every start time and table, computed by the booking engine; block or reopen times; edit weekly hours, special dates and tables. Changes that would strand confirmed bookings ask first.
@@ -62,6 +66,9 @@ guest message ──► mask phone and email ──► retrieve facts (SQLite FT
 
 recommendation ──► code filters the menu by the stated constraints ──► model call 2 picks a dish and says why
                ──► code validates the pick (one retry, then options) ──► dish card from the menu table
+
+meal for a group ──► code reads party, budget, diet ──► planner model call proposes dishes and quantities
+                 ──► code checks dishes, sum, budget, enough for everyone ──► plan card with the total from code
 
 booking fields ──► validate ──► availability engine ──► open times ──► confirm card ──► POST /api/reservations
 ```
@@ -89,7 +96,8 @@ booking fields ──► validate ──► availability engine ──► open t
   - Buttons (chips and times) never call the model.
 - **Answers come only from stored facts.**
   - An FAQ answer is shown only if it cites facts, every time, price and phone number in it appears in those facts, and it makes no booking claim. Otherwise the guest sees the fallback.
-  - Opening hours are written out from the data, not by the model.
+  - Opening hours are a card built from the hours tables for the branch and day asked about, not written by the model; only that branch's special hours for that day apply.
+  - Popularity is never inferred: only dishes staff mark as bestsellers are called that.
   - A few deterministic checks catch common extraction mistakes, for example a time the guest never stated, or a weekday read as the wrong date.
 - **Bookings are safe to retry.**
   - Each booking is one SQLite IMMEDIATE transaction, with database triggers that refuse overlapping bookings on a table and overlapping bookings for one mobile number.
@@ -144,7 +152,9 @@ The eval cases, layers, metrics, baseline and how to reproduce a failure are des
   - A claim inside a hedged sentence ("we'd have a table if you came at 9") is not caught.
   - Grounding checks that a price exists in the cited facts, not which dish it belongs to.
 - **"next Friday"** is read as the coming Friday rather than asked about. The date is always shown back before booking.
-- **Recommendations take two model calls**, so they are slower than other replies.
+- **Recommendations and meal plans take two model calls** (a plan skips the first), so they are slower than other replies.
+- **Meal plans** use stated portion rules (a main dish shared by two, a bread or drink each, rice or a dessert per two, a starter per four) because portion sizes aren't in the menu data, so "enough food" is that rule, not a measure. Taxes aren't in the data, so totals are menu prices.
+- **"A fish dish"** and similar requests by kind of food: code only knows the words in a dish's name and description, so it can't tell that a pomfret is a fish; the model may or may not say that the fish dish asked for is unavailable.
 - **Menu data limits.**
   - The seed labels the Chocolate Chilli Mousse both vegetarian and containing egg; it appears for "vegetarian" with "Contains egg" on its card.
   - Allergen labels cover only dairy, nuts and egg, so every answer involving an allergy carries a "tell your server" note.

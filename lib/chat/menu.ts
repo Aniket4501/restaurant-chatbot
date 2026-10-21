@@ -60,12 +60,11 @@ export function unmet(item: MenuEntry, prefs: Prefs): string | null {
   if (prefs.course !== null && item.course !== prefs.course) return `not one of the ${COURSE_NOUN[prefs.course]}`;
   if (prefs.mild && item.spice === null) return "spice level not listed";
   if (prefs.mild && (item.spice ?? 0) > 1) return "too spicy";
-  // D-26: "I like it spicy" means medium or hot; an unlisted spice level is unknown, so it doesn't count.
-  if (prefs.spicy && item.spice === null) return "spice level not listed";
-  if (prefs.spicy && (item.spice ?? 0) < 2) return "not spicy";
-  // D-26: an ingredient the guest doesn't want ("not paneer"), found in the dish's name or description.
+  // D-26: a liking for spice is a preference the chooser weighs, not a filter (review: it emptied desserts and drinks).
+  // An ingredient the guest doesn't want ("not paneer"), found in the dish's name or description; the word is escaped,
+  // since the context comes from the client (review of D-26).
   const text = `${item.name} ${item.description}`.toLowerCase();
-  for (const w of prefs.exclude ?? []) if (new RegExp(`\\b${stemOf(w)}`).test(text)) return `has ${w}`;
+  for (const w of prefs.exclude ?? []) if (new RegExp(`\\b${stemOf(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(text)) return `has ${w}`;
   return null;
 }
 
@@ -108,7 +107,7 @@ export function foodWords(text: string, items: MenuEntry[]): string[] {
 /** "mild vegan main courses without nuts, up to ₹200": the honest no-match reply and the prompt's preference line. */
 export function describePrefs(prefs: Prefs, opts: { cheaperThan?: number | null } = {}): string {
   const diet = prefs.diet.map((d) => (d === "jain" ? "Jain-friendly" : d)).join(", ");
-  const parts = [`${prefs.mild ? "mild " : prefs.spicy ? "spicy " : ""}${diet ? `${diet} ` : ""}${prefs.course ? COURSE_NOUN[prefs.course] : "dishes"}`];
+  const parts = [`${prefs.mild ? "mild " : ""}${diet ? `${diet} ` : ""}${prefs.course ? COURSE_NOUN[prefs.course] : "dishes"}`];
   const without = [...prefs.avoid, ...(prefs.exclude ?? [])];
   if (without.length) parts.push(`without ${without.join(" or ")}`);
   if (prefs.maxPrice !== null) parts.push(`up to ₹${prefs.maxPrice}`);
@@ -148,7 +147,7 @@ export function menuStep(items: MenuEntry[], prefs: Prefs, course: Course | null
   // Nothing fits: the sections are offered, so the guest is never left without a way on.
   if (!fit.length) return { text: `We don't have any ${describePrefs(p)} on the menu right now.`, blocks: [...note, sections], shown: 0, cited: [] };
   const groups = COURSES.map((c) => ({ course: c, label: COURSE_LABEL[c], items: fit.filter((i) => i.course === c).map(view) })).filter((g) => g.items.length);
-  const sectionOnly = p.course !== null && !p.diet.length && !p.avoid.length && p.maxPrice === null && !p.mild;
+  const sectionOnly = p.course !== null && !p.diet.length && !p.avoid.length && p.maxPrice === null && !p.mild && !(p.exclude ?? []).length;
   const text = sectionOnly ? `Here are our ${COURSE_NOUN[p.course!]}.` : `Here's what we have: ${describePrefs(p)}.`;
   // The dishes listed are this turn's facts, so a follow-up ("is the first one spicy?") can be answered (D-13 carry).
   return { text, blocks: [{ type: "menu_list", groups }, ...note], shown: fit.length, cited: fit.slice(0, 8).map((d) => d.id) };

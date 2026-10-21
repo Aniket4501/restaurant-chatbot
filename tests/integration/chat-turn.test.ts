@@ -61,21 +61,25 @@ describe("chips with a fixed meaning skip the intent call (D-24)", () => {
     return { calls, model };
   };
   const chipTurn = (action: TurnInput["action"], label: string, context?: TurnInput["context"]): TurnInput => ({ now: NOW, sessionId: SID, messages: [{ role: "guest", content: label }], draft: null, action, context });
-  it("'Opening hours' asks which branch (their weeks differ), and a branch chip shows its card, with no model call", async () => {
+  it("'Opening hours' shows both branches' weeks compactly, and a branch chip shows its card, with no model call", async () => {
     const { calls, model } = counting({});
     const r = await runTurn(chipTurn({ type: "hours" }, "Opening hours"), deps({ model }));
     expect(calls).toEqual([]);
     expect(r.meta.outcome).toBe("hours_answer");
-    expect(r.reply.text).toBe("Which branch? Hauz Khas and Golf Course Road keep different hours.");
-    expect(block(r, "quick_replies")!.chips.map((c) => ("action" in c ? c.action : null))).toEqual([{ type: "hours", branch: "hauz-khas" }, { type: "hours", branch: "gurugram" }, { type: "hours", branch: "all" }]);
+    // D-27 (live LV-UX-002): two branches are compared at once rather than asked about.
+    expect(r.reply.text).toBe("Here are the regular opening hours at both branches.");
+    expect(block(r, "hours")!.sections.map((s) => s.branch)).toEqual(["Hauz Khas", "Golf Course Road"]);
     expect(r.meta.timing.calls).toBe(0);
-    // D-27: the chip's branch gives that branch's regular week as a card; the reply line repeats no times.
+    // A branch chip (from a question with more than two branches) gives that branch's regular week as a card.
     const g = await runTurn(chipTurn({ type: "hours", branch: "gurugram" }, "Golf Course Road"), deps({ model }));
     expect(calls).toEqual([]);
     expect(block(g, "hours")!.sections).toMatchObject([{ branch: "Golf Course Road", rows: [{ label: "Lunch", note: "Mondays: closed" }, { label: "Dinner", value: "7:00 PM – 11:00 PM" }] }]);
     expect(g.reply.text).toBe("Here are the regular opening hours at Golf Course Road.");
     expect(g.context.hours).toEqual({ branches: ["gurugram"], date: null });
-    // A booking's branch is known: no question.
+    // A chip keeps the rest of the question (review of D-27: it dropped the weekday).
+    const sat = await runTurn(chipTurn({ type: "hours", branch: "hauz-khas", weekdays: [6] }, "Hauz Khas"), deps({ model }));
+    expect(block(sat, "hours")!.sections[0]).toMatchObject({ subtitle: "Saturdays", note: expect.stringContaining("Sat 31 Oct") });
+    // A booking's branch is known.
     const d = await runTurn({ ...chipTurn({ type: "hours" }, "Opening hours"), draft: { ...emptyDraft(), branch: "hauz-khas" } }, deps({ model }));
     expect(block(d, "hours")!.sections.map((s) => s.branch)).toEqual(["Hauz Khas"]);
   });
@@ -336,11 +340,11 @@ describe("FAQ routing (J1, J2, J8, J12; D-10, D-15)", () => {
     // answers in words and repeats no times. These keep the D-24 audit's intent on top of that.
     const sections = (r: Awaited<ReturnType<typeof ask>>) => block(r, "hours")?.sections ?? [];
     const rowOf = (r: Awaited<ReturnType<typeof ask>>, label: string, i = 0) => sections(r)[i]?.rows.find((x) => x.label === label);
-    it("a general question asks which branch when their weeks differ, and lists no special days", async () => {
+    it("a general question shows both branches' weeks and lists no special days", async () => {
       const r = await ask("What are your opening hours?", ["hours:hauz-khas:fri", "hours:gurugram:mon"]);
       expect(r.meta.outcome).toBe("hours_answer");
-      expect(r.reply.text).toMatch(/^Which branch\?/);
-      expect(r.reply.text).not.toMatch(/Oct/);
+      expect(sections(r).map((x) => x.branch)).toEqual(["Hauz Khas", "Golf Course Road"]);
+      expect(JSON.stringify(r.reply)).not.toMatch(/Oct/);
       expect(r.context.hours).toEqual({ branches: [], date: null });
     });
     it("a general question about one branch gets that branch's week only (D-27: no special dates for regular hours)", async () => {
@@ -367,7 +371,7 @@ describe("FAQ routing (J1, J2, J8, J12; D-10, D-15)", () => {
       expect(sections(both).map((x) => x.subtitle)).toEqual(["Tomorrow, Sat 17 Oct", "Tue 20 Oct"]);
       for (const q of ["We sat on the terrace last time, what are your hours?", "What are your opening hours currently?"]) {
         const r = await ask(q, ["hours:gurugram:mon"]);
-        expect(r.reply.text, q).toMatch(/^Which branch\?/); // the regular week, not a day: the branches differ
+        expect(r.reply.text, q).toBe("Here are the regular opening hours at both branches."); // the regular week, not a day
         expect(r.context.hours?.date, q).toBeNull();
       }
     });
@@ -693,5 +697,60 @@ describe("popularity questions are answered from the restaurant's own mark (D-26
     const r = await runTurn(say("What is your best seller?"), deps({ model: sequenceModel([rec("recommend")]) }));
     expect(r.reply.text).toBe("We don't keep sales or popularity figures, so I can't say which dish sells best. I can suggest something that suits you instead. Any preference: vegetarian, vegan, or do you eat everything?");
     expect(r.context.asked).toEqual(["diet"]);
+  });
+});
+
+describe("meal plans keep what the guest says about allergies (D-28 review)", () => {
+  it("a nut allergy in the planning message is remembered, noted once, and filters every dish the planner may use", async () => {
+    const first = await runTurn(say("Can 2 of us eat here under ₹1,000? My wife is allergic to nuts"), deps({ model: sequenceModel([]) }));
+    expect(first.meta.timing.calls).toBe(0); // the diet question: no model call
+    expect(first.reply.text).toMatch(/vegetarian.*meat.*mix\?$/);
+    expect(block(first, "notice")).toMatchObject({ text: expect.stringContaining("can't guarantee") });
+    expect(first.context.prefs).toMatchObject({ avoid: ["nuts"], allergy: true, maxPrice: null });
+    // The planner's first proposal has a nut dish: it isn't on the list it was given, so it is refused.
+    const model = sequenceModel([{ dishes: ["paneer-lababdar", "butter-naan"], note: "" }, { dishes: ["dal-ember", "butter-naan"], note: "A smoky dal with soft naan." }]);
+    const second = await runTurn({ ...say("We eat everything", {}, [{ role: "guest", content: "Can 2 of us eat here under ₹1,000? My wife is allergic to nuts" }, { role: "assistant", content: first.reply.text }]), context: first.context }, deps({ model }));
+    expect(block(second, "meal_plan")!.items.map((i) => [i.id, i.qty])).toEqual([["menu:dal-ember", 1], ["menu:butter-naan", 2]]);
+    expect(second.trace.find((x) => x.action === "plan")).toMatchObject({ result: "rejected", rejected: expect.arrayContaining([expect.stringMatching(/"paneer-lababdar" is not one of the listed dishes/)]) });
+    expect(block(second, "notice")).toBeUndefined(); // shown with the question; the allergy still filters
+  });
+  it("an allergen the labels can't cover sends the guest to staff instead of planning", async () => {
+    const r = await runTurn(say("Can 2 of us eat here under ₹1,500? I'm allergic to shellfish and we eat everything"), deps({ model: sequenceModel([]) }));
+    expect(r.meta.timing.calls).toBe(0);
+    expect(block(r, "meal_plan")).toBeUndefined();
+    expect(r.reply.text).toMatch(/can't suggest a dish around your allergy/);
+  });
+});
+
+describe("review of D-28: preferences in other kinds of message", () => {
+  const veg = { lastCitedIds: [], prefs: { ...noPrefs(), diet: ["vegetarian" as const] } };
+  it("a question that names a meat dish keeps a stored vegetarian diet", async () => {
+    const q = "Does the Old Delhi Butter Chicken have nuts?";
+    const r = await runTurn(say(q, { context: veg }), deps({ script: { [q]: faq("Yes, the Old Delhi Butter Chicken contains nuts.", ["menu:old-delhi-butter-chicken"]) } }));
+    expect(r.context.prefs?.diet).toEqual(["vegetarian"]);
+    // Said about themselves, it does lift it.
+    const lift = "Actually I eat chicken, what are your hours?";
+    const l = await runTurn(say(lift, { context: veg }), deps({ script: { [lift]: faq("x", ["hours:hauz-khas:fri"]) } }));
+    expect(l.context.prefs?.diet).toEqual([]);
+  });
+  it("'show me the mains without paneer' lists mains, none with paneer", async () => {
+    const q = "Show me the mains without paneer";
+    const turn: Turn = { intent: "menu", booking: nullBooking(), prefs: { diet: [], avoid: [], maxPrice: null, course: "mains", mild: false, allergy: false, relation: null }, answer: null, citedFactIds: [], answerable: true };
+    const r = await runTurn(say(q), deps({ model: sequenceModel([turn]) }));
+    const items = block(r, "menu_list")!.groups.flatMap((g) => g.items);
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.some((i) => /paneer/i.test(`${i.name} ${i.description}`))).toBe(false);
+  });
+  it("with a stored nut allergy, 'can I eat the kulfi?' gets the allergy note", async () => {
+    const q = "Can I eat the Pistachio Kulfi?";
+    const ctx = { lastCitedIds: [], prefs: { ...noPrefs(), avoid: ["nuts" as const], allergy: true }, allergyNoted: true };
+    const r = await runTurn(say(q, { context: ctx }), deps({ script: { [q]: faq("The Pistachio Kulfi contains nuts and dairy.", ["menu:pistachio-kulfi"]) } }));
+    expect(block(r, "notice")).toMatchObject({ text: expect.stringContaining("can't guarantee") });
+  });
+  it("an allergy question the facts can't answer is answered honestly, not with 'I don't have that information' (live LV-SAF-003)", async () => {
+    const q = "I have a sesame allergy. Is the Chana Pindi safe for me?";
+    const r = await runTurn(say(q), deps({ script: { [q]: { ...faq(null, [], false) } } }));
+    expect(r.reply.text).toBe("I can't confirm that: our menu labels only list the main allergens. Please ask your server, who can check the dish with the kitchen.");
+    expect(block(r, "notice")).toBeDefined();
   });
 });

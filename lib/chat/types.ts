@@ -54,7 +54,14 @@ export const ActionSchema = z.discriminatedUnion("type", [
    * The "Opening hours" chip (D-24), and D-27's branch chips: a branch ("all" for every branch) and a date keep what an
    * hours question asked about. No model call.
    */
-  z.strictObject({ type: z.literal("hours"), branch: z.union([slug, z.literal("all")]).optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
+  z.strictObject({
+    type: z.literal("hours"),
+    branch: z.union([slug, z.literal("all")]).optional(),
+    date: z.string().refine(isLocalDate, "YYYY-MM-DD").optional(),
+    dates: z.array(z.string().refine(isLocalDate, "YYYY-MM-DD")).max(3).optional(),
+    weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+    meal: z.enum(["lunch", "dinner"]).optional(),
+  }),
 ]);
 
 /**
@@ -72,7 +79,7 @@ export const PrefsSchema = z.strictObject({
   /** D-26: the guest likes it spicy (medium or hot). Never set together with mild. */
   spicy: z.boolean().default(false),
   /** D-26: ingredients the guest doesn't want ("not paneer"), only words found in the menu's names or descriptions. */
-  exclude: z.array(z.string().min(3).max(24)).max(5).default([]),
+  exclude: z.array(z.string().regex(/^[a-z]{3,24}$/)).max(5).default([]),
 });
 export type Prefs = z.infer<typeof PrefsSchema>;
 export const noPrefs = (): Prefs => ({ diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false, unlisted: [], spicy: false, exclude: [] });
@@ -93,13 +100,13 @@ export const ContextSchema = z.strictObject({
       party: z.number().int().min(1).max(12),
       budget: z.number().int().min(1).max(200_000),
       basis: z.enum(["total", "per_person"]),
-      diet: z.enum(["vegetarian", "vegan", "any", "mixed"]).nullable(),
+      diet: z.enum(["vegetarian", "vegan", "any", "mixed", "mixed_vegan"]).nullable(),
       subtotal: z.number().int().min(0).nullable(),
       items: z.array(z.string().max(100)).max(10),
     })
     .optional(),
   /** D-27: what the last hours answer was about, for a follow-up ("what about Golf Course Road?"). */
-  hours: z.strictObject({ branches: z.array(slug).max(8), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable() }).optional(),
+  hours: z.strictObject({ branches: z.array(slug).max(8), date: z.string().refine(isLocalDate, "YYYY-MM-DD").nullable() }).optional(),
 });
 export type HoursFocus = NonNullable<z.infer<typeof ContextSchema>["hours"]>;
 export type PlanFocus = NonNullable<z.infer<typeof ContextSchema>["plan"]>;

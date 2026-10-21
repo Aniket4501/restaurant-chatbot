@@ -24,14 +24,14 @@ const P = (o: Partial<Prefs> = {}): Prefs => ({ ...noPrefs(), ...o });
 const marked = (...slugs: string[]) => entries.map((e) => ({ ...e, bestseller: slugs.includes(e.id.slice(5)) }));
 const step = (text: string, o: { prefs?: Prefs; menu?: MenuEntry[]; recommended?: string[]; asked?: ("diet" | "course")[] } = {}) => {
   const trace: TraceEntry[] = [];
-  const kind = evidenceQuestion(text);
+  const kind = evidenceQuestion(text, !!o.recommended?.length, entries.map((e) => e.name));
   if (!kind) throw new Error(`not an evidence question: ${text}`);
   return { ...evidenceStep({ kind, text, prefs: o.prefs ?? P(), entries: o.menu ?? entries, context: { lastCitedIds: [], recommended: o.recommended, asked: o.asked }, branch: null, trace }), trace };
 };
 
 describe("which questions ask for evidence", () => {
   it("reads sales, popularity, review and evidence questions, in their usual wordings", () => {
-    for (const t of ["What is your best seller?", "What is your best vegetarian seller?", "best-selling dessert?", "Which dish sells the most?", "What's the top selling main?", "What do most people order?", "Is the butter chicken popular?", "What's your most popular dessert?"]) expect(evidenceQuestion(t), t).toBe("sales");
+    for (const t of ["What is your best seller?", "What is your best vegetarian seller?", "best-selling dessert?", "Which dish sells the most?", "What's the top selling main?", "What do most people order?", "Is the butter chicken popular?", "What's your most popular dessert?"]) expect(evidenceQuestion(t, false, entries.map((e) => e.name)), t).toBe("sales");
     expect(evidenceQuestion("Which dish has the best reviews?")).toBe("reviews");
     expect(evidenceQuestion("Do you have actual sales data to support that?")).toBe("evidence");
   });
@@ -71,6 +71,32 @@ describe("answers from the data, never from the model's judgment", () => {
     expect(step("Do you have actual sales data to support that?", { prefs: P({ diet: ["vegetarian"] }), recommended: ["menu:dal-ember"] }).text).toBe(
       "No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Dal Ember because it fits what you asked for (vegetarian dishes).",
     );
-    expect(step("How do you know?", { recommended: ["menu:dal-ember"] }).text).toBe("No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Dal Ember because its menu description matched your request.");
+    expect(step("How do you know?", { recommended: ["menu:dal-ember"] }).text).toBe("No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Dal Ember from its menu description, not from popularity.");
+    // A marked dish: the mark is said first.
+    expect(step("Is that a bestseller?", { recommended: ["menu:dal-ember"], menu: marked("dal-ember") }).text).toBe("The restaurant marks the Dal Ember as a bestseller; beyond that we don't keep sales figures, ratings or reviews.");
   });
 });
+
+describe("review of D-26", () => {
+  it("doesn't take busy times, branches, kids' ratings or hours challenges for popularity questions", () => {
+    const names = entries.map((e) => e.name);
+    for (const t of ["Is Saturday a popular time to come?", "Is Hauz Khas popular?", "Is the terrace rated for kids?", "What's your most popular time?", "How do you know you're open on Sunday?"]) expect(evidenceQuestion(t, true, names), t).toBeNull();
+    expect(evidenceQuestion("How do you know?", false, names)).toBeNull(); // nothing suggested yet
+    expect(evidenceQuestion("Is the Dal Ember popular?", false, names)).toBe("sales");
+    expect(evidenceQuestion("Is the butter chicken popular?", false, names)).toBe("sales");
+  });
+  it("a named marked dish is offered only if available, served here and right for the guest; a review question never gets a yes", () => {
+    const menu = marked("dal-ember", "tandoori-pomfret");
+    expect(step("Is the Tandoori Pomfret popular?", { menu }).text).toBe("Yes: the restaurant marks the Tandoori Pomfret as a bestseller, but it's currently unavailable.");
+    expect(step("Is the Dal Ember popular?", { menu, prefs: P({ avoid: ["dairy"], allergy: true }), asked: ["diet"] }).text).toBe("Yes: the restaurant marks the Dal Ember as a bestseller, but it doesn't suit you: contains dairy.");
+    expect(step("How are the reviews for the Dal Ember dish?", { menu }).text).toBe("We don't collect reviews or ratings. The restaurant does mark the Dal Ember as a bestseller.");
+  });
+  it("allergies apply: an unlisted allergen goes to staff, and the note shows", () => {
+    expect(step("What is your best seller?", { prefs: P({ allergy: true, unlisted: ["sesame"] }) }).text).toMatch(/can't suggest a dish around your allergy/);
+    expect(step("What is your best seller?", { prefs: P({ avoid: ["nuts"], allergy: true }), menu: marked("dal-ember") }).blocks[0]).toMatchObject({ type: "notice" });
+  });
+  it("says which need ruled the marked dishes out", () => {
+    expect(step("What's your bestseller under ₹300?", { prefs: P({ maxPrice: 300 }), menu: marked("dal-ember") }).text).toMatch(/^None of the dishes the restaurant marks as bestsellers fits what you asked for \(dishes, up to ₹300\)\./);
+  });
+});
+

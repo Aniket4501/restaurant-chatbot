@@ -372,7 +372,7 @@ function MealPlan({ block }: { block: Extract<Block, { type: "meal_plan" }> }) {
                 {i.qty > 1 && ` · ${price(i.price)} each`}
               </span>
               <Labels item={i} />
-              {i.contains.length > 0 && <span className="text-[12px] text-muted">Contains {i.contains.join(", ")}</span>}
+              {(i.contains.length > 0 || i.scope) && <span className="text-[12px] text-muted">{[i.contains.length ? `Contains ${i.contains.join(", ")}` : null, i.scope].filter(Boolean).join(" · ")}</span>}
             </div>
           </li>
         ))}

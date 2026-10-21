@@ -89,11 +89,20 @@ export function smalltalkShowable(text: string): boolean {
 export const HYPE_RE =
   /\b(?:most popular|popular(?:ity)?|best[- ]?sell(?:er|ers|ing)|top[- ]sell(?:er|ers|ing)|(?:our|the) top (?:seller|pick|choice|dish)|favou?rites?|signature|chef'?s (?:special|choice|pick|recommendation|speciality|specialty)|chef recommends|award[- ]winning|famous|highly (?:rated|recommended)|top[- ]rated|best[- ]rated|well[- ]reviewed|(?:great|good|rave|glowing|excellent|amazing|five[- ]star) reviews?|reviews? (?:say|rave)|must[- ]try|crowd[- ]pleaser|speciality|specialty|house (?:special|classic|favou?rite)|everyone(?:'s)? (?:loves?|favou?rite|orders)|(?:much|well|most)[- ]loved|beloved|loved by|guests (?:love|adore|rave)|people (?:love|order)|customers love|go-to|most ordered|most requested|always a hit|sells out|iconic|(?:our|the) (?:best|top) (?:dish|dishes|seller))\b/gi;
 // "We don't track what's popular", "I can't say which is the bestseller": an honest statement, not a claim.
-const HYPE_NEGATED = /\b(?:not|no|don't|do not|doesn't|does not|can't|cannot|can not|never|without|isn't|aren't|unable to|any|which|whether|if)\b[^.!?]{0,40}$/i;
+// An honest statement about the data, not a claim: a negator that governs knowing or keeping it ("we don't track
+// what's popular", "I can't say which is the bestseller", "no sales data", "it isn't marked as a bestseller"). Review
+// of D-26: "which", "if", "any" and a bare "can't" ("you can't go wrong with our most popular dish") let claims through.
+const HYPE_NEGATED = /\b(?:(?:don't|do not|doesn't|does not|didn't|can't|cannot|can not|unable to|never|won't)\s+(?:\w+\s+){0,2}(?:track|keep|know|say|tell|have|record|collect|claim|call|rank|measure|mark)|(?:hasn't|haven't|has not|have not|isn't|is not|aren't|are not|wasn't|not)\s+(?:\w+\s+){0,2}(?:marked|listed|known|ranked|rated|tracked|recorded)|no (?:sales|data|popularity|reviews?|ratings?|figures|records|way to (?:know|tell|say)))\b[^.!?]{0,40}$/i;
+
+/** The popularity claims a reply makes (negated mentions left out), with where each starts. */
+export function hypeMatches(text: string): { claim: string; index: number }[] {
+  const t = fold(text);
+  return [...t.matchAll(HYPE_RE)].filter((m) => !HYPE_NEGATED.test(t.slice(Math.max(0, m.index - 60), m.index).split(/[.!?]/).pop() ?? "")).map((m) => ({ claim: m[0], index: m.index }));
+}
 
 /** The popularity claims a reply makes (negated mentions left out), in order. */
 export function hypeClaims(text: string): string[] {
-  return [...fold(text).matchAll(HYPE_RE)].filter((m) => !HYPE_NEGATED.test(fold(text).slice(Math.max(0, m.index - 60), m.index).split(/[.!?]/).pop() ?? "")).map((m) => m[0]);
+  return hypeMatches(text).map((m) => m.claim);
 }
 
 /** True when the claim is about bestsellers ("bestseller", "best-selling"), the one kind a staff mark can support. */

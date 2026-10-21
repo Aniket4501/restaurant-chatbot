@@ -1,0 +1,842 @@
+[
+ {
+  "key": "plan",
+  "findings": [
+   {
+    "file": "lib/chat/turn.ts",
+    "line": 319,
+    "title": "Allergy stated in the meal-plan message is never read: plan can include the allergen and shows no allergy note",
+    "scenario": "Fresh chat: \"Can 2 of us eat here under \u20b91,000? My wife is allergic to nuts\". explicitPrefs gives {allergy:true, avoid:['nuts']}, but the plan branch runs before any prefs merge and passes prefsOut (= context prefs, null) as noPrefs() to planTurn. planDishes(noPrefs) still includes 8 nut dishes (paneer-lababdar, old-delhi-butter-chicken, mushroom-matar-makhana, bharwan-aloo, pistachio-kulfi, shahi-tukda...). After 'We eat everything' a plan with Paneer Lababdar is shown. There is no ALLERGY_NOTE block, the allergy is not saved in context.prefs, and the planner prompt gets no 'Avoid: nuts'. The same happens with 'I'm coeliac' and 'allergic to shellfish' in the plan message.",
+    "severity": "critical"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 91,
+    "title": "planDishes drops stored gluten-free/Jain diet and unlisted allergens (shellfish), so no staff referral",
+    "scenario": "Turn 1: 'I'm coeliac' (prefs.diet=['gluten-free'], allergy=true) or 'I'm allergic to shellfish' (prefs.unlisted=['shellfish']). Turn 2: 'Can 2 of us eat here under \u20b92,000?' then 'We eat everything'. planDishes builds diet only from focus.diet (vegetarian/vegan), so the gluten-free filter is lost: butter-naan, garlic-naan, tandoori-roti, laccha-paratha and missi-roti stay eligible. unmet() ignores `unlisted`, so prawn-koliwada and kerala-prawn-curry stay eligible. The recommend path's unlistedReferral (send the guest to staff) is never called. Tested: planDishes(...coeliac prefs) returns all 5 wheat breads; shellfish prefs return both prawn dishes.",
+    "severity": "critical"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 140,
+    "title": "safeNote shows invented diet, allergen and attribute claims that claimProblems would reject",
+    "scenario": "The plan is Paneer Lababdar (dairy, nuts) + 2 Butter Naan (wheat, dairy), and the planner's note is 'A fully vegan, gluten-free spread that suits a coeliac guest perfectly.' Shown reply: \"Here's a meal for two people that comes to \u20b9745, within your \u20b91,000. A fully vegan, gluten-free spread that suits a coeliac guest perfectly.\" A note of 'Halal chicken with soft naan, all mild.' is also shown, for a plan that has no chicken. claimProblems (used on chooser replies) flags both ('promises allergen safety', '\"Halal\" is not in the facts'). safeNote only blocks digits, hype words and safe/nut-free/dairy-free/allergen/table/book.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 41,
+    "title": "\"we don't eat meat\" / \"we don't eat non-veg\" / \"no non-veg\" read as diet \"any\"",
+    "scenario": "'We are 4, we don't eat non-veg, can we have dinner under \u20b92000?' gives focus.diet='any'. Line 41's /eat meat|non[- ]?veg/ matches inside the negated phrase and is checked before explicitPrefs' NO_MEAT/vegetarian result. 'Can 2 of us eat here under \u20b91000? We don't eat meat.' also gives planDietIn='any'. The vegetarian group skips the diet question and gets a plan that may include Butter Chicken or Lamb Rogan Josh, and the lead line has no 'vegetarian'.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 39,
+    "title": "Mixed groups are misread: common phrasings become 'any', and a vegan member is satisfied by a dairy main",
+    "scenario": "'Can 2 of us eat under \u20b91500? I'm vegetarian, my husband is non-veg' and 'Can 4 of us eat here for \u20b93,000? 2 veg, 2 non-veg' both give diet='any', so no vegetarian main is required. Butter Chicken + naan passes and the vegetarian has no main. 'We are 4 and one of us is vegan, can we have dinner for \u20b92,500?' gives 'mixed'. vegFits accepts vegetarian, so Paneer Lababdar + Old Delhi Butter Chicken + 2 Butter Naan validates with no reasons, and every dish has dairy, leaving the vegan guest nothing to eat.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 51,
+    "title": "PER_PERSON matches 'each', so a total budget is multiplied by the party and the plan can exceed what the guest said",
+    "scenario": "'Can 2 of us eat under \u20b91,000? We'd like one main each.' gives {budget:2000, basis:'per_person'}. validatePlan then accepts plans up to \u20b92,000, and the lead says 'comes to \u20b91,850, within your \u20b92,000' when the guest's budget was \u20b91,000. The same happens with 'a drink each' or 'one dessert each'.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 26,
+    "title": "The headline phrasing 'Can two of us eat here under \u20b91,000?' is not detected as a plan",
+    "scenario": "partyIn strips /(one|some|two) of us (is|are|eats?|...)/ to remove 'one of us is vegetarian', but 'two of us eat' matches too. partyStated then sees no count and readPlanRequest returns null (tested). The message falls through to the generic model and recommend path. 'Can 2 of us eat...' and 'Can the two of us eat...' work, but the spelled-out form, which the code comments use as the canonical example, does not.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 27,
+    "title": "Wrong party size, so the plan is for fewer people than the group",
+    "scenario": "'We are 5, three of us are vegetarian, can we eat under \u20b93000?' gives party=3 and diet='vegetarian'. partyStated wins with the last 'N of us' match ('three' is not in the strip list), so the 'we are 5' rule never runs, and the plan is 'a vegetarian meal for three people' for a group of five. 'Can me and 3 friends eat here under \u20b92,000?' gives party=3, not 4 (PARTY_RE adds 1 only for '3 friends and I').",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 80,
+    "title": "Booking requests and single-dish budget questions are taken over by the planner",
+    "scenario": "BOOKING_WORDS only covers book/reserv/'table for'/'a table'. 'Dinner for 4 on Saturday at 8pm, budget \u20b94000' and 'Lunch for 3 tomorrow at 1, budget Rs 2000' both become plan requests. The guest gets 'Is everyone vegetarian...?', and the date and time are never merged into the draft. Single-dish questions are hijacked too: 'Do you have a biryani under \u20b9700 for 2?', 'Can I get a starter under \u20b9400 for 2 people?' and 'Show me dishes under \u20b9400, we are 2' become whole-meal plans. The last one ends in '\u20b9400 isn't enough for a meal for two people here...' instead of a list of dishes priced under \u20b9400.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 76,
+    "title": "After a plan, any message with a diet word, an amount or 'for N' replans instead of answering",
+    "scenario": "With context.plan set, each of these returns a plan request (tested). 'Is the dal ember vegetarian?' gives a new vegetarian meal plan. 'Any vegan dessert?' gives a whole vegan meal plan. 'Do you have any non-veg starters?' gives a replan. 'Do you have something under \u20b9300?' sets budget=300, and the reply is '\u20b9300 isn't enough for a meal for two people here'. 'Is there parking for 2 wheelers?' and 'We'll come for 2 hours' (party=2) also trigger a replan. The guest's actual question is never answered, and each replan costs a planner model call.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 73,
+    "title": "Follow-up party above 12 is silently clamped to 12",
+    "scenario": "After a plan for 4: 'Actually we are 15 people now' gives party=12 with the budget unchanged (tested). The reply is 'Here's a meal for twelve people...' for a group of 15, with no large-party notice (largeParty is hard-coded false). A first message with 15 people is refused as a plan, but the follow-up is not. With a per-person basis, the budget is also computed for 12.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 82,
+    "title": "Per-person budget can exceed ContextSchema's plan.budget max of 200,000, so every later turn gets a 400",
+    "scenario": "'Can 12 of us eat here for \u20b920,000 each?' gives budget 240000. The diet question is returned with context.plan.budget=240000. The client stores r.context and sends it back, ContextSchema rejects it (safeParse is false, tested), and /api/chat returns 400 on every following message ('Try again' loops). The chat stays stuck until Start over.",
+    "severity": "minor"
+   },
+   {
+    "file": "components/chat/Blocks.tsx",
+    "line": 375,
+    "title": "Branch-scoped dishes can enter a plan for the wrong branch, and the plan card hides the scope",
+    "scenario": "'Can 4 of us eat at Hauz Khas under \u20b93,000? We eat everything.' with no booking draft: planTurn gets branch=draft0.branch (null). The recommend path uses branchIn(latest), but the plan path does not read the branch from the message. Keema Pav Sliders (Golf Course Road only) stays eligible (tested). MealPlan renders labels and 'Contains' but not item.scope, unlike Recommendation and MenuList. The guest sees a Hauz Khas plan with a dish that branch doesn't serve and no 'Golf Course Road only' note.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 129,
+    "title": "The 'enough for everyone' check counts a drink or a roti as a person's food and tandoor starters as mains",
+    "scenario": "For 4 people (vegetarian), 2 x Tandoori Broccoli + 2 x Masala Chai validates with reasons=[] and subtotal \u20b91,180 (tested): a starter and tea shown as a meal for four. The floor message says 'the least a meal for four people comes to is \u20b9900' (2 Yellow Dal Tadka + 2 Tandoori Roti: half a roti each). The 'Plan for \u20b9900' chip invites a plan at exactly that size.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 240,
+    "title": "'Make it cheaper' at the cheapest possible plan uses two model calls and then says 'ask again in a moment'",
+    "scenario": "The last plan is the floor (Yellow Dal Tadka + Tandoori Roti, \u20b9450 for 2) and the guest taps the always-offered 'Make it cheaper'. No plan can be cheaper, but the code doesn't compare prev.subtotal with floor.total. Both attempts are rejected (tested: 2 calls), and the reply is 'I couldn't put together a cheaper meal for two people just now. You can browse the menu, or ask again in a moment.', which suggests that retrying could help.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 149,
+    "title": "The service-charge caveat ignores the FAQ's branch scope",
+    "scenario": "Staff add branch-scoped FAQs (supported by lib/admin/faq.ts branch_id), for example Hauz Khas 'No service charge is added' and Golf Course Road 'A 10% service charge is added'. chargeNote takes the first FAQ whose question mentions service charge, whatever its branchId or the plan's branch. A Golf Course Road plan's caveat then says 'No service charge is added to the bill.', a wrong statement about the bill.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 184,
+    "title": "The group's diet answer is discarded, and a later plan silently defaults to 'everything'",
+    "scenario": "Turn 1: 'Can 2 of us eat here under \u20b91,000?' (plan_diet asked). Turn 2: 'All vegetarian' (veg plan). Turn 3: 'What time do you close?' (context.plan dropped). Turn 4: 'Can 4 of us eat here under \u20b92,000?' gives diet=null, but asked includes plan_diet, so diet becomes 'any'. The plan may include meat for a group that said it was all vegetarian. The answer was never saved to prefs, and the question is never asked again.",
+    "severity": "minor"
+   }
+  ],
+  "verdicts": [
+   {
+    "title": "Allergy stated in the meal-plan message is never read: plan can include the allergen and shows no allergy note",
+    "real": true,
+    "evidence": "lib/chat/turn.ts:319 passes `prefs: prefsOut ?? noPrefs()`, which is only the stored context prefs. explicitPrefs(latest) is never merged on the plan path, and the router's recommend case adds no ALLERGY_NOTE. Ran runTurn in memory with a scripted model. Turn 1, 'Can 2 of us eat here under \u20b91,000? My wife is allergic to nuts', returned the diet question with context.prefs=null (explicitPrefs gives {allergy:true, avoid:['nuts']}). Turn 2, 'We eat everything', plus a planner reply of paneer-lababdar + 2 butter-naan, returned 'Here's a meal for two people that comes to \u20b9745...'. The meal_plan includes paneer-lababdar (contains=dairy,nuts), plan_scope dishes=47 (all available), there is no notice block, prefs is still null, and the planner prompt has no 'Avoid:' line.",
+    "fix": "Before planTurn, merge explicitPrefs(latest) allergy/avoid/unlisted/diet into prefsOut, as the else-branch does. Pass the merged prefs, and add the ALLERGY_NOTE notice to the plan reply when the prefs carry an allergy."
+   },
+   {
+    "title": "planDishes drops stored gluten-free/Jain diet and unlisted allergens (shellfish), so no staff referral",
+    "real": true,
+    "evidence": "lib/chat/plan.ts:91 builds diet only from focus.diet (vegetarian/vegan) and drops prefs.diet. unmet() in lib/chat/menu.ts:49 never checks prefs.unlisted. Called planDishes(entries, focus diet 'any', {diet:['gluten-free'], allergy:true}). It returned 14 dishes not labelled gluten-free, including butter-naan, garlic-naan, tandoori-roti, laccha-paratha, missi-roti and shahi-tukda. With {allergy:true, unlisted:['shellfish']} it returned amritsari-fish-fry, prawn-koliwada and kerala-prawn-curry. Jain prefs left 47 of 48 dishes. planTurn never calls unlistedReferral.",
+    "fix": "In planDishes, keep prefs.diet entries (gluten-free, jain) alongside the focus diet. In planTurn, return unlistedReferral(prefs) before planning when prefs.unlisted is non-empty."
+   },
+   {
+    "title": "safeNote shows invented diet, allergen and attribute claims that claimProblems would reject",
+    "real": true,
+    "evidence": "lib/chat/plan.ts:140 blocks only digits, hype words and safe/nut-free/dairy-free/allergen/table/book/reserv. Ran runTurn with a planner reply of paneer-lababdar + 2 butter-naan and the note 'A fully vegan, gluten-free spread that suits a coeliac guest perfectly.' Shown text: 'Here's a meal for two people that comes to \u20b9745, within your \u20b91,000. A fully vegan, gluten-free spread that suits a coeliac guest perfectly.' The note 'Halal chicken with soft naan, all mild.' was also shown for a plan with no chicken. claimProblems on the same two notes returned ['promises allergen safety'] and ['\"Halal\" is not in the facts'].",
+    "fix": "Run claimProblems(note, planDishes, entries) in safeNote and drop the note when it returns any problem. At minimum, also reject diet and allergen words (vegan, gluten-free, coeliac, halal, jain) that the planned dishes' labels don't support."
+   },
+   {
+    "title": "\"we don't eat meat\" / \"we don't eat non-veg\" / \"no non-veg\" read as diet \"any\"",
+    "real": true,
+    "evidence": "In planDietIn at plan.ts:41, /non[- ]?veg(?:etarian)?|eat meat/ matches inside the negated phrase, and it runs before the explicitPrefs vegetarian (NO_MEAT) result. planDietIn returned 'any' for 'We don't eat meat.', 'we don't eat non-veg' and 'no non-veg please'. End to end, 'We are 4, we don't eat non-veg, can we have dinner under \u20b92000?' with a planner reply of 2 old-delhi-butter-chicken + 4 butter-naan gave 'Here's a meal for four people that comes to \u20b91,730', with no diet question and no 'vegetarian' in the lead.",
+    "fix": "Check ex.diet (which honours NO_MEAT) before the 'any' regex, or add a negative lookbehind for don't/do not/never/no before eat meat|non-veg."
+   },
+   {
+    "title": "Mixed groups are misread: common phrasings become 'any', and a vegan member is satisfied by a dairy main",
+    "real": true,
+    "evidence": "readPlanRequest gave diet 'any' for 'Can 2 of us eat under \u20b91500? I'm vegetarian, my husband is non-veg' and for 'Can 4 of us eat here for \u20b93,000? 2 veg, 2 non-veg'. The mixed regex needs 'veg and non-veg' or 'one of us', and line 41 then matches 'non-veg'. 'We are 4 and one of us is vegan...' gave 'mixed'. validatePlan(paneer-lababdar + old-delhi-butter-chicken + 2 butter-naan, mixed) returned reasons [], because vegFits accepts vegetarian and every dish has dairy. The planner prompt also says 'a mix: some vegetarian, some eat meat', so the vegan requirement is lost.",
+    "fix": "Detect 'I'm vegetarian/vegan ... non-veg' and 'N veg, M non-veg' as mixed. Add a 'mixed-vegan' variant (or track the strictest member diet) and require a vegan main when a vegan member is stated."
+   },
+   {
+    "title": "PER_PERSON matches 'each', so a total budget is multiplied by the party and the plan can exceed what the guest said",
+    "real": true,
+    "evidence": "PER_PERSON at plan.ts:51 includes a bare 'each'. readPlanRequest('Can 2 of us eat under \u20b91,000? We'd like one main each.') gave {budget:2000, basis:'per_person'}, and 'A drink each.' gave the same. End to end, after 'We eat everything', a \u20b91,755 plan was accepted and shown as 'Here's a meal for two people that comes to \u20b91,755, within your \u20b92,000.' The guest's budget was \u20b91,000.",
+    "fix": "Only treat 'each' as per person when it is attached to the amount ('\u20b9500 each', 'each \u20b9500'), e.g. /(?:\u20b9|rs\\.?|inr)\\s*[\\d,.k]+\\s*(?:each|per (?:person|head)|a head|pp)\\b|\\bper (?:person|head)\\b/."
+   },
+   {
+    "title": "The headline phrasing 'Can two of us eat here under \u20b91,000?' is not detected as a plan",
+    "real": true,
+    "evidence": "partyIn at plan.ts:26 strips /(one|some|two) of us (is|are|eats?|...)/, which removes 'two of us eat'. partyStated then finds no count, and the 'for/we're' and 'the two of us' fallbacks don't match. readPlanRequest('Can two of us eat here under \u20b91,000?') returned null. 'Can 2 of us eat here under \u20b91,000?' and 'Can the two of us eat here under \u20b91,000?' both returned party 2. The message falls through to the generic model path, the per-dish budget reading that D-28 set out to fix.",
+    "fix": "Drop 'two' from the strip list, or strip only when 'of us' is followed by a diet word (is/are vegetarian|vegan|non-veg...)."
+   },
+   {
+    "title": "Wrong party size, so the plan is for fewer people than the group",
+    "real": true,
+    "evidence": "readPlanRequest('We are 5, three of us are vegetarian, can we eat under \u20b93000?') gave party=3, diet='vegetarian'. PARTY_RE's last 'N of us' match wins and 'three' is not stripped, so the 'we are 5' fallback never runs. readPlanRequest('Can me and 3 friends eat here under \u20b92,000?') gave party=3, because PARTY_RE adds 1 only for '3 friends and I/me'.",
+    "fix": "Strip every 'N of us is/are <diet>' subgroup phrase (any number) before partyStated, and add 'me and N friends/colleagues' (+1) to the party reader."
+   },
+   {
+    "title": "Booking requests and single-dish budget questions are taken over by the planner",
+    "real": true,
+    "evidence": "readPlanRequest returned plan requests for 'Dinner for 4 on Saturday at 8pm, budget \u20b94000', 'Lunch for 3 tomorrow at 1, budget Rs 2000', 'Do you have a biryani under \u20b9700 for 2?', 'Can I get a starter under \u20b9400 for 2 people?' and 'Show me dishes under \u20b9400, we are 2'. runTurn on the Saturday dinner message returned the diet question, and the draft stayed {branch:null,date:null,time:null,partySize:null}. 'Show me dishes under \u20b9400, we are 2', then 'We eat everything', gave '\u20b9400 isn't enough for a meal for two people here: ...\u20b9450 at menu prices.' with no list of dishes.",
+    "fix": "Return null when the message names a date or time (weekday/today/tomorrow/am/pm/at N) or asks for a single course or dish ('a biryani', 'a starter', 'show me dishes', 'something under'). Also check with guards' booking cues rather than only book/reserv/table."
+   },
+   {
+    "title": "After a plan, any message with a diet word, an amount or 'for N' replans instead of answering",
+    "real": true,
+    "evidence": "With context.plan set (party 2, budget 1000, diet any), runTurn returned: 'Is the dal ember vegetarian?' \u2192 a new vegetarian meal_plan (1 planner call). 'Any vegan dessert?' \u2192 'I couldn't put a meal plan together just now...' (2 calls). 'Do you have something under \u20b9300?' \u2192 '\u20b9300 isn't enough for a meal for two people here...'. 'Is there parking for 2 wheelers?' \u2192 a meal_plan (1 call). readPlanRequest also gave party=2 for 'We'll come for 2 hours' and diet 'any' for 'Do you have any non-veg starters?'. In every case the question itself is never answered.",
+    "fix": "In the follow-up branch, treat the message as a plan change only when it is not a question about a dish or course (no '?', is/does/any/do you have), or when it uses plan cue words (make it, change it, our budget, we are now, all vegetarian). Exclude 'for N' followed by hours/wheelers and similar nouns."
+   },
+   {
+    "title": "Follow-up party above 12 is silently clamped to 12",
+    "real": true,
+    "evidence": "plan.ts:73 uses Math.min(party ?? prev.party, PARTY_MAX). readPlanRequest('Actually we are 15 people now', prev party 4) gave party 12 with the budget unchanged (or 9000 under per_person). In runTurn the trace shows plan_scope party=12. A successful reply would read 'meal for twelve people'. turn.ts:331 hard-codes largeParty:false, so there is no large-party notice. A first message with 15 people returns null instead.",
+    "fix": "When a follow-up's party exceeds PARTY_MAX, return null (or a large-party reply) instead of clamping, matching the first-message rule."
+   },
+   {
+    "title": "Per-person budget can exceed ContextSchema's plan.budget max of 200,000, so every later turn gets a 400",
+    "real": true,
+    "evidence": "runTurn('Can 12 of us eat here for \u20b920,000 each?') returned 'Happy to plan a meal for twelve people within \u20b92,40,000...' with context.plan.budget=240000. ContextSchema.safeParse(r.context).success is false. ChatPanel.tsx:157 stores r.context, and line 138 sends it back. ChatBodySchema validates context with ContextSchema, so every later /api/chat call returns 400 until Start over.",
+    "fix": "Cap the computed budget at 200,000, or refuse the plan in readPlanRequest when amount*party exceeds the schema max, so the reply's context always passes ContextSchema."
+   },
+   {
+    "title": "Branch-scoped dishes can enter a plan for the wrong branch, and the plan card hides the scope",
+    "real": true,
+    "evidence": "turn.ts:319 passes branch: draft0.branch only, with no branchIn(latest) as the recommend path uses. runTurn('Can 4 of us eat at Hauz Khas under \u20b93,000? We eat everything.') with a planner reply including keema-pav-sliders was accepted. The meal_plan item has scope='Golf Course Road only'. MealPlan in components/chat/Blocks.tsx renders courseLabel, Labels and 'Contains', but not item.scope, unlike Recommendation/MenuList (lines 263, 290).",
+    "fix": "Pass `draft0.branch ?? branchIn(latest)` to planTurn (hoist branchIn above the plan branch), and render i.scope in MealPlan next to 'Contains'."
+   },
+   {
+    "title": "The 'enough for everyone' check counts a drink or a roti as a person's food and tandoor starters as mains",
+    "real": false,
+    "evidence": "Reproducible: validatePlan(2 tandoori-broccoli + 2 masala-chai, party 4, vegetarian) returns reasons [] and subtotal 1180, and cheapestPlan gives 900 (2 yellow-dal-tadka + 2 tandoori-roti). This is the documented rule, though. D-28 in docs/DECISIONS.md says 'at least one main per two guests and one item per person', and the code and planner prompt explicitly count 'mains, tandoor or a biryani' as main dishes. The behaviour matches the spec as written. This is a question about the heuristic's quality, not a code defect against it.",
+    "fix": ""
+   },
+   {
+    "title": "'Make it cheaper' at the cheapest possible plan uses two model calls and then says 'ask again in a moment'",
+    "real": true,
+    "evidence": "runTurn('Can 2 of us eat here under \u20b91,000? All vegetarian') with a planner reply of yellow-dal-tadka + tandoori-roti gave a \u20b9450 plan (plan_scope least=450). Then 'Make it cheaper' made 2 planner calls. Both were rejected ('the guest wants it cheaper than \u20b9450'), and the reply was 'I couldn't put together a cheaper meal for two people just now. You can browse the menu, or ask again in a moment.' No plan can be cheaper than the floor, so retrying can never help.",
+    "fix": "In planTurn, when relation==='cheaper' and plan.subtotal !== null && floor.total >= plan.subtotal, reply with no model call that this is already the lowest-priced meal for the group."
+   },
+   {
+    "title": "The service-charge caveat ignores the FAQ's branch scope",
+    "real": true,
+    "evidence": "chargeNote at plan.ts:148 takes src.faq.find(question matches 'service charge') and ignores branchId. FactSource.faq carries branchId, lib/admin/faq.ts lets staff scope FAQs to a branch, and faqConflicts skips pairs with different branches, so per-branch service-charge FAQs are allowed. The seed has a global one ('No service charge is added to the bill...', branchId null) that would come first, by id order, for any branch's plan. With a later Golf Course Road '10% service charge' FAQ added, a Golf Course Road plan would still quote 'No service charge is added'.",
+    "fix": "Pick the FAQ whose branchId matches the plan's branch, then fall back to a global one. When no branch is known and the branch FAQs differ, omit the caveat or quote each branch's answer."
+   },
+   {
+    "title": "The group's diet answer is discarded, and a later plan silently defaults to 'everything'",
+    "real": true,
+    "evidence": "runTurn sequence: 'Can 2 of us eat here under \u20b91,000?' \u2192 diet question, asked=['plan_diet']. 'All vegetarian' \u2192 vegetarian plan, with context.prefs still null. 'What time do you close?' \u2192 context.plan dropped, asked kept. 'Can 4 of us eat here under \u20b92,000?' \u2192 no question asked, plan_scope diet='any' (47 dishes), and a planner reply of 2 old-delhi-butter-chicken + 4 butter-naan was accepted and shown. turn.ts:149 passes asked=includes('plan_diet'), plan.ts:184 defaults null to 'any', and planDishes ignores prefs.diet.",
+    "fix": "Save the plan diet (vegetarian/vegan) into prefsOut.diet when it is answered, and fall back to prefs.diet before 'any'. Or only skip the question when context.plan was present (clear 'plan_diet' from asked when the plan context is dropped)."
+   }
+  ]
+ },
+ {
+  "key": "hours",
+  "findings": [
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 185,
+    "severity": "major",
+    "title": "Period or named-day questions get the regular week with special dates suppressed, hiding a cited closure (regression)",
+    "scenario": "readHoursQuestion only parses today/tonight/tomorrow, explicit dates and full weekday names. 'this week', 'this weekend', 'next week', 'any closures coming up?' and holiday names all resolve to dates=[] and weekday=null. hoursAnswer then builds the regular weekly card, and lines 185/232 deliberately leave out every special date. The router (router.ts:335-341) uses the model's citations only to decide that this is an hours question, so an exception id the model cited is thrown away. Probe run in the branch time zone: now=Sun 25 Oct 2026, 'Is Golf Course Road open this week?' -> 'Here are the regular opening hours at Golf Course Road.' with a 'Regular weekly hours' card. Nothing mentions the Tue 27 Oct all-day kitchen-maintenance closure, so a guest would turn up on a closed day. now=Thu 29 Oct, 'Is Hauz Khas open this weekend?' -> 'Every day, Dinner 7:00 PM \u2013 11:00 PM', but Sat 31 Oct runs to 11:30 PM. 'Do you have any special hours or closures coming up?' (draft branch gurugram) -> regular week only. The old renderHoursAnswer path read 'weekend' as weekday scope and listed the in-horizon exceptions."
+   },
+   {
+    "file": "lib/chat/router.ts",
+    "line": 335,
+    "severity": "major",
+    "title": "Address or phone asked together with hours is silently dropped by the new hours-card path (regression)",
+    "scenario": "The new branch catches every hours-only citation set, including branch:* facts, before the old path runs. The old path kept the cited branch facts (lines 353/359: ...cited.filter(id => id.startsWith('branch:'))), so the address and phone were shown. hoursAnswer never renders branch facts; it cites branch:* only when no hours are on record. Input: 'What's the address of Hauz Khas and when do you open?' with the model citing branch:hauz-khas plus hours:hauz-khas:*. Wrong output: 'Here are the regular opening hours at Hauz Khas.' and an hours card, with no address or phone anywhere in the reply."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 88,
+    "severity": "minor",
+    "title": "Follow-up about the other branch, or a short branch name, reuses the previous branch",
+    "scenario": "branchesNamed only matches the full short name or the slug. Anything else falls back to focus.branches, and the model's cited branch is ignored. Probe: focus={branches:[hauz-khas], date:2026-10-17}. 'What about the other branch?' -> 'Here are the hours at Hauz Khas tomorrow.' with the Hauz Khas card again. 'What about Golf Course?' gives the same Hauz Khas answer. The guest asked about Golf Course Road and gets the branch they already saw."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 52,
+    "severity": "minor",
+    "title": "A day of month missing from the current or next month resolves to null; a follow-up then shows the old date",
+    "scenario": "resolveDay only tries this month or next month, and returns null when that day doesn't exist there. now=Thu 5 Nov 2026, focus date Fri 6 Nov. 'And on the 31st?' -> 'Here are the hours at Hauz Khas tomorrow.' with a 'Tomorrow, Fri 6 Nov' card: the guest asked about the 31st (most likely 31 Dec) and got the previous day again. Without a focus, 'Are you open on the 31st?' -> the regular weekly card, so any 31 Dec special hours are hidden."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 74,
+    "severity": "minor",
+    "title": "Weekday name next to an explicit date adds an unrelated second date, and the follow-up focus lands on it",
+    "scenario": "The weekday loop always adds the next date with that weekday, even when an explicit date was already found. now=Fri 16 Oct. 'Is Hauz Khas open on Saturday 31st October?' -> dates [2026-10-17, 2026-10-31]. Two cards ('Tomorrow, Sat 17 Oct' and 'Sat 31 Oct'), reply 'Hauz Khas has special hours on one of those days.', and focus.date=2026-10-17. So the next follow-up ('what about Golf Course Road?') answers for 17 Oct, not 31 Oct. 'Friday the 23rd' asked on a Friday likewise adds today."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 239,
+    "severity": "minor",
+    "title": "Crash (TypeError) when the focus or draft branch is no longer active",
+    "scenario": "q.branches comes from context.hours.branches or draft.branch without checking that the branch is still active (staff can deactivate branches in the admin). asked=[], so names='', and dayInfo.every(closedAllDay) is vacuously true, which calls cap('') -> TypeError: Cannot read properties of undefined (reading 'toUpperCase'). Probe: focus {branches:['old-branch'], date:null} + 'And tomorrow?' throws. 'What are your hours?' with the same focus returns 'Here are the regular opening hours at .' with an empty card."
+   },
+   {
+    "file": "lib/chat/turn.ts",
+    "line": 248,
+    "severity": "minor",
+    "title": "Hours chip date and context.hours.date accept impossible dates and crash the turn",
+    "scenario": "ActionSchema (types.ts:57) and ContextSchema.hours.date (types.ts:102) check only /^\\d{4}-\\d{2}-\\d{2}$/. chip.date, or a carried focus.date, goes straight into dayRows -> weekdayOf -> parts(), which throws. Probe: hoursAnswer({branches:['hauz-khas'], dates:['2026-02-30'], ...}) -> RangeError: invalid local date: 2026-02-30. 'What about Golf Course Road?' with focus.date '2026-02-30' throws the same, so the POST /api/chat turn fails instead of being rejected or ignored."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 68,
+    "severity": "minor",
+    "title": "'Open 24/7?' is read as 24 July next year",
+    "scenario": "dateSpans' DD/MM pattern matches '24/7', and resolveDay rolls it to 2027-07-24. 'Are you open 24/7?' (now 16 Oct 2026) -> 'Here are the hours at both branches on that date.' with a card titled 'Sat 24 Jul' (no year) and Saturday's hours. The guest gets an answer about an unrelated date nine months away instead of the regular hours."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 73,
+    "severity": "minor",
+    "title": "Several plural weekdays: only the first in Sunday-first order is answered; 'every Tuesday' answers one date",
+    "scenario": "plural=findIndex keeps one weekday. 'Are you open on Saturdays and Sundays at Golf Course Road?' -> 'Here are the usual hours at Golf Course Road on Sundays.' with only a Sundays card, so Saturday is missing. The singular regex matches 'every tuesday', so now=Sun 25 Oct 'Are you open every Tuesday at Golf Course Road?' -> 'Golf Course Road is closed all day on Tuesday.' with the Tue 27 Oct maintenance card. That reads as Tuesdays being closed in general, though the branch is normally open on Tuesdays."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 61,
+    "severity": "minor",
+    "title": "Any 'both' in the text overrides a named branch",
+    "scenario": "The bare \\bboth\\b alternative sets all=true, which wins over named. 'Are you open for both lunch and dinner at Golf Course Road on Monday?' -> branches [hauz-khas, gurugram] and meal=lunch. Reply: 'Here are the hours on Monday; lunch differs by branch.' with cards for both branches, instead of saying Golf Course Road is closed for lunch on Monday."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 216,
+    "severity": "minor",
+    "title": "'Which branch?' chips drop the weekday, 'now', the meal and multiple dates",
+    "scenario": "The chips carry only a date, and only when there is exactly one. turn.ts:248 rebuilds the question with weekday:null, meal:null, now:false. 'Are you open on Mondays?' -> chips with no weekday, so tapping Golf Course Road shows the whole regular week. 'Is it open now?' on a Monday -> tapping a branch gives 'Here are the hours at Golf Course Road today.' and never says whether it is open now. A two-date question loses both dates and falls back to the weekly card."
+   }
+  ],
+  "verdicts": [
+   {
+    "title": "Period or named-day questions get the regular week with special dates suppressed, hiding a cited closure (regression)",
+    "real": true,
+    "evidence": "Ran a router-level probe (in-memory DB, base.json) calling routeTurn with the same model turn twice: once with facts.hours set (new card path) and once without it (old path). now=Sun 25 Oct, 'Is Golf Course Road open this week?', model cites hours:gurugram:* + exception:gurugram:2026-10-27. NEW: 'Here are the regular opening hours at Golf Course Road.' with a 'Regular weekly hours' card, no 27 Oct. OLD: '...Special hours at Golf Course Road on Tue 27 Oct 2026: closed all day (Closed all day for kitchen maintenance).' now=Thu 29 Oct, 'Is Hauz Khas open this weekend?' citing exception:hauz-khas:2026-10-31: NEW gives an 'Every day' card with Dinner 7:00 PM \u2013 11:00 PM. OLD listed the Sat 31 Oct dinner to 11:30 PM. 'Any special hours or closures coming up?' NEW gives the regular week, or a 'Which branch?' question whose chips also lead to the regular week. OLD listed all three exceptions. Cause: readHoursQuestion has no 'this week/weekend/coming up' handling (dates=[], weekday=null). Lines 184-185 add special dates only when q.weekday !== null, and router.ts:335-341 throws away the cited exception ids.",
+    "fix": "In the weekly view (q.weekday === null), add a note for each in-horizon exception of the asked branch, as is already done for a single weekday. At the least, keep any exception the model cited, and treat 'this week/weekend' as the dates in that range."
+   },
+   {
+    "title": "Address or phone asked together with hours is silently dropped by the new hours-card path (regression)",
+    "real": true,
+    "evidence": "Router probe: 'What's the address of Hauz Khas and when do you open?' with cited [branch:hauz-khas, hours:hauz-khas:*]. isHoursOnly is true because branch:* counts as an hours fact id, so the new branch at router.ts:335 runs. NEW: 'Here are the regular opening hours at Hauz Khas.' plus an hours card, and cited no longer contains branch:hauz-khas. No address or phone appears anywhere. OLD: '... Neem & Ember, Hauz Khas. Address: 24 Hauz Khas Village, New Delhi 110016. Phone: +91 11 4155 0101.' 'What's the phone number and hours for Hauz Khas?' (branch:hauz-khas + hours:hauz-khas:fri) loses the phone the same way. hoursAnswer only cites branch:* in the no-hours-on-record case.",
+    "fix": "When the model cites branch:<slug> facts, add an address/phone line (or block) for those branches to the hours-card reply and keep the ids in cited. Or skip the card path when branch:* ids are cited along with hours ids."
+   },
+   {
+    "title": "Follow-up about the other branch, or a short branch name, reuses the previous branch",
+    "real": true,
+    "evidence": "Probe with focus {branches:['hauz-khas'], date:'2026-10-17'}, now Fri 16 Oct. 'What about the other branch?' gives Q.branches=['hauz-khas'] and 'Here are the hours at Hauz Khas tomorrow.' with the Hauz Khas 'Tomorrow, Sat 17 Oct' card. 'What about Golf Course?' gives exactly the same Hauz Khas answer. branchesNamed (line 39) only matches the full short name 'Golf Course Road' or the slug 'gurugram'. Line 88 then falls back to focus.branches, and the router never looks at the model's cited slugs.",
+    "fix": "Resolve 'the other branch/location' to the active branches not in focus.branches. Accept unambiguous partial names (a prefix of the short name). If nothing is named, prefer the slugs in the model's cited hours ids over the focus."
+   },
+   {
+    "title": "A day of month missing from the current or next month resolves to null; a follow-up then shows the old date",
+    "real": true,
+    "evidence": "Probe now=Thu 5 Nov 2026, focus {branches:['hauz-khas'], date:'2026-11-06'}, 'And on the 31st?'. resolveDay picks 2026-11-31, which is invalid, and returns null (line 52-53). dates is empty, so the follow-up falls back to focus.date: Q.dates=['2026-11-06'] and 'Here are the hours at Hauz Khas tomorrow.' with a 'Tomorrow, Fri 6 Nov' card. Without a focus, 'Are you open on the 31st?' gives dates=[] and a 'Which branch?' question whose chips have no date (with a named branch, the regular weekly card). The 31st is lost either way.",
+    "fix": "In resolveDay with no month, step forward month by month (up to 12) until the day exists. If no date resolves, say the date wasn't understood, and don't fall back to focus.date."
+   },
+   {
+    "title": "Weekday name next to an explicit date adds an unrelated second date, and the follow-up focus lands on it",
+    "real": true,
+    "evidence": "Probe now=Fri 16 Oct: 'Is Hauz Khas open on Saturday 31st October?' gives dates ['2026-10-17','2026-10-31'] and the reply 'Hauz Khas has special hours on one of those days.' with two cards ('Tomorrow, Sat 17 Oct' and 'Sat 31 Oct'). The returned focus is {date:'2026-10-17'}, so the next follow-up answers for 17 Oct. Probe now=Fri 23 Oct: 'Is Hauz Khas open on Friday the 30th?' gives dates ['2026-10-23','2026-10-30'] and 'Here are the hours at Hauz Khas for those days.' with a 'Today, Fri 23 Oct' card added. The weekday loop at lines 74-79 always adds the next date with that weekday.",
+    "fix": "Skip a weekday word that sits next to a resolved explicit date (or whose weekday matches one already in found). Only add the next date with that weekday when no explicit date has that weekday."
+   },
+   {
+    "title": "Crash (TypeError) when the focus or draft branch is no longer active",
+    "real": true,
+    "evidence": "Probe with focus {branches:['old-branch'], date:null} (passes the slug regex in ContextSchema; this happens when staff deactivate a branch). 'And tomorrow?' throws TypeError: Cannot read properties of undefined (reading 'toUpperCase'). Trace: asked=[], so built=[] and names=''. dayInfo.every(closedAllDay) is vacuously true, so line 239 calls cap(''). 'What are your hours?' with the same focus returns 'Here are the regular opening hours at .' with an empty sections array. turn.ts passes input.context?.hours unfiltered, and nothing in chatHandler/runTurn catches the error, so POST /api/chat fails with a 500.",
+    "fix": "In readHoursQuestion, filter focus.branches and draftBranch to active slugs, treating an empty result as null. Also guard hoursAnswer against asked.length === 0."
+   },
+   {
+    "title": "Hours chip date and context.hours.date accept impossible dates and crash the turn",
+    "real": true,
+    "evidence": "Probe: hoursAnswer({branches:['hauz-khas'], dates:['2026-02-30'], ...}) throws RangeError: invalid local date: 2026-02-30 (weekdayOf in dayRows). readHoursQuestion('What about Golf Course Road?', focus {branches:['hauz-khas'], date:'2026-02-30'}) followed by hoursAnswer throws the same. ActionSchema (types.ts hours action) and ContextSchema.hours.date use only /^\\d{4}-\\d{2}-\\d{2}$/, while the draft schema in the same file uses refine(isLocalDate). So a schema-valid body produces an uncaught error (500) instead of a 400. Only a tampered or buggy client can send this, because server-made chips carry valid dates. Low likelihood, but a real crash.",
+    "fix": "Use z.string().refine(isLocalDate) for the hours action date and for ContextSchema.hours.date, as the draft schema does."
+   },
+   {
+    "title": "'Open 24/7?' is read as 24 July next year",
+    "real": true,
+    "evidence": "Probe now=Fri 16 Oct 2026: 'Are you open 24/7?' gives Q.dates=['2027-07-24'] and 'Here are the hours at both branches on that date.' with one 'Both branches' card subtitled 'Sat 24 Jul' (no year), showing the regular Saturday hours. dateSpans matches '24/7' as DD/MM, and resolveDay rolls it into the next year.",
+    "fix": "Ignore '24/7' and '24x7' before date parsing, and treat them as a general hours question."
+   },
+   {
+    "title": "Several plural weekdays: only the first in Sunday-first order is answered; 'every Tuesday' answers one date",
+    "real": true,
+    "evidence": "Probe: 'Are you open on Saturdays and Sundays at Golf Course Road?' gives weekday=0 and 'Here are the usual hours at Golf Course Road on Sundays.' with only a 'Sundays' card. Saturday is dropped, because findIndex keeps one weekday and '\\bsaturday\\b' doesn't match 'saturdays'. With Hauz Khas, the Sat 31 Oct special-hours note would also be lost. Probe now=Sun 25 Oct: 'Are you open every Tuesday at Golf Course Road?' gives dates=['2026-10-27'] and 'Golf Course Road is closed all day on Tuesday.' with the 27 Oct maintenance card. The reply line reads as a general Tuesday closure, though the branch is normally open on Tuesdays.",
+    "fix": "Collect every plural weekday (allow a list of weekdays in HoursQuestion), and treat 'every <weekday>' as the general weekday view with the in-horizon exception note."
+   },
+   {
+    "title": "Any 'both' in the text overrides a named branch",
+    "real": true,
+    "evidence": "Probe: 'Are you open for both lunch and dinner at Golf Course Road on Monday?' gives Q.branches=['hauz-khas','gurugram'] and meal='lunch'. Reply: 'Here are the hours on Monday; lunch differs by branch.' with cards for both branches. The guest named only Golf Course Road, whose lunch is closed on Mondays. The bare '\\bboth\\b' alternative at line 61 sets all=true, and all takes precedence over named at line 88.",
+    "fix": "Drop the bare \\bboth\\b alternative (or apply it only when no branch is named), and let named branches take precedence over all."
+   },
+   {
+    "title": "'Which branch?' chips drop the weekday, 'now', the meal and multiple dates",
+    "real": true,
+    "evidence": "I simulated chip taps the way turn.ts builds them ({branches, dates: chip.date ? [chip.date] : [], weekday:null, meal:null, now:false}). 'Are you open on the 22nd and 27th?' gives chips with no date (line 216 keeps a date only when there is exactly one). Tapping Golf Course Road gives 'Here are the regular opening hours at Golf Course Road.' and tapping Hauz Khas gives 'Every day ... 7:00 PM \u2013 11:00 PM'. Both the Hauz Khas 22 Oct dinner closure and the Golf Course Road 27 Oct all-day closure are hidden. 'Are you open on Mondays?' gives chips without a weekday, and the tap shows the whole regular week. 'Is it open now?' (Mon 1 PM) gives a tap answer of 'Here are the hours at Golf Course Road today.' and never says whether it is open now. 'Lunch on Monday?' gives a tap answer of 'Here are the hours ... on Monday' with no lunch answer.",
+    "fix": "Carry the whole HoursQuestion in the chip action (dates[], weekday, meal, now) and rebuild it from that in turn.ts, instead of keeping only a single date."
+   }
+  ]
+ },
+ {
+  "key": "prefs",
+  "findings": [
+   {
+    "file": "lib/chat/turn.ts",
+    "line": 319,
+    "title": "Allergy stated in a meal-plan request is ignored: allergens are not filtered, there is no referral and no note, and the allergy is never stored",
+    "scenario": "Input: \"Can 2 of us eat here under \u20b91,500? We eat everything, but I'm allergic to prawns\" (or \"...? I'm allergic to nuts\"). readPlanRequest takes the turn, and planTurn gets prefs = prefsOut (stored, here empty). planDishes (plan.ts:91) filters only on the stored avoid/unlisted, so Prawn Koliwada and Kerala Prawn Curry stay plannable. For the nut case, Butter Chicken, Paneer Lababdar, Shahi Tukda, Pistachio Kulfi and others stay plannable. explicitPrefs(text) gives {allergy:true, unlisted:[shellfish]} / {avoid:[nuts]}, but nothing reads it. The plan is validated against that unfiltered list. The reply has no ALLERGY_NOTE, and no shellfish referral. prefsOut is never updated, so later recommendations do not filter the allergen either. Verified with readPlanRequest + planDishes.",
+    "severity": "critical"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 127,
+    "title": "New SPICY reader takes negated or temperature phrasing as 'likes spicy' and filters to medium/hot dishes only",
+    "scenario": "\"I don't like spicy food, which main would you suggest?\" gives explicitPrefs {spicy:true}, so unmet keeps only spice>=2 dishes. The fallback/chooser picks Chicken Chettinad (spice 3): 'I'd suggest the Chicken Chettinad (\u20b9625): fiery Tamil chicken curry...'. The same happens for \"We don't want spicy dishes\", \"not a fan of spicy food\", \"I can't handle spicy food\", \"avoid spicy food please\", \"my kids can't eat spicy food\" and \"I hate spicy food\". liftedPrefs also reads 'like spicy' as lifting a stored mild, so even the model's correct mild is dropped. \"I'd like something hot to drink\" gives spicy:true + course drinks, so the reply is 'We don't have any spicy drinks on the menu.' even though chai and coffee are served. Before this commit none of these set a spice filter. Verified by running recommendTurn.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/turn.ts",
+    "line": 531,
+    "title": "Any FAQ/booking message that names a meat dish now erases a stored vegetarian/vegan diet",
+    "scenario": "A guest said 'I'm vegetarian' earlier (stored diet [vegetarian]) and then asks the FAQ \"Is the butter chicken spicy?\" or \"My husband eats meat - how much is the lamb rogan josh?\". In liftedPrefs, the meat regex matches 'chicken'/'lamb' (not preceded by a negation), so lifted = [vegetarian, vegan]. The new else-branch removes them: stored diet becomes [] (trace 'not vegetarian'). On the next 'suggest a main', resolvePrefs has no diet, and the model's diet is deliberately not applied, so Chicken Chettinad or Lamb Rogan Josh can be recommended to a vegetarian. Before this commit the else-branch only added allergies and never touched diet.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 34,
+    "title": "Removing 'paneer' from DAIRY_FOOD leaves 'I can't have paneer, I'm allergic' with no filter at all",
+    "scenario": "Old explicitPrefs(\"I can't have paneer, I'm allergic\") = {allergy:true, avoid:[dairy]}. New = {allergy:true} only. 'can't have/eat' is not in EXCLUDE_RE, so no exclusion is set either, and no unlisted referral is made. Paneer Lababdar, Smoked Paneer Tikka and Bharwan Aloo stay eligible, and the chooser is told only 'they have a food allergy'. \"I can't eat paneer\" (old: avoid dairy) now filters nothing. A related gap, already present before this commit: \"I'm allergic to cheese\" gives allergy:true with no avoid and no referral, so every dairy dish stays eligible.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/turn.ts",
+    "line": 502,
+    "title": "Menu intent calls resolvePrefs without entries, so 'without paneer' is dropped and paneer dishes are listed, sometimes as 'what we have with paneer'",
+    "scenario": "resolvePrefs only keeps exclusions when it is passed entries, and the menu-intent path does not pass them. \"Which dishes do you have without paneer?\": exclude [], and foodWords finds 'paneer', so menuStep does an ingredient search. Reply: \"Here's what we have with paneer.\", listing Smoked Paneer Tikka, Bharwan Aloo and Paneer Lababdar. \"Show me the mains without paneer\" gives \"Here are our main courses.\" with Paneer Lababdar listed. Before this commit 'without paneer' meant avoid dairy, so no paneer dish was listed. Verified by replicating the turn.ts menu block.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 629,
+    "title": "Allergy note is hidden when the guest asks about safety after it was shown once (recommend and menu paths)",
+    "scenario": "Stored prefs {allergy:true, avoid:[nuts]}, allergyNoted:true. The guest asks \"Which dessert would be safe for me?\" (recommend). newSafety looks only at a newly stated allergy/allergen, so it is false and the reply is the Mango Sorbet card plus follow-up chips, with no ALLERGY_NOTE (verified). The menu path (turn.ts:513) behaves the same: \"Show me desserts that are safe for me\" gives 'Here's what we have: desserts, without nuts.' with no note. A safety question should always get the note.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/router.ts",
+    "line": 377,
+    "title": "FAQ answers to 'can I eat X?' no longer carry the allergy note for a guest with a stored allergy",
+    "scenario": "Stored nut allergy. The guest asks \"Can I eat the shahi tukda?\", \"Is the kulfi okay for me?\", \"Can I have the butter chicken?\" or \"What's in the Mushroom Galouti?\" (all nut dishes). None of them matches ALLERGEN_WORDS or the new /safe|allerg|contain|ingredients|traces|made with|cooked with/ list, so allergyLead is [] and the model's FAQ prose is shown with no allergy note. Before this commit a stored allergy always added the note.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 208,
+    "title": "'spicy' never expires across sections and has no relax chip: desserts/drinks become impossible",
+    "scenario": "Turn 1: \"I like spicy food, what main?\" or \"something spicier\" (SPICY also matches 'spicier'), so prefs.spicy=true. Turn 2: \"Now a dessert please\": spicy is carried (only an explicit 'mild' clears it), every dessert has spice<2, and the reply is \"We don't have any spicy desserts on the menu.\" with only the 'Show me the menu' chip. relaxChips has no chip for spicy (or for exclusions). A typed menu request behaves the same: 'We don't have any spicy desserts on the menu right now.' Verified with recommendTurn and menuStep.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/menu.ts",
+    "line": 68,
+    "title": "Client-supplied prefs.exclude is compiled into a RegExp unescaped: one request can crash the turn or hang the server",
+    "scenario": "ChatBodySchema accepts context.prefs.exclude as any 3-24 character string. POST /api/chat with context.prefs.exclude=[\"(abc\"]: unmet runs new RegExp('\\\\b(abc'), which throws 'Unterminated group', so every food turn fails. exclude=[\"(.|.)*\\\\d$\"] passes the schema and backtracks exponentially (22 chars already takes 24 ms, doubling per character). Against 60-90 character dish descriptions it would block the Node event loop for all users. Escape the word, or validate it as /^[a-z]+$/ in PrefsSchema.",
+    "severity": "major"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 210,
+    "title": "Three-letter exclusions such as 'no dal' are silently dropped",
+    "scenario": "\"Another option, but no dal please\": explicitPrefs gives exclude [dal], but the menu check uses foodWords, which only keeps words of 4+ letters, so 'dal' is discarded and prefs.exclude = []. Dal Ember and Yellow Dal Tadka can still be suggested.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 158,
+    "title": "Lifting an exclusion needs the exact same word form",
+    "scenario": "\"Something else, but no mushrooms\" stores exclude [mushrooms]. Then \"mushroom is fine actually\" lifts 'mushroom', which does not equal 'mushrooms', so the exclusion stays and mushroom dishes stay hidden. ('mushrooms are fine' works.) The same applies to prawn/prawns, tomato/tomatoes and similar pairs.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 576,
+    "title": "Common ways of handing over the choice still get the diet question",
+    "scenario": "DELEGATE only knows 'surprise me', not 'surprise us'. \"Surprise us!\", \"Your call\" and \"I trust you, what should I order?\" all return asked:'diet' and 'Happy to help. Any preference: vegetarian, vegan, or do you eat everything?' instead of a pick.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 650,
+    "title": "Course question returned in the same turn as a newly stated allergy has no allergy note",
+    "scenario": "\"I'm allergic to nuts, something light please\" gives the course question ('A light snack, a main course or a dessert?') with chips only, no ALLERGY_NOTE. The note only appears on a later food turn. If the guest moves on to booking, they never see it.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 110,
+    "title": "'allergic to paneer' now refers the guest to staff with a false claim",
+    "scenario": "With paneer out of DAIRY_FOOD, 'paneer' is not covered, so unlisted:['other']. Reply: 'Our menu labels only cover nuts, dairy, egg and gluten, not that allergen, so I can't suggest a dish around your allergy.' But paneer is dairy, which the labels do cover, and the old code filtered dairy instead.",
+    "severity": "minor"
+   },
+   {
+    "file": "lib/chat/menu.ts",
+    "line": 151,
+    "title": "Section-only heading ignores the new spicy and exclude filters",
+    "scenario": "Prefs {spicy:true}: \"show me the mains\" gives 'Here are our main courses.' but lists only the 4 mains with spice>=2. A stored exclusion behaves the same way. The guest is told this is the whole section.",
+    "severity": "minor"
+   }
+  ],
+  "verdicts": [
+   {
+    "title": "Allergy stated in a meal-plan request is ignored: allergens are not filtered, there is no referral and no note, and the allergy is never stored",
+    "real": true,
+    "evidence": "Ran runTurn end to end (in-memory DB with the base.json seed, sequenceModel). For \"Can 2 of us eat here under \u20b91,500? We eat everything, but I'm allergic to prawns\", readPlanRequest takes the turn and explicitPrefs reads {allergy:true, unlisted:[shellfish]}. Nothing uses that: planDishes (plan.ts:91) runs on prefsOut (null, so noPrefs) and keeps 47 dishes, Prawn Koliwada and Kerala Prawn Curry among them. A planner reply with prawn-koliwada passed validation: 'Here's a meal for two people that comes to \u20b91,020...', meal_plan [Prawn Koliwada, Yellow Dal Tadka], no ALLERGY_NOTE, context.prefs null. The nut case does the same: Old Delhi Butter Chicken (cashew) was accepted, with no note and no stored allergy. The planner prompt's avoid also comes only from stored prefs. Before this commit the same message went to resolvePrefs and the recommend path, which refer shellfish to staff and filter nuts.",
+    "fix": "In turn.ts:291-319, merge the message into the prefs before planning (resolvePrefs(null, prefsOut, latest, entries).prefs) and store the result in prefsOut. Return unlistedReferral when it fires, and add ALLERGY_NOTE to the plan blocks when needsAllergyNote."
+   },
+   {
+    "title": "New SPICY reader takes negated or temperature phrasing as 'likes spicy' and filters to medium/hot dishes only",
+    "real": true,
+    "evidence": "explicitPrefs gives {spicy:true} for all eight phrases listed. The lookbehind only checks for not/no/less/nothing/never/too directly before the match, so 'don't like spicy', 'spicy food', 'like something hot' all match. End to end, \"I don't like spicy food, which main would you suggest?\" (the model proposes mild:true) resolves to {spicy:true, mild:false}. lift.mild is true because 'like spicy' matches, and the trace marks the model's mild as 'inferred'. Fallback: 'Here are a few spicy main courses to choose from.' [Chana Pindi, Lamb Rogan Josh, Kerala Prawn Curry]. A chooser pick of Chicken Chettinad (spice 3) was accepted. \"I'd like something hot to drink\" gives 'We don't have any spicy drinks on the menu.' The old code had no spicy filter.",
+    "fix": "Reject a SPICY match when a negation or aversion word (don't/do not/not a fan of/can't/hate/avoid/kids can't) comes earlier in the clause, apply the same guard to liftedPrefs.mild, and don't read 'hot' as spice for drinks."
+   },
+   {
+    "title": "Any FAQ/booking message that names a meat dish now erases a stored vegetarian/vegan diet",
+    "real": true,
+    "evidence": "With stored prefs {diet:[vegetarian]}, the FAQ turns \"Is the butter chicken spicy?\" and \"My husband eats meat - how much is the lamb rogan josh?\" both went through the turn.ts:531-535 else-branch. liftedPrefs' meat regex matches 'butter chicken' / 'meat', so lifted=[vegetarian, vegan]. context.prefs.diet became [] (trace added ['not vegetarian','not vegan']). The next turn, \"suggest a main\" with the model proposing vegetarian, gave inferred:['vegetarian'] (not applied) and listed Old Delhi Butter Chicken first. The old else-branch never changed the diet.",
+    "fix": "Outside the recommend path, lift a diet only on an explicit self-statement ('I eat meat', 'I'm not vegetarian', 'forget the veg'), not on liftedPrefs' bare dish-name meat match."
+   },
+   {
+    "title": "Removing 'paneer' from DAIRY_FOOD leaves 'I can't have paneer, I'm allergic' with no filter at all",
+    "real": true,
+    "evidence": "New explicitPrefs(\"I can't have paneer, I'm allergic\") = {allergy:true}; old = {allergy:true, avoid:[dairy]}. \"I can't eat paneer\": new {}, old {avoid:[dairy]}. EXCLUDE_RE has no can't eat/have. End to end, \"I can't eat paneer, what main do you suggest?\" with no model avoid gave 'Here are a few main courses...' with Paneer Lababdar listed first. One caveat: when the model itself proposes avoid:[dairy], AVOID_CUE ('can't eat') keeps it and paneer is filtered (verified). So the gap is the lost code-level guarantee, and the outcome depends on the model. 'allergic to cheese' giving no avoid was already the case before (confirmed old = {allergy:true}).",
+    "fix": "Add can't/cannot (eat|have) to EXCLUDE_RE, and in allergy context (or 'can't have') map paneer to avoid dairy."
+   },
+   {
+    "title": "Menu intent calls resolvePrefs without entries, so 'without paneer' is dropped and paneer dishes are listed, sometimes as 'what we have with paneer'",
+    "real": true,
+    "evidence": "turn.ts:502 calls resolvePrefs(turn.prefs, prefsOut, latest) with no entries, so ex.exclude is discarded (recommend.ts:210). Ran end to end with intent menu: \"Which dishes do you have without paneer?\" gave 'Here's what we have with paneer.' [Smoked Paneer Tikka, Bharwan Aloo, Paneer Lababdar]. foodWords picks up 'paneer' as the search word. \"Show me the mains without paneer\" gave 'Here are our main courses.' with Paneer Lababdar among the 10. The old code turned 'without paneer' into avoid dairy and listed no paneer dish.",
+    "fix": "Pass entries to resolvePrefs at turn.ts:502 and remove excluded words from the ingredient-search words before calling menuStep."
+   },
+   {
+    "title": "Allergy note is hidden when the guest asks about safety after it was shown once (recommend and menu paths)",
+    "real": true,
+    "evidence": "Context {allergy:true, avoid:[nuts]}, allergyNoted:true. \"Which dessert would be safe for me?\" (recommend, chooser picks Mango Sorbet) gave the card with no ALLERGY_NOTE: newSafety (recommend.ts:629) only checks for a new allergy or allergen. \"Show me desserts that are safe for me\" (menu) gave 'Here's what we have: desserts, without nuts.' with no note (turn.ts:513 has no safety test). DECISIONS D-28 says the note shows again when 'the guest asks about safety', and the turn.ts comment says the same, so the code does not do what the design says. Before this commit the note was always shown.",
+    "fix": "Add a safety-question test (e.g. /\\bsafe|allerg|ok(ay)? for me|can i (eat|have)/) to newSafety and to the menu-path allergyNote flag."
+   },
+   {
+    "title": "FAQ answers to 'can I eat X?' no longer carry the allergy note for a guest with a stored allergy",
+    "real": true,
+    "evidence": "Stored {allergy:true, avoid:[nuts]}. Ran FAQ turns citing the nut dishes: \"Can I eat the shahi tukda?\", \"Is the kulfi okay for me?\", \"Can I have the butter chicken?\", \"What's in the Mushroom Galouti?\". All four gave faq_answer with note:false, for example 'The Shahi Tukda is a saffron bread pudding with rabri and almonds.' with no allergy notice. None of them matches ALLERGEN_WORDS or the new /safe|allerg|contain|ingredients|traces|made with|cooked with/ test (router.ts:377). The old code added the note whenever a stored allergy was present.",
+    "fix": "Also show the note when a cited dish's contains overlaps prefs.avoid, or the question matches can I (eat|have)|ok(ay)? for me|what's in."
+   },
+   {
+    "title": "'spicy' never expires across sections and has no relax chip: desserts/drinks become impossible",
+    "real": true,
+    "evidence": "resolvePrefs carries spicy unless 'mild' is said (recommend.ts:208). Unlike the budget, it is not dropped when the section changes. With context prefs {spicy:true, course:mains}, \"Now a dessert please\" gave 'We don't have any spicy desserts on the menu.' with only the 'Show me the menu' chip, because relaxChips has no spicy entry. A typed \"Show me the desserts\" (menu) gave 'We don't have any spicy desserts on the menu right now.' Only the menu-chip path (which omits spicy) gets out of it. SPICY also matches 'spicier'.",
+    "fix": "Drop spicy when the guest moves to another section (same rule as budgetCarries), and add a 'Not only spicy' relax chip that liftedPrefs reads."
+   },
+   {
+    "title": "Client-supplied prefs.exclude is compiled into a RegExp unescaped: one request can crash the turn or hang the server",
+    "real": true,
+    "evidence": "ContextSchema.safeParse accepts prefs.exclude ['(abc'] and ['(.|.)*\\\\d$'] (9 chars). resolvePrefs carries prev.exclude unchanged. eligible() then throws 'Invalid regular expression: /\\b(abc/: Unterminated group' (menu.ts:68). The evil pattern's time grows exponentially: 16 to 24 'a' chars took 4, 2, 6, 25 and 92 ms. Dish texts are 27-80 characters and none ends in a digit, so one recommend, menu or plan turn would block the Node event loop for every user. planDishes also passes prefs.exclude through, so the plan path is hit before any planner call.",
+    "fix": "Use escapeRe(stemOf(w)) in unmet, and restrict PrefsSchema.exclude to z.string().regex(/^[a-z]{3,24}$/)."
+   },
+   {
+    "title": "Three-letter exclusions such as 'no dal' are silently dropped",
+    "real": true,
+    "evidence": "explicitPrefs(\"Another option, but no dal please\") = {exclude:[dal], relation:another}. foodWords('dal') = [] because of /[a-z]{4,}/, so the resolved exclude is []. End to end with intent recommend/mains, the fallback listed Yellow Dal Tadka and Dal Ember first.",
+    "fix": "Check exclusion candidates directly against dish name and description (\\b + stem) instead of going through foodWords' 4-letter minimum."
+   },
+   {
+    "title": "Lifting an exclusion needs the exact same word form",
+    "real": true,
+    "evidence": "\"Something else, but no mushrooms\" stores exclude ['mushrooms']. liftedPrefs(\"mushroom is fine actually\").exclude = ['mushroom'], and resolvePrefs leaves ['mushrooms'] in place. \"mushrooms are fine\" does clear it.",
+    "fix": "Compare stemOf() forms when filtering prev.exclude against lift.exclude."
+   },
+   {
+    "title": "Common ways of handing over the choice still get the diet question",
+    "real": true,
+    "evidence": "End to end (intent recommend, no prefs), \"Surprise us!\", \"Your call\" and \"I trust you, what should I order?\" all returned DIET_QUESTION ('Happy to help. Any preference: vegetarian, vegan, or do you eat everything?') with ask_pref diet. DELEGATE only matches 'surprise me', 'you choose/pick/decide', 'up to you' and similar. It is a one-time UX question, not a safety issue.",
+    "fix": "Extend DELEGATE with surprise us|your call|(?:i )?trust you|you tell me|dealer's choice variants."
+   },
+   {
+    "title": "Course question returned in the same turn as a newly stated allergy has no allergy note",
+    "real": false,
+    "evidence": "The scenario as stated does not happen. For \"I'm allergic to nuts, something light please\", foodWords finds 'nuts' (Mushroom Matar Makhana says 'fox nuts'), so the APPETITE question is skipped. The reply was 'Here are a few dishes, without nuts to choose from.' with ALLERGY_NOTE shown and allergyNoted set. A variant (\"I'm allergic to eggs, something light please\") does return the course question without the note. But no dish is shown in that turn, allergyNoted stays unset, and the next food answer carries the note. That matches D-28's 'leave the note for the next food answer'. Booking turns did not show the note before this commit either."
+   },
+   {
+    "title": "'allergic to paneer' now refers the guest to staff with a false claim",
+    "real": true,
+    "evidence": "New explicitPrefs(\"I'm allergic to paneer\") and (\"I have a paneer allergy\") = {allergy:true, unlisted:['other']}, because paneer is no longer in the 'covered' regex. End to end, the reply is 'Our menu labels only cover nuts, dairy, egg and gluten, not that allergen, so I can't suggest a dish...'. Paneer is dairy, which the labels do cover. Correction to the reviewer: the old code filtered dairy only for the phrase 'paneer allergy' (old = {allergy:true, avoid:[dairy]}). For 'allergic to paneer' the old code gave {allergy:true} with no avoid. The result is on the safe side, but the claim is false and the refusal is unnecessary.",
+    "fix": "Keep paneer in the allergy 'covered' set and map 'allergic to paneer' / 'paneer allergy' to avoid dairy (a separate allergy-food list from the exclusion DAIRY_FOOD)."
+   },
+   {
+    "title": "Section-only heading ignores the new spicy and exclude filters",
+    "real": true,
+    "evidence": "Menu intent \"show me the mains\": with stored {spicy:true} it gave 'Here are our main courses.' listing only Lamb Rogan Josh, Kerala Prawn Curry, Chana Pindi and Chicken Chettinad (4 of 10). With stored exclude ['paneer'] it gave the same heading with Paneer Lababdar missing. sectionOnly (menu.ts:151) checks only diet, avoid, maxPrice and mild.",
+    "fix": "Add !p.spicy && !(p.exclude ?? []).length to sectionOnly, so the heading uses describePrefs."
+   }
+  ]
+ },
+ {
+  "key": "evidence",
+  "findings": [
+   {
+    "file": "lib/chat/evidence.ts",
+    "line": 43,
+    "severity": "critical",
+    "title": "Popularity answers skip all allergy handling: unlisted allergens are not referred to staff and the allergy note is never shown",
+    "scenario": "Staff mark Kerala Prawn Curry and Yellow Dal Tadka as bestsellers. A guest types \"I'm allergic to shellfish, what's your best seller?\". resolvePrefs gives {allergy:true, unlisted:[\"shellfish\"]}. `fit` is filtered only by unmet(), which never checks `unlisted`. evidenceStep then returns \"The restaurant marks the Yellow Dal Tadka and the Kerala Prawn Curry as bestsellers.\" with a recommendation card holding the prawn curry and no notice block. I reproduced this with a scratch tsx run against the seed menu. For the same input, menuStep and recommendTurn return unlistedReferral (\"Our menu labels only cover nuts, dairy, egg and gluten... ask your server\") plus ALLERGY_NOTE. \"What's your bestseller? I have a severe nut allergy\" also gets cards with no ALLERGY_NOTE. The evidence branch in turn.ts:486 routes this as \"recommend\" with these blocks, and nothing downstream adds the note. The named-dish path (line 57-60) does the same: \"I'm allergic to nuts, is the Old Delhi Butter Chicken popular?\" gets \"Yes\" and a recommendation card for a dish that contains nuts, again without the note."
+   },
+   {
+    "file": "lib/chat/evidence.ts",
+    "line": 17,
+    "severity": "major",
+    "title": "EVIDENCE/REVIEWS regex captures safety, hours and policy questions and replaces the grounded answer with a canned 'No, we don't keep sales figures'",
+    "scenario": "evidenceQuestion() returns \"evidence\" for: \"How do you know the Paneer Lababdar is nut-free?\", \"You open at 12 on Sunday, is that right?\", \"So the korma has no nuts, is that true?\", \"Do I need any proof of ID?\", \"Do you keep any data about me?\", \"how do you know my booking?\" (all checked in a scratch run). turn.ts:486 diverts every intent except booking/manage_booking, and except an answerable FAQ that cites faq:/doc:. Answers that cite menu:, hours: or nothing are therefore thrown away. Reply for the hours case: \"No, we don't keep sales or popularity figures, ratings or reviews. My suggestions come from the menu and what you tell me.\" The guest reads the leading \"No\" as a denial of the hours, of needing ID, or of the restaurant keeping their data. For the nut question the reply is \"No, we don't keep sales... I suggested the Yellow Dal Tadka because it fits what you asked for (dishes, without nuts).\" The guest is never told that Paneer Lababdar is labelled as containing nuts, and the FAQ path's ALLERGEN_WORDS allergy note is lost. When the model returns answerable=false, the phone fallback is replaced the same way."
+   },
+   {
+    "file": "lib/chat/claims.ts",
+    "line": 92,
+    "severity": "major",
+    "title": "HYPE_NEGATED treats 'which', 'if', 'any', 'whether', 'no', \"can't\" as negation, so hype claims about unmarked dishes pass (regression from the old HYPE_RE.exec check)",
+    "scenario": "No dish is marked except Old Delhi Butter Chicken. Chooser reply: \"Try the Dal Ember, which is a guest favourite, slow-cooked black lentils.\" Another: \"You can't go wrong with the Dal Ember, our most popular dish of slow-cooked black lentils.\" validateChoice returns reasons [] for both, so they are shown (verified with a scratch run). Before this commit HYPE_RE.exec rejected both. hypeClaims() also returns [] for \"No visit is complete without our famous Kulfi.\", \"Whether you want rich or light, the Kulfi is a must-try.\" and \"The Dal Makhani, if you ask me, is our signature dish.\" The same filter feeds claimProblems for FAQ answers (recommend.ts:331), which is the path a popularity question takes when the model cites faq:vegan-options, and also the planner note check (plan.ts:140). Result: unmarked dishes are presented to guests as popular."
+   },
+   {
+    "file": "lib/chat/recommend.ts",
+    "line": 462,
+    "severity": "major",
+    "title": "A bestseller claim is accepted if any shown or cited dish is marked, not the dish the claim is about",
+    "scenario": "Only Old Delhi Butter Chicken is marked. The chooser picks Dal Ember (unmarked) with the butter chicken as an alternative and writes: \"The Dal Ember is our bestseller, slow-cooked black lentils; the Old Delhi Butter Chicken is richer.\" validateChoice returns [] (verified), because the check is `shown.some(d => d.bestseller)` and subjectAt() is not used. The FAQ check at line 331 has the same gap: `/best[- ]?sell/i.test(citedText)` over all cited facts lets an answer call any cited dish a bestseller once one cited menu fact says \"Marked as a bestseller by the restaurant.\""
+   },
+   {
+    "file": "lib/chat/evidence.ts",
+    "line": 60,
+    "severity": "major",
+    "title": "A review or rating question about a named marked dish is answered 'Yes', which invents reviews",
+    "scenario": "Old Delhi Butter Chicken is marked as a bestseller. Guest: \"Does the Old Delhi Butter Chicken have good reviews?\" or \"Is the Old Delhi Butter Chicken well rated?\" (kind \"reviews\"). The named-dish branch ignores input.kind and replies \"Yes: the restaurant marks the Old Delhi Butter Chicken as a bestseller.\" with a recommendation card (verified). The restaurant has no reviews or ratings, so the \"Yes\" asserts a fact that does not exist. The reviews branch below it correctly says \"We don't collect reviews or ratings\", but this branch never reaches it."
+   },
+   {
+    "file": "lib/chat/evidence.ts",
+    "line": 57,
+    "severity": "minor",
+    "title": "Named-dish popularity answer ignores availability and branch, so an unavailable or other-branch dish is recommended",
+    "scenario": "Staff mark Tandoori Pomfret (seed isAvailable:false) as a bestseller. \"Is the Tandoori Pomfret popular?\" returns \"Yes: the restaurant marks the Tandoori Pomfret as a bestseller.\" with a recommendation card, and the dish is added to `recommended` (verified). Nothing says it is unavailable. The list path filters `e.available && servedAt(...)`, but `named` is matched against all entries. Likewise, at Hauz Khas, \"Is the Keema Pav Sliders popular?\" (Golf Course Road only) gets \"Yes\" and a card."
+   },
+   {
+    "file": "lib/chat/evidence.ts",
+    "line": 70,
+    "severity": "minor",
+    "title": "'Is that a bestseller?' about a marked dish starts with 'No' and gives a made-up reason",
+    "scenario": "context.recommended=[\"menu:old-delhi-butter-chicken\"], which is marked. Guest: \"Is that a bestseller?\" (EVIDENCE matches, so kind \"evidence\"). Reply: \"No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Old Delhi Butter Chicken because its menu description matched your request, and the restaurant marks it as a bestseller.\" (verified). The \"No\" contradicts the dish's own mark. When the dish came from a bestseller listing, \"its menu description matched your request\" is false."
+   },
+   {
+    "file": "lib/chat/evidence.ts",
+    "line": 87,
+    "severity": "minor",
+    "title": "Bestsellers filtered out by stored price, avoid or exclude prefs produce 'None of the dishes ... is a dish.'",
+    "scenario": "Stored prefs {maxPrice:300} (or avoid nuts) and only dishes above \u20b9300 are marked. Guest: \"what's your bestseller?\" Reply: \"None of the dishes the restaurant marks as bestsellers is a dish. I can suggest a dish that suits you instead.\" (verified). what(p) uses only the diet and the course, so the price or allergen that excluded the marked dishes is never mentioned and the sentence makes no sense."
+   },
+   {
+    "file": "lib/chat/evidence.ts",
+    "line": 15,
+    "severity": "minor",
+    "title": "Bare 'popular' in SALES sends questions about busy times and branches to the dish bestseller answer",
+    "scenario": "\"is it popular to book?\", \"Is Friday night popular? should I book ahead?\" and \"What's your most popular branch?\" all return \"sales\". With dishes marked, the guest gets \"The restaurant marks the Keema Pav Sliders and the Old Delhi Butter Chicken as bestsellers.\" plus dish cards. With none marked, they get \"We don't keep sales or popularity figures, so I can't say which dish sells best.\" A grounded FAQ answer (walk-ins, booking window) is dropped unless the model happened to cite a faq: fact. REVIEWS has the same problem: \"what's your hygiene rating?\" and \"Where can I leave a good review?\" get \"I can't say which dish is rated best\"."
+   }
+  ],
+  "verdicts": [
+   {
+    "title": "Popularity answers skip all allergy handling: unlisted allergens are not referred to staff and the allergy note is never shown",
+    "real": true,
+    "evidence": "Ran runTurn end to end in a scratch script: in-memory DB from evals/fixtures/base.json, sequenceModel, Kerala Prawn Curry and Yellow Dal Tadka marked. Input \"I'm allergic to shellfish, what's your best seller?\" (intent recommend or menu) gave prefs {allergy:true, unlisted:[\"shellfish\"]} and the reply \"The restaurant marks the Yellow Dal Tadka and the Kerala Prawn Curry as bestsellers.\" Blocks were [recommendation: Yellow Dal Tadka|Kerala Prawn Curry] with no notice. With Old Delhi Butter Chicken and Dal Ember marked, \"What's your bestseller? I have a severe nut allergy\" gave a Dal Ember card and no ALLERGY_NOTE. \"I'm allergic to nuts, is the Old Delhi Butter Chicken popular?\" gave \"Yes: the restaurant marks the Old Delhi Butter Chicken as a bestseller.\" with a card for this nut-containing dish, again with no note. This held whether the model said recommend or faq. Causes: unmet() never looks at `unlisted`, evidenceStep never calls unlistedReferral, the named-dish branch never calls unmet, and routeTurn's recommend case adds no allergy block. recommendTurn (recommend.ts:630/635) and menuStep both do the referral and add the note.",
+    "fix": "In evidenceStep, return unlistedReferral(p) first when p.unlisted.length, check the named dish against unmet(p) before answering \"Yes\", and add the ALLERGY_NOTE notice when needsAllergyNote(p)."
+   },
+   {
+    "title": "EVIDENCE/REVIEWS regex captures safety, hours and policy questions and replaces the grounded answer with a canned 'No, we don't keep sales figures'",
+    "real": true,
+    "evidence": "evidenceQuestion() returns \"evidence\" for all six of the reviewer's inputs and for \"Is there any evidence of a dress code?\". End to end, a model faq answer citing hours:hauz-khas:sun for \"You open at 12 on Sunday, is that right?\" was replaced by \"No, we don't keep sales or popularity figures, ratings or reviews. My suggestions come from the menu and what you tell me.\" (outcome recommend). A faq answer citing menu:paneer-lababdar for \"How do you know the Paneer Lababdar is nut-free?\" (context recommended=[yellow-dal-tadka], avoid nuts) became \"No, ... I suggested the Yellow Dal Tadka because it fits what you asked for (dishes, without nuts).\" with blocks [], so the guest is never told the dish contains nuts and no allergy note appears. \"Do I need any proof of ID?\" and \"Do you keep any data about me?\" with answerable=false got the same \"No, we don't keep sales...\" reply instead of the phone fallback. The turn.ts:486 bypass only applies to answerable faq answers that cite faq: or doc:.",
+    "fix": "Make EVIDENCE require a popularity or sales subject (or prior recommendation context with no safety or hours words), and let any answerable FAQ that passes grounding (hours:, menu:, branch:) through the bypass."
+   },
+   {
+    "title": "HYPE_NEGATED treats 'which', 'if', 'any', 'whether', 'no', \"can't\" as negation, so hype claims about unmarked dishes pass (regression from the old HYPE_RE.exec check)",
+    "real": true,
+    "evidence": "Scratch run with only Old Delhi Butter Chicken marked: hypeClaims() returned [] for \"Try the Dal Ember, which is a guest favourite, slow-cooked black lentils.\", \"You can't go wrong with the Dal Ember, our most popular dish of slow-cooked black lentils.\", \"No visit is complete without our famous Kulfi.\", \"Whether you want rich or light, the Kulfi is a must-try.\" and \"The Dal Makhani, if you ask me, is our signature dish.\" As a control, \"Try the Dal Ember, our most popular dish.\" returned ['most popular']. validateChoice(pick dal-ember) returned reasons [] for the first two replies but rejected the control. Before this commit, e065050 recommend.ts:333/377 used HYPE_RE.exec(reply), which matches 'favou?rites?' and 'most popular' and would have rejected both. The same filter feeds claimProblems (recommend.ts:331) and plan.ts safeNote (line 140).",
+    "fix": "Limit HYPE_NEGATED to real negators that govern the claim (e.g. \"don't track|can't say|no (?:sales|data)\"), and drop which/if/any/whether and the bare 'no'/'can't go wrong'."
+   },
+   {
+    "title": "A bestseller claim is accepted if any shown or cited dish is marked, not the dish the claim is about",
+    "real": true,
+    "evidence": "Scratch run with only Old Delhi Butter Chicken marked: validateChoice({pick:'menu:dal-ember', alternatives:['menu:old-delhi-butter-chicken'], reply:'The Dal Ember is our bestseller, slow-cooked black lentils; the Old Delhi Butter Chicken is richer.'}) returned []. Without the alternative, the same claim is rejected. claimProblems('The Dal Ember is our bestseller. The Old Delhi Butter Chicken is in a tomato, butter and cashew gravy.', cited [dal-ember, butter-chicken]) returned [], because citedText holds the butter chicken's 'Marked as a bestseller by the restaurant.' Line 462 uses shown.some(d => d.bestseller), and line 331 tests the regex against all cited text.",
+    "fix": "Find the claim's dish with subjectAt(match index) and require that dish's bestseller flag (in claimProblems, the mark in that dish's own fact)."
+   },
+   {
+    "title": "A review or rating question about a named marked dish is answered 'Yes', which invents reviews",
+    "real": true,
+    "evidence": "Scratch runTurn with Old Delhi Butter Chicken marked: \"Does the Old Delhi Butter Chicken have good reviews?\" and \"Is the Old Delhi Butter Chicken well rated?\" both have kind 'reviews'. Both returned \"Yes: the restaurant marks the Old Delhi Butter Chicken as a bestseller.\" with a recommendation card. The named-dish branch (line 58-60) runs for any kind except 'evidence', so it is reached before the reviews branch's \"We don't collect reviews or ratings\".",
+    "fix": "In the named-dish branch, when kind === 'reviews', start with \"We don't collect reviews or ratings\" and then mention the mark, never \"Yes\"."
+   },
+   {
+    "title": "Named-dish popularity answer ignores availability and branch, so an unavailable or other-branch dish is recommended",
+    "real": true,
+    "evidence": "Scratch runTurn with tandoori-pomfret (isAvailable:false) and keema-pav-sliders (branches:[gurugram]) marked. \"Is the Tandoori Pomfret popular?\" returned \"Yes: the restaurant marks the Tandoori Pomfret as a bestseller.\" with a card, and context.recommended=['menu:tandoori-pomfret']. Nothing said it is unavailable. \"Is the Keema Pav Sliders popular at Hauz Khas?\" (branchNamed=hauz-khas) returned \"Yes: ...\" with a card for a dish served only at Golf Course Road. `named` is matched against all input.entries, while `marked` filters e.available && servedAt.",
+    "fix": "Before saying \"Yes\" for a named dish, check d.available and servedAt(d, branch); otherwise say it is currently unavailable or not served at that branch, and add no card or recommended id."
+   },
+   {
+    "title": "'Is that a bestseller?' about a marked dish starts with 'No' and gives a made-up reason",
+    "real": true,
+    "evidence": "Scratch runTurn with butter chicken marked and context.recommended=['menu:old-delhi-butter-chicken']. \"Is that a bestseller?\" and \"Is that really popular?\" (kind 'evidence') both returned \"No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Old Delhi Butter Chicken because its menu description matched your request, and the restaurant marks it as a bestseller.\" The leading \"No\" contradicts the mark stated at the end. The \"menu description matched\" reason is hard-coded whenever prefs are empty, including when the dish came from a bestseller listing.",
+    "fix": "When `last` is marked, answer \"Yes, the restaurant marks the X as a bestseller\" (then say there are no sales figures), and only give the description reason when it is true."
+   },
+   {
+    "title": "Bestsellers filtered out by stored price, avoid or exclude prefs produce 'None of the dishes ... is a dish.'",
+    "real": true,
+    "evidence": "Scratch runTurn with butter chicken (\u20b9645) and Dal Ember (\u20b9445, contains dairy) marked. With context prefs {maxPrice:300}, \"what's your bestseller?\" returned \"None of the dishes the restaurant marks as bestsellers is a dish. I can suggest a dish that suits you instead.\" With {avoid:['dairy']}, the reply was the same sentence. what(p) uses only diet and course, so the price or allergen that ruled the dishes out is never mentioned.",
+    "fix": "Build the none-fit sentence from describePrefs(p), e.g. \"None of the dishes the restaurant marks as bestsellers is <describePrefs(p)>\", or name the constraint that excluded them."
+   },
+   {
+    "title": "Bare 'popular' in SALES sends questions about busy times and branches to the dish bestseller answer",
+    "real": true,
+    "evidence": "evidenceQuestion returned 'sales' for \"is it popular to book?\", \"Is Friday night popular? should I book ahead?\" and \"What's your most popular branch?\". It returned 'reviews' for \"what's your hygiene rating?\" and \"Where can I leave a good review?\". With two dishes marked and the model returning answerable=false, \"Is Friday night popular? should I book ahead?\" and \"What's your most popular branch?\" both got \"The restaurant marks the Old Delhi Butter Chicken and the Dal Ember as bestsellers.\" plus dish cards. \"what's your hygiene rating?\" got \"We don't collect reviews or ratings, so I can't say which dish is rated best. ...\" with cards. With nothing marked, \"is it popular to book?\" got \"We don't keep sales or popularity figures, so I can't say which dish sells best...\". An answerable faq citing faq: does go to the FAQ path. Answers citing hours: or nothing, and answerable=false, are replaced.",
+    "fix": "Remove bare `popular(?:ity)?` from SALES (or require a dish, food or course noun nearby), and make REVIEWS require a dish or food context word."
+   }
+  ]
+ },
+ {
+  "key": "ui-compat",
+  "findings": [
+   {
+    "file": "lib/chat/turn.ts",
+    "line": 319,
+    "severity": "critical",
+    "title": "An allergy stated in a meal-plan message is ignored: dishes are not filtered, no allergy note is shown, and the allergy is never saved",
+    "scenario": "New conversation, guest types \"Can 2 of us eat here under \u20b91,500? We eat everything, but I am allergic to nuts.\" explicitPrefs reads {allergy:true, avoid:[nuts]}, but step 3b calls planTurn with prefs = prefsOut, which is still the stored context prefs (empty here). readPlanRequest only uses maxPrice. So planDishes does not remove nut dishes, and validatePlan never checks allergens. I ran this through planTurn in a scratch script: a planner reply of Paneer Lababdar + Old Delhi Butter Chicken was accepted, with the reply \"Here's a meal for two people that comes to \u20b91,170, within your \u20b91,500.\" Both dishes contain dairy and nuts. The blocks were [meal_plan, quick_replies] with no ALLERGY_NOTE notice, and the router's recommend case adds none. prefsOut is never updated on this path, so the returned context has no allergy, and later recommendations and menus also forget it."
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 41,
+    "severity": "major",
+    "title": "Mixed veg/non-veg groups are read as diet \"any\", so no vegetarian main is required and no question is asked",
+    "scenario": "planDietIn checks for meat words before it looks for mixed groups described with numbers. Results from a scratch run: \"Two of us are vegetarian and one eats chicken\" gives any; \"2 veg, 1 non-veg\" gives any; \"My wife is vegetarian, I eat meat\" gives any; \"Two vegetarians and one non-vegetarian\" gives any. readPlanRequest(\"Can 3 of us eat here under \u20b92,000? Two of us are vegetarian and one eats chicken.\") returns diet \"any\". Because the diet is not null, the diet question is skipped, and validatePlan only requires a vegetarian main when diet is \"mixed\". A plan of Malai Chicken Tikka + Chicken Chettinad + Lamb Seekh Kebab passes and is shown to a group where two people are vegetarian."
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 180,
+    "severity": "major",
+    "title": "The plan diet question is asked only once per conversation, but the answer is never saved, so later plans default to \"any\" and ignore a stored vegetarian preference",
+    "scenario": "Turn 1 \"Can 2 of us eat under \u20b91,000?\" asks the diet question and adds asked:[plan_diet]. Turn 2 \"All vegetarian\" gives a vegetarian plan. The diet lives only in context.plan; prefsOut is not updated. Turn 3 is the menu chip, which drops context.plan. Turn 4 \"Can 3 of us eat here under \u20b92,000?\" has focus.diet null and input.asked true, so the question is skipped and diet becomes \"any\". planDishes (line 90) also ignores prefs.diet. I verified this with planTurn(asked:true, prefs.diet:[\"vegetarian\"]): a plan of Malai Chicken Tikka + Chicken Chettinad + Dal Ember was accepted and shown to a guest who had said they were vegetarian."
+   },
+   {
+    "file": "lib/chat/hours-card.ts",
+    "line": 217,
+    "severity": "major",
+    "title": "The branch chips for a weekday hours question drop the weekday, which hides that day's closures and special hours",
+    "scenario": "Fixture data, now = 2026-10-21. A guest asks \"What are your hours on Tuesdays?\" readHoursQuestion returns weekday:2. Golf Course Road's section has a note for the Tue 27 Oct all-day closure, so the cards don't merge and the reply is \"Which branch? Hauz Khas and Golf Course Road keep different hours.\" That is untrue: their Tuesday hours are the same. The chips are {type:\"hours\",branch:\"gurugram\"}, and ActionSchema (types.ts:57) has no weekday or meal field. Tapping Golf Course Road gives \"Here are the regular opening hours at Golf Course Road.\" with a full-week card that shows lunch and dinner as open and never mentions \"Closed all day for kitchen maintenance\" on Tue 27 Oct. Typing \"hours at Golf Course Road on Tuesdays\" does show that note. HoursFocus has no weekday either, so typing the branch name as the answer loses it too. The same happens for Saturdays: the 31 Oct extended dinner hours are lost."
+   },
+   {
+    "file": "lib/chat/types.ts",
+    "line": 94,
+    "severity": "major",
+    "title": "A per-person budget times the party can go past the ContextSchema budget limit of 200,000, and the next request then fails with a 400 every time",
+    "scenario": "\"Can 10 of us eat here for \u20b925k per person?\" makes readPlanRequest (plan.ts:82) return budget 250000, basis per_person. \"Can 12 of us eat for \u20b920,000 each?\" gives 240000, and \"under \u20b960,000 per person\" for 4 gives 240000. planTurn asks the diet question and returns that focus. runTurn copies it into context.plan with no output check, the client saves it, and every later message sends it back. ChatBodySchema then fails with 400 VALIDATION (\"plan.budget: Too big\"). The client shows \"Try again\", which resends the same context, so the chat keeps failing until Start over or New conversation. I confirmed with ContextSchema.safeParse that it returns success:false."
+   },
+   {
+    "file": "components/chat/Blocks.tsx",
+    "line": 375,
+    "severity": "minor",
+    "title": "The meal plan card leaves out a dish's branch-only note, so a plan can include a dish the guest's branch doesn't serve",
+    "scenario": "No branch chosen yet (draft.branch null). planDishes calls eligible with branch null, so Keema Pav Sliders (Golf Course Road only) is allowed. In a scratch run, planTurn accepted keema-pav-sliders + dal-ember + chicken-chettinad (\u20b91,595), and the item's scope was \"Golf Course Road only\". DishRow and DishCard show item.scope, but MealPlan shows only courseLabel, labels and contains. A guest planning a Hauz Khas visit sees a \u20b91,595 plan that they can't order there."
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 69,
+    "severity": "minor",
+    "title": "Right after a plan, a question about a dish or a request to come in is read as a change to the plan, and the meal is planned again",
+    "scenario": "context.plan = {party 2, budget 1500, diet any}. \"Is the chana pindi vegan?\" gives diet vegan, changed, and a whole new vegan meal plan instead of an answer. \"Is the dal vegetarian?\" does the same with a vegetarian plan. \"Great, we'd like to come tonight for 4\" reads party 4 and plans again for four. BOOKING_WORDS (line 47) lacks come/visit, which guards' BOOKING_CUE_RE includes, so the guest gets a meal plan instead of the booking flow. All three verified with readPlanRequest."
+   },
+   {
+    "file": "lib/chat/plan.ts",
+    "line": 26,
+    "severity": "minor",
+    "title": "\"One of us has ...\" is read as a party of 1, so a follow-up plans a meal for one person",
+    "scenario": "The \"one of us\" replacement covers only is/are/eats/doesn't/don't/can't. After the diet question (context.plan party 2), the guest answers \"We eat everything, but one of us has a nut allergy\". partyStated matches \"one of us\" and returns 1, so the focus becomes {party:1, diet:any} (verified). The plan is drawn up for \"one person\" (card \"Meal for 1\"), and the nut allergy is ignored as in the first finding. Before any plan exists, \"there are 4 of us and one of us has a nut allergy\" takes the last match (1), and the planning request is dropped because party is under 2."
+   },
+   {
+    "file": "lib/chat/types.ts",
+    "line": 57,
+    "severity": "minor",
+    "title": "The new hours date fields check only the YYYY-MM-DD pattern, not that the date is real, so an invalid date gets past validation and crashes the turn",
+    "scenario": "ActionSchema.safeParse({type:\"hours\",branch:\"gurugram\",date:\"2026-02-30\"}) and ContextSchema.safeParse({lastCitedIds:[],hours:{branches:[\"gurugram\"],date:\"2026-99-99\"}}) both succeed (line 102 has the same check). hoursAnswer then throws RangeError \"invalid local date: 2026-02-30\", so the request returns a 500 instead of a 400. DraftSchema uses refine(isLocalDate) for this. Only reachable with a forged or corrupted saved request, since the server's own chips carry valid dates."
+   },
+   {
+    "file": "components/chat/Blocks.tsx",
+    "line": 412,
+    "severity": "minor",
+    "title": "Likely at 360px: the \"Special hours this day\" badge is a plain inline span and can break across two lines",
+    "scenario": "Estimated, not rendered: Playwright was off-limits. At a 360px viewport the hours card content is about 252px (page px-4, 32px avatar plus gap, card px-4). For Hauz Khas on 22 Oct, the subtitle \"Tomorrow, Thu 22 Oct\" (about 125px at 13px) plus ml-2 plus the badge (about 140px) is about 275px. The <p> moves under the heading, and the badge then wraps inside it: it has no whitespace-nowrap or inline-block, so its rounded background splits into \"Special hours\" / \"this day\" pieces."
+   }
+  ],
+  "verdicts": [
+   {
+    "title": "An allergy stated in a meal-plan message is ignored: dishes are not filtered, no allergy note is shown, and the allergy is never saved",
+    "real": true,
+    "evidence": "I ran it end to end with runTurn (in-memory DB, base.json, scripted model). Guest message: \"Can 2 of us eat here under \u20b91,500? We eat everything, but I am allergic to nuts.\" The reply was \"Here's a meal for two people that comes to \u20b91,170, within your \u20b91,500.\" The meal_plan held menu:paneer-lababdar and menu:old-delhi-butter-chicken, both contains [dairy, nuts]. Blocks were [meal_plan, quick_replies] with no ALLERGY_NOTE notice. The returned context had prefs:null, no allergyNoted, and plan.diet \"any\". The planner prompt had no \"Avoid:\" line. Cause: turn.ts:319 passes prefs: prefsOut ?? noPrefs(), which is only the stored prefs. explicitPrefs(latest) returns {allergy:true, avoid:[\"nuts\"]} but readPlanRequest only uses its maxPrice. The router's recommend case adds no allergy note. When I fed those prefs into planDishes, it did drop paneer-lababdar, so the filter works once it gets the allergy.",
+    "fix": "In step 3b, merge explicitPrefs(latest) (avoid, allergy, unlisted, diet) into prefsOut before planTurn and send unlistedReferral when it applies. Pass the merged prefs to planTurn and add the ALLERGY_NOTE notice when needsAllergyNote is true and the note hasn't been shown yet."
+   },
+   {
+    "title": "Mixed veg/non-veg groups are read as diet \"any\", so no vegetarian main is required and no question is asked",
+    "real": true,
+    "evidence": "In a scratch run, planDietIn gave: \"Two of us are vegetarian and one eats chicken\" -> any, \"2 veg, 1 non-veg\" -> any, \"My wife is vegetarian, I eat meat\" -> any, \"Two vegetarians and one non-vegetarian\" -> any. Only the literal \"one of us is vegetarian and the other...\" and \"mix\" gave mixed. The mixed regex at plan.ts:39 only covers one/some (of us) is/are veg. Then line 41 matches eats chicken, eat meat or non-veg and returns any. readPlanRequest(\"Can 3 of us eat here under \u20b92,000? Two of us are vegetarian and one eats chicken.\") returned diet \"any\". planTurn accepted Malai Chicken Tikka + Chicken Chettinad + Lamb Seekh Kebab (\u20b91,895) with no rejection reasons, because validatePlan only requires a veg main when diet is \"mixed\".",
+    "fix": "In planDietIn, return \"mixed\" when the text has both a veg word (veg, vegetarian, vegan) and a meat or non-veg word. Run that check before the \"any\" match."
+   },
+   {
+    "title": "The plan diet question is asked only once per conversation, but the answer is never saved, so later plans default to \"any\" and ignore a stored vegetarian preference",
+    "real": true,
+    "evidence": "I ran the turns in order through runTurn. T1 \"Can 2 of us eat under \u20b91,000?\" asked the diet question and set asked:[plan_diet]. T2 \"All vegetarian\" gave a vegetarian plan, but context.prefs stayed null. T3, the menu chip, returned a context without plan, because planOut is only set on the plan path. T4 \"Can 3 of us eat here under \u20b92,000?\" asked no question and accepted Malai Chicken Tikka + Chicken Chettinad + Dal Ember with plan.diet \"any\". In a separate run with context.prefs.diet [\"vegetarian\"] and asked [plan_diet], the same non-veg plan was accepted. planDishes (plan.ts:91) builds diet only from focus.diet and ignores prefs.diet. planTurn line 184 sets the diet to \"any\" once asked is true.",
+    "fix": "When focus.diet is null, take it from prefs.diet (vegetarian or vegan) before using \"any\". Also save the plan diet answer into prefsOut.diet, or ask again whenever the diet is unknown, instead of falling back to \"any\"."
+   },
+   {
+    "title": "The branch chips for a weekday hours question drop the weekday, which hides that day's closures and special hours",
+    "real": true,
+    "evidence": "Fixture data, now 2026-10-21. readHoursQuestion(\"What are your hours on Tuesdays?\") gave {branches:null, weekday:2}. hoursAnswer replied \"Which branch? Hauz Khas and Golf Course Road keep different hours.\" with chips {type:\"hours\",branch:\"hauz-khas\"} and {type:\"hours\",branch:\"gurugram\"}, so no weekday is carried. Both branches' Tuesday rows are the same (12:00 PM \u2013 3:30 PM and 7:00 PM \u2013 11:00 PM). Only Golf Course Road's note \"Special hours on Tue 27 Oct: closed all day.\" differs, so the question's claim is misleading. Tapping the Golf Course Road chip through runTurn (turn.ts:248 hard-codes weekday:null) gave \"Here are the regular opening hours at Golf Course Road.\" with a full-week card and no 27 Oct note. Typing \"hours at Golf Course Road on Tuesdays\" does show the note. Same for Saturdays: the Hauz Khas chip gives an \"Every day\" card without \"Special hours on Sat 31 Oct: dinner 7:00 PM \u2013 11:30 PM (Extended dinner hours)\". ActionSchema and HoursFocus have no weekday field.",
+    "fix": "Add an optional weekday (0-6) to the hours ActionSchema and to HoursFocus. Put it on the branch chips in hoursAnswer, and pass chip.weekday (or focus.weekday) into the question at turn.ts:248 and in readHoursQuestion."
+   },
+   {
+    "title": "A per-person budget times the party can go past the ContextSchema budget limit of 200,000, and the next request then fails with a 400 every time",
+    "real": true,
+    "evidence": "readPlanRequest gave budget 250000 for \"Can 10 of us eat here for \u20b925k per person?\", 240000 for \"Can 12 of us eat for \u20b920,000 each?\" and 240000 for \"Can 4 of us eat here under \u20b960,000 per person?\". Running the first through runTurn returned the diet question with context.plan.budget 250000. ContextSchema.safeParse on that context failed: plan.budget too_big, max 200000. ChatBodySchema.safeParse on the next message with that context also failed. ChatPanel saves r.context as is and resends it, and Try again resends the same context, so every message fails until Start over.",
+    "fix": "In readPlanRequest, cap the budget to the schema limit, or treat amount*party > 200000 as not a plan request. Or raise the ContextSchema limit to cover PARTY_MAX \u00d7 the per-person cap."
+   },
+   {
+    "title": "The meal plan card leaves out a dish's branch-only note, so a plan can include a dish the guest's branch doesn't serve",
+    "real": true,
+    "evidence": "With branch null, planTurn accepted keema-pav-sliders + dal-ember + chicken-chettinad (\u20b91,595). The block item had scope \"Golf Course Road only\". MealPlan in Blocks.tsx (the new component at lines ~343-390) renders courseLabel, Labels (dietary labels only) and contains, but not item.scope. DishCard (line 263) and DishRow (line 290) do render scope. The reply line doesn't name a branch either. With branch \"hauz-khas\" the dish is filtered out (servedAt), so this only happens when no branch is known.",
+    "fix": "In MealPlan, render item.scope next to the Contains line, as DishRow does."
+   },
+   {
+    "title": "Right after a plan, a question about a dish or a request to come in is read as a change to the plan, and the meal is planned again",
+    "real": true,
+    "evidence": "With prev = {party 2, budget 1500, diet any}, readPlanRequest returned changed:true for \"Is the chana pindi vegan?\" (diet vegan), \"Is the dal vegetarian?\" (diet vegetarian) and \"Great, we'd like to come tonight for 4\" (party 4). runTurn step 3b runs before retrieval and the intent call, so each of these gets a new meal plan instead of an FAQ answer or the booking flow. BOOKING_WORDS (plan.ts:47) lacks the come, coming, visit and seat words that guards' BOOKING_CUE_RE has. A plain question like \"what time do you open tomorrow?\" is correctly left alone.",
+    "fix": "In follow-up mode, skip questions (a leading is, does or can, or a trailing ?) that name a dish, and messages with booking cues (use BOOKING_CUE_RE). Treat a diet word alone as a change only when the message isn't about a named dish."
+   },
+   {
+    "title": "\"One of us has ...\" is read as a party of 1, so a follow-up plans a meal for one person",
+    "real": true,
+    "evidence": "readPlanRequest(\"We eat everything, but one of us has a nut allergy\", prev{party 2, diet null}) returned focus {party:1, diet:any}. The strip regex at plan.ts:26 covers only is/are/eats/doesn't/don't/can't, so partyStated matches \"one of us\" and returns 1. With no prior plan, \"There are 4 of us and one of us has a nut allergy. Can we eat here under \u20b93,000?\" and \"Can 4 of us eat here under \u20b93,000? One of us has a nut allergy.\" both returned null, because the last match (1) gives party < 2. The planning request is dropped.",
+    "fix": "In partyIn, remove every \"(one|some|two|...) of us\" phrase not preceded by \"there are\" or \"we are\", or ignore partyStated matches of 1 from \"one of us\"; and keep prev.party when the parsed party is 1 in a follow-up."
+   },
+   {
+    "title": "The new hours date fields check only the YYYY-MM-DD pattern, not that the date is real, so an invalid date gets past validation and crashes the turn",
+    "real": true,
+    "evidence": "ActionSchema.safeParse({type:\"hours\",branch:\"gurugram\",date:\"2026-02-30\"}) and ContextSchema.safeParse({lastCitedIds:[],hours:{branches:[\"gurugram\"],date:\"2026-99-99\"}}) both returned true. runTurn with that action threw RangeError \"invalid local date: 2026-02-30\" (and 2026-99-99). lib/api/chat.ts doesn't catch it, so the request ends in a 500 instead of a 400. Only a forged or corrupted request reaches this, since server-made chips carry valid dates. DraftSchema already uses refine(isLocalDate).",
+    "fix": "Use z.string().refine(isLocalDate) for ActionSchema hours.date (types.ts:57) and ContextSchema hours.date (types.ts:102)."
+   },
+   {
+    "title": "Likely at 360px: the \"Special hours this day\" badge is a plain inline span and can break across two lines",
+    "real": false,
+    "evidence": "The wrap would happen. Container math at 360px: 328 after page px-4, minus the 32px avatar and 10px gap, minus the card's border and px-4, leaves about 252px. Avenir Next metrics (PIL): \"Tomorrow, Thu 22 Oct\" at 13px is 135px and the badge is 118+16 = 134px, so 135+8+134 = 277px > 252. The <p> wraps under the heading, and the inline badge then breaks after \"this\". \"Today, Wed 21 Oct\" (114px) gives 256px, which also just overflows. A plain \"Thu 22 Oct\" fits. But this is cosmetic only: no horizontal overflow (the e2e noOverflow check still holds), the text stays whole and readable, and nothing a guest relies on is wrong or hidden. It falls under the task's \"no style nits\" rule, not a real defect.",
+    "fix": "(Cosmetic, optional) add inline-block whitespace-nowrap to the badge span."
+   }
+  ]
+ }
+]

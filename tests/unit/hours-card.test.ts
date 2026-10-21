@@ -33,16 +33,18 @@ const row = (s: HoursSection, label: string) => s.rows.find((r) => r.label === l
 const seen = (a: HoursAnswer) => [a.text, ...card(a).flatMap((s) => [s.branch, s.subtitle, s.special ?? "", ...s.rows.map((r) => `${r.label} ${r.value} ${r.note ?? ""}`)])].join("\n");
 
 describe("D-27 opening-hours answers", () => {
-  it("1. 'What are your timings?' with a known branch gives that branch's regular hours; with none, one question", () => {
+  it("1. 'What are your timings?' with a known branch gives that branch's regular hours; with none, both compactly", () => {
     const known = ask("What are your timings?", { draftBranch: "gurugram" });
     expect(card(known).map((s) => s.branch)).toEqual(["Golf Course Road"]);
     expect(row(card(known)[0], "Lunch")).toMatchObject({ value: "12:00 PM – 3:30 PM", note: "Mondays: closed" });
+    // Two branches whose weeks differ (Golf Course Road has no Monday lunch): a section each, no question (a
+    // comparison answers at once; live LV-UX-002).
     const unknown = ask("What are your timings?");
-    expect(card(unknown)).toEqual([]);
-    expect(unknown.asked).toBe(true);
-    expect(unknown.text).toMatch(/Hauz Khas/);
-    expect(unknown.text).toMatch(/Golf Course Road/);
-    expect((unknown.blocks[0] as Extract<Block, { type: "quick_replies" }>).chips.map((c) => c.label)).toEqual(["Hauz Khas", "Golf Course Road", "Both branches"]);
+    expect(unknown.asked).toBe(false);
+    expect(card(unknown).map((s) => s.branch)).toEqual(["Hauz Khas", "Golf Course Road"]);
+    expect(unknown.text).toBe("Here are the regular opening hours at both branches.");
+    // The same hours on the day asked: one section for both.
+    expect(card(ask("Are you open tomorrow?")).map((s) => s.branch)).toEqual(["Both branches"]);
   });
 
   it("2. 'What time does Hauz Khas open?': Hauz Khas only, its regular week", () => {
@@ -150,6 +152,35 @@ describe("D-27 opening-hours answers", () => {
     expect(saturdays).toMatchObject({ subtitle: "Saturdays", note: "Special hours on Sat 31 Oct: dinner 7:00 PM – 11:30 PM (Extended dinner hours)." });
     expect(card(ask("What are your hours on Saturdays at Golf Course Road?"))[0].note).toBeNull();
     expect(card(ask("Is Golf Course Road open on Tuesdays?"))[0].note).toBe("Special hours on Tue 27 Oct: closed all day.");
+  });
+
+  it("review of D-27: a weekday beside a date, 24/7, the other branch, short names, 'both' and impossible days", () => {
+    // "Saturday 31 October" is one date, not Sat 17 Oct as well (live LV-HRS-004).
+    expect(card(ask("What are your dinner hours at Hauz Khas on Saturday 31 October?")).map((s) => s.subtitle)).toEqual(["Sat 31 Oct"]);
+    // "Open 24/7?" is a general question, not 24 July.
+    expect(card(ask("Are you open 24/7 at Hauz Khas?"))[0].subtitle).toBe("Every day");
+    // "The other branch" after Hauz Khas; a short name; "both" never overrides a named branch.
+    const hk = ask("What are your timings tomorrow at Hauz Khas?");
+    expect(card(ask("What about the other branch?", { focus: hk.focus })).map((s) => s.branch)).toEqual(["Golf Course Road"]);
+    expect(card(ask("What time does Golf Course open?")).map((s) => s.branch)).toEqual(["Golf Course Road"]);
+    expect(card(ask("Is Hauz Khas open for both lunch and dinner tomorrow?")).map((s) => s.branch)).toEqual(["Hauz Khas"]);
+    // A day this month doesn't have resolves to the next month that has it; a stale follow-up date isn't reused.
+    expect(card(ask("Is Hauz Khas open on the 31st?", { now: Date.parse("2026-11-05T14:00:00+05:30") }))[0].subtitle).toBe("Thu 31 Dec");
+  });
+
+  it("review of D-27: this weekend, this week, every Tuesday, several weekdays; inactive branches; an address with the hours", () => {
+    expect(card(ask("Are you open this weekend at Hauz Khas?")).map((s) => s.subtitle)).toEqual(["Tomorrow, Sat 17 Oct", "Sun 18 Oct"]);
+    const week = card(ask("What are your hours this week at Hauz Khas?"))[0];
+    expect(week.note).toBe("Special hours on Thu 22 Oct: dinner closed (Closed for a private event).");
+    expect(card(ask("Is Golf Course Road open every Tuesday?"))[0]).toMatchObject({ subtitle: "Tuesdays", note: "Special hours on Tue 27 Oct: closed all day." });
+    expect(card(ask("What are your hours on Saturdays and Sundays at Hauz Khas?"))[0].subtitle).toBe("Saturdays and Sundays");
+    db.prepare("UPDATE branches SET is_active = 0 WHERE slug = 'gurugram'").run();
+    expect(card(ask("What about Golf Course Road?", { focus: { branches: ["gurugram"], date: null }, draftBranch: "gurugram" })).map((s) => s.branch)).toEqual(["Hauz Khas"]);
+    db.prepare("UPDATE branches SET is_active = 1 WHERE slug = 'gurugram'").run();
+    const src = loadFactSource(db);
+    const withAddress = hoursAnswer(readHoursQuestion("Where is Hauz Khas and when do you open?", NOW, ZONE, src.branches), src, NOW, { contact: true });
+    expect(withAddress.text).toBe("Here are the regular opening hours at Hauz Khas. Hauz Khas: 24 Hauz Khas Village, New Delhi 110016, +91 11 4155 0101.");
+    expect(withAddress.cited).toContain("branch:hauz-khas");
   });
 
   it("reads today, tonight, now and a weekday in the branch's zone, from the clock passed in", () => {

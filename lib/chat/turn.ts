@@ -15,8 +15,8 @@ import { nullBooking, TURN_JSON_SCHEMA, type Intent, type Turn } from "@/lib/llm
 import type { LocalDate } from "@/lib/time/tz";
 import { checkGrounding } from "@/lib/chat/grounding";
 import { guardExtraction, largePartyStated } from "@/lib/chat/guards";
-import { ALLERGY_NOTE, foodWords, menuEntries, menuStep } from "@/lib/chat/menu";
-import { ANSWER_CHIPS, claimProblems, DIET_CHIPS, DIET_QUESTION, explicitPrefs, HELP_QUESTION, liftedPrefs, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
+import { ALLERGY_NOTE, foodWords, menuEntries, menuStep, needsAllergyNote, stemOf } from "@/lib/chat/menu";
+import { ANSWER_CHIPS, claimProblems, DIET_CHIPS, DIET_QUESTION, explicitPrefs, HELP_QUESTION, liftedPrefs, recommendTurn, resolvePrefs, SAFETY_QUESTION, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
 import { evidenceQuestion, evidenceStep } from "@/lib/chat/evidence";
 import { planTurn, readPlanRequest, type PlanCall, type PlanResult } from "@/lib/chat/plan";
 import { PLANNER_JSON_SCHEMA, PlannerSchema } from "@/lib/llm/planner";
@@ -68,6 +68,9 @@ export const PROMPT_CHAR_BUDGET = Math.floor(MODEL.promptBudgetTokens * 2.9);
 const RATE_LIMITED_TEXT = "You're sending messages quickly. Please wait a moment and try again.";
 // A full model queue is not the guest's doing (D-24 audit: it said "you're sending messages quickly").
 const BUSY_TEXT = "We're answering a lot of guests right now. Please try again in a moment.";
+
+// The guest lifting their own diet in so many words (outside a food request).
+const SELF_LIFT = /\b(?:i|we) (?:do |can |also )?eat (?:meat|chicken|fish|mutton|lamb|everything|anything|non[- ]?veg\w*)\b|\b(?:i'm|i am|we're|we are) not (?:a |really |strictly )?(?:vegetarian|veg|veggie|vegan)s?\b|\b(?:forget|drop|ignore|never ?mind) (?:the )?(?:veg\w*|vegan)\b|\b(?:fine|ok|okay|happy) with (?:meat|chicken|fish|non[- ]?veg\w*)\b/i;
 
 export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnReply> {
   const elapsed = deps.elapsed ?? (() => performance.now());
@@ -245,7 +248,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       // after one question about the branch when their hours differ.
       const active = src.branches.filter((b) => b.isActive).map((b) => b.slug);
       const branch = chip.branch === "all" ? active : chip.branch && active.includes(chip.branch) ? [chip.branch] : draft0.branch ? [draft0.branch] : null;
-      const question = { branches: branch, dates: chip.date ? [chip.date] : [], weekday: null, meal: null, now: false };
+      const question = { branches: branch, dates: chip.dates ?? (chip.date ? [chip.date] : []), weekdays: chip.weekdays ?? [], meal: chip.meal ?? null, now: false };
       const weekly = staticFacts.filter((f) => f.id.startsWith("hours:")).map((f) => f.id);
       return finish(routeTurn(fixed("faq", weekly), draft0, ctx, { ...facts, guest: "What are your opening hours?", hours: { ...hoursCtx, question } }), "faq");
     }
@@ -289,6 +292,18 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // planner model call proposes the meal and code checks it (D-28).
   const planReq = readPlanRequest(latest, input.context?.plan ?? null);
   if (planReq) {
+    // What the message says about the guests is kept, as on every food path: an allergy, an allergen, gluten-free or
+    // Jain, an exclusion. A whole-table budget is not a per-dish budget, and a plan names no menu section.
+    const before = prefsOut;
+    const read = resolvePrefs(null, prefsOut, latest, entries);
+    prefsOut = { ...read.prefs, maxPrice: before?.maxPrice ?? null, course: before?.course ?? null };
+    if (read.added.length) trace.push({ action: "prefs", prefs: prefsOut, added: read.added });
+    const said = explicitPrefs(latest);
+    const allergyNew = !!said.allergy || !!said.avoid?.length || prefsOut.avoid.some((a) => !(before?.avoid ?? []).includes(a)) || (prefsOut.allergy && !before?.allergy);
+    const planBranch = draft0.branch ?? (() => {
+      const hits = src.branches.filter((b) => b.isActive && [b.name.split(", ").pop()!, b.slug.replace(/-/g, " ")].some((n) => latest.toLowerCase().includes(n.toLowerCase())));
+      return hits.length === 1 ? hits[0].slug : null;
+    })();
     const staticFacts = renderStaticFacts(src, input.now);
     const factsById = new Map<string, Fact>([...staticFacts, ...renderKbFacts(src)].map((f) => [f.id, f]));
     const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;
@@ -316,7 +331,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     try {
       res = await (deps.gate ?? openGate).run(async () => {
         t.queueMs = elapsed() - q0;
-        return planTurn({ request: planReq, text: latest, history, entries, src, prefs: prefsOut ?? noPrefs(), branch: draft0.branch, asked: askedOut.includes("plan_diet"), trace, canRetry: () => elapsed() - started < 18_000 }, planner);
+        // The diet question is asked once per plan: only a plan already under way counts as asked.
+        return planTurn({ request: planReq, text: latest, history, entries, src, prefs: prefsOut ?? noPrefs(), branch: planBranch, asked: askedOut.includes("plan_diet") && !!input.context?.plan, trace, canRetry: () => elapsed() - started < 18_000 }, planner);
       });
     } catch (e) {
       if (e instanceof GateFullError) {
@@ -327,12 +343,14 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     }
     planOut = res.focus;
     if (res.asked) ask("plan_diet");
+    // The allergy note with a plan when an allergy is new or hasn't been shown yet (D-28), unless the reply already has it.
+    if (prefsOut && needsAllergyNote(prefsOut) && (allergyNew || !input.context?.allergyNoted) && !res.blocks.some((b) => b.type === "notice")) res = { ...res, blocks: [{ type: "notice", tone: "info", text: ALLERGY_NOTE }, ...res.blocks] };
     const fixedTurn: Turn = { intent: "recommend", booking: nullBooking(), prefs: null, answer: null, citedFactIds: [], answerable: true };
     return finish(routeTurn(fixedTurn, draft0, ctx, facts, { text: res.text, blocks: res.blocks, cited: res.cited, largeParty: false }), "recommend");
   }
 
   // D-26: "best seller?", "most popular dessert?", "best reviews?", "any data for that?": factual, not a choice.
-  const evidenceKind = evidenceQuestion(latest);
+  const evidenceKind = evidenceQuestion(latest, (input.context?.recommended?.length ?? 0) > 0, entries.map((e) => e.name));
 
   // 4. Retrieve (D-02, D-13).
   const staticFacts = renderStaticFacts(src, input.now);
@@ -499,7 +517,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   }
   if (turn.intent === "menu") {
     const previous = prefsOut;
-    const { prefs, added } = resolvePrefs(turn.prefs, prefsOut, latest);
+    const { prefs, added } = resolvePrefs(turn.prefs, prefsOut, latest, entries);
     trace.push({ action: "prefs", prefs, added });
     prefsOut = prefs;
     // A typed menu request lists what this message asks for (D-21 audit): a stored budget or "mild" applies only when
@@ -507,10 +525,11 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     // ("paneer dishes?") lists the dishes that have it.
     const ex = explicitPrefs(latest);
     const newDiet = prefs.diet.some((d) => !previous?.diet.includes(d));
-    const words = foodWords(latest, entries);
+    // Words the guest excludes ("without paneer") are not what they're searching for (review of D-28).
+    const words = foodWords(latest, entries).filter((w) => !(prefs.exclude ?? []).some((x) => stemOf(x) === stemOf(w)));
     const generic = prefs.course === null && !newDiet && !ex.avoid?.length && ex.maxPrice === undefined && !ex.mild && !words.length;
     const listPrefs: Prefs = generic ? { ...noPrefs(), unlisted: prefs.unlisted } : { ...prefs, maxPrice: ex.maxPrice ?? (/\d/.test(latest) ? prefs.maxPrice : null), mild: !!ex.mild || (prefs.mild && !previous?.mild) };
-    const m = menuStep(entries, listPrefs, listPrefs.course, { branch: draft0.branch ?? turn.booking.branch ?? branchNamed, words, allergyNote: !!(ex.allergy || ex.avoid?.length || prefs.avoid.some((a) => !(previous?.avoid ?? []).includes(a)) || !input.context?.allergyNoted) });
+    const m = menuStep(entries, listPrefs, listPrefs.course, { branch: draft0.branch ?? turn.booking.branch ?? branchNamed, words, allergyNote: !!(ex.allergy || ex.avoid?.length || prefs.avoid.some((a) => !(previous?.avoid ?? []).includes(a)) || !input.context?.allergyNoted || SAFETY_QUESTION.test(latest)) });
     trace.push({ action: "menu", course: listPrefs.course, items: m.shown });
     prepared = { text: m.text, blocks: m.blocks, cited: m.cited, largeParty };
   } else if (turn.intent === "recommend" && recommended.result) {
@@ -528,7 +547,9 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     // D-28: a diet stated about the guest themselves ("I'm vegan", "we don't eat meat") or corrected ("I eat chicken
     // now") is kept too, so it isn't asked again; a diet word in a question about a dish is not a statement.
     const selfDiet = /\b(?:i'm|i am|im|we're|we are|i'm a|i am a|we're all|we are all|i'm strictly|we're strictly)\s+(?:a\s+|strictly\s+|pure\s+)?(?:vegetarians?|vegans?|veg|jain)\b|\b(?:don't|do not|never) eat (?:any )?(?:meat|chicken|fish)\b/i.test(latest);
-    const lifted = liftedPrefs(latest).diet;
+    // A diet is lifted outside a food request only by the guest saying so about themselves ("I eat meat", "I'm not
+    // vegetarian"), never by a dish named in a question ("does the butter chicken have nuts?"; review of D-28).
+    const lifted = SELF_LIFT.test(latest) ? liftedPrefs(latest).diet : [];
     if (ex.allergy || ex.avoid?.length || ex.unlisted?.length || (selfDiet && ex.diet?.length) || lifted.length) {
       const prev = prefsOut ?? noPrefs();
       const diet = [...new Set([...prev.diet.filter((d) => !lifted.includes(d)), ...(selfDiet ? (ex.diet ?? []) : [])])];

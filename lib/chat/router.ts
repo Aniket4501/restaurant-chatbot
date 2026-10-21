@@ -10,7 +10,7 @@ import { isHoursOnly, renderHoursAnswer } from "@/lib/chat/hours";
 import { hoursAnswer, readHoursQuestion, type HoursQuestion } from "@/lib/chat/hours-card";
 import { T, type BranchInfo } from "@/lib/chat/templates";
 import { ALLERGY_NOTE, needsAllergyNote, type MenuEntry } from "@/lib/chat/menu";
-import { claimProblems, explicitPrefs } from "@/lib/chat/recommend";
+import { claimProblems, explicitPrefs, SAFETY_QUESTION } from "@/lib/chat/recommend";
 import type { Action, Block, Chip, Draft, Field, HoursFocus, Outcome, Prefs, SlotChip, TraceEntry } from "@/lib/chat/types";
 
 // Deterministic turn logic (§5.7 step 2 and 5): the booking flow driven by the draft, and routing of a validated
@@ -324,8 +324,14 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
 
   switch (turn.intent) {
     case "faq": {
+      // An allergy or safety question the facts can't answer: what can honestly be said, with the note, instead of
+      // "I don't have that information" (live LV-SAF-003: "I have a sesame allergy. Is the Chana Pindi safe for me?").
+      const asking = facts.guest ?? "";
+      const safetyAsk = (ALLERGEN_WORDS.test(asking) || explicitPrefs(asking).allergy || (!!facts.foodPrefs && needsAllergyNote(facts.foodPrefs))) && SAFETY_QUESTION.test(asking);
+      const safetyFallback = () => reply(T.allergyUnknown, "faq_fallback", { lead: [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] });
       if (!turn.answerable) {
         ctx.trace.push({ action: "fallback_unknown", reason: "answerable_false" });
+        if (safetyAsk) return safetyFallback();
         return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback");
       }
       const cited = [...new Set(turn.citedFactIds)];
@@ -335,7 +341,7 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       if (!unknown && isHoursOnly(cited) && facts.hours && cited.some((id) => /^(?:hours|exception):/.test(id))) {
         const h = facts.hours;
         const q = h.question ?? readHoursQuestion(facts.guest ?? "", ctx.now, ctx.zone, h.src.branches, { focus: h.focus, draftBranch: h.draftBranch });
-        const a = hoursAnswer(q, h.src, ctx.now, { known: new Set(facts.factsById.keys()) });
+        const a = hoursAnswer(q, h.src, ctx.now, { known: new Set(facts.factsById.keys()), contact: /\b(?:address|where (?:is|are)|located|location|directions|phone|number|call you|contact)\b/i.test(facts.guest ?? "") });
         h.onHours(a.focus);
         ctx.trace.push({ action: "answer_faq", ids: a.cited, rendered: true });
         return reply(prose(a.text), "hours_answer", { lead: a.blocks, cited: a.cited });
@@ -373,11 +379,14 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       // D-28: only when this question is about allergens or safety (an allergen named, an allergy stated, or a stored
       // allergy with a question about safety or ingredients), not under every answer once an allergy is known.
       const guestText = facts.guest ?? "";
-      const allergyLead: Block[] =
-        ALLERGEN_WORDS.test(guestText) || explicitPrefs(guestText).allergy || (facts.foodPrefs && needsAllergyNote(facts.foodPrefs) && /\b(?:safe|allerg\w*|contain\w*|ingredients?|traces?|made with|cooked with)\b/i.test(guestText)) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
+      // Also when a stored allergen is in a dish the answer cites ("is the kulfi okay?" after "I'm allergic to nuts").
+      const stored = facts.foodPrefs && needsAllergyNote(facts.foodPrefs) ? facts.foodPrefs : null;
+      const citedHasAllergen = !!stored && cited.some((id) => (facts.menu ?? []).find((d) => d.id === id)?.contains.some((c) => stored.avoid.includes(c as never)));
+      const allergyLead: Block[] = ALLERGEN_WORDS.test(guestText) || explicitPrefs(guestText).allergy || (!!stored && (SAFETY_QUESTION.test(guestText) || citedHasAllergen)) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
       const g = unknown ? ({ ok: false, reason: unknown, detail: "" } as const) : checkGrounding(turn.answer ?? "", cited, facts);
       if (!g.ok || !turn.answer?.trim()) {
         ctx.trace.push({ action: "fallback_unknown", reason: g.ok ? "empty_answer" : g.reason });
+        if (safetyAsk) return safetyFallback();
         return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback", { lead: allergyLead });
       }
       // Grounding checks numbers and booking words; the claims about dishes are checked against the cited dishes'

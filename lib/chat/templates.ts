@@ -17,6 +17,8 @@ function callText(branches: BranchInfo[]): string {
 
 export const T = {
   fallback: (branches: BranchInfo[]) => `I don't have that information. You can call ${callText(branches)}.`,
+  /** An allergy or safety question the facts can't answer (D-28): no promise either way, and who can check. */
+  allergyUnknown: "I can't confirm that: our menu labels only list the main allergens. Please ask your server, who can check the dish with the kitchen.",
   manageBooking: (branches: BranchInfo[]) => `To change or cancel, please call ${callText(branches)}.`,
   largeParty: (branches: BranchInfo[]) => `Online bookings are for 1 to 8 guests. For a larger group, please call ${callText(branches)}.`,
   offTopic: "I can help with bookings, hours, locations and the menu.",

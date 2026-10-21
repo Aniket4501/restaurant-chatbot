@@ -533,3 +533,61 @@ describe("D-24 final runs: claims the first final runs let through", () => {
     expect(claimProblems("No. The Ember Pistachio Kulfi is made with milk, so it isn't vegan.", [dish("menu:pistachio-kulfi")], entries)).toEqual([]);
   });
 });
+
+describe("review of D-26/D-28 and the live after-run", () => {
+  const go = async (text: string, prefs: Partial<NonNullable<Turn["prefs"]>> | null, context: Partial<{ prefs: Prefs; recommended: string[]; asked: ("diet" | "course" | "plan_diet")[] }> = {}, pick?: string) => {
+    const seen: string[][] = [];
+    const call: ChooserCall = async (_a, messages) => {
+      seen.push([...messages[1].content.matchAll(/^([a-z0-9-]+) \|/gm)].map((m) => `menu:${m[1]}`));
+      const id = pick ?? seen[0][0]?.slice(5);
+      const d = e(`menu:${id}`);
+      return { choice: { pick: id, alternatives: [], reply: `The ${d.name} at ₹${d.price} is ${d.description.toLowerCase()}.` }, code: "ok", content: "" };
+    };
+    const trace: TraceEntry[] = [];
+    const res = await recommendTurn({ turn: recTurn(prefs), text, history: [], context: { lastCitedIds: [], ...context }, entries, restaurant: "Neem & Ember", grounding, trace }, call);
+    return { res, seen, trace };
+  };
+  it("reads dislikes of spice as dislikes, and 'hot' to drink as no spice preference", () => {
+    for (const t of ["I don't like spicy food", "not a fan of spicy dishes", "my kids can't handle spice", "I want something hot to drink"]) expect(explicitPrefs(t).spicy, t).toBeUndefined();
+    expect(explicitPrefs("I love spicy food").spicy).toBe(true);
+  });
+  it("'allergic to paneer' and 'I can't have paneer, I'm allergic' avoid dairy; 'no dal' and 'paneer is fine' work by stem", () => {
+    expect(explicitPrefs("I'm allergic to paneer")).toMatchObject({ allergy: true, avoid: ["dairy"] });
+    expect(explicitPrefs("I'm allergic to paneer").unlisted).toBeUndefined();
+    expect(explicitPrefs("I can't have paneer, I'm allergic")).toMatchObject({ avoid: ["dairy"], exclude: ["paneer"] });
+    expect(resolvePrefs(null, null, "something without dal", entries).prefs.exclude).toEqual(["dal"]);
+    expect(resolvePrefs(null, P({ exclude: ["mushrooms"] }), "mushroom is fine", entries).prefs.exclude).toEqual([]);
+  });
+  it("an exclusion from the client is matched as text, never as a pattern", () => {
+    expect(unmet(e("menu:dal-ember"), P({ exclude: ["a.*"] }))).toBeNull();
+  });
+  it("a liking for spice guides the chooser but filters nothing (desserts stay possible)", async () => {
+    const { res, seen } = await go("A dessert please", { course: "desserts" }, { prefs: P({ spicy: true }) });
+    expect(seen[0].length).toBe(eligible(entries, P({ course: "desserts" })).length);
+    expect(res.blocks[0]).toMatchObject({ type: "recommendation" });
+  });
+  it("asks the meal-type question only when nothing else is said (live LV-RET-001)", async () => {
+    const { res, seen } = await go("something light and not spicy for my kid", { mild: true });
+    expect(seen).toHaveLength(1);
+    expect(res.blocks[0]).toMatchObject({ type: "recommendation" });
+  });
+  it("drops a main's budget for a dessert even when the model reads a relation (live LV-ST-008)", () => {
+    const prev = P({ diet: ["vegetarian"], maxPrice: 400, course: "mains" });
+    expect(resolvePrefs({ diet: [], avoid: [], maxPrice: null, course: "desserts", mild: false, allergy: false, relation: "another" }, prev, "Now recommend a dessert").prefs).toMatchObject({ maxPrice: null, diet: ["vegetarian"] });
+  });
+  it("'cheaper' after a tandoor dish looks at mains too (live LV-POP-008)", async () => {
+    const { seen } = await go("Something cheaper.", { relation: "cheaper" }, { prefs: P({ diet: ["vegetarian"] }), recommended: ["menu:achari-soya-chaap"] }, "chana-pindi");
+    expect(seen[0]).toContain("menu:chana-pindi");
+    expect(seen[0].every((id) => ["mains", "tandoor"].includes(e(id).course) && e(id).price < 425)).toBe(true);
+  });
+  it("'less spicy' after a mild dish suggests another mild one (live LV-REC-014)", async () => {
+    const { res, seen } = await go("Something less spicy", { course: "mains" }, { prefs: P({ course: "mains" }), recommended: ["menu:dal-ember"] });
+    expect(seen[0].length).toBeGreaterThan(0);
+    expect(seen[0].every((id) => e(id).spice !== null && e(id).spice! <= 1 && id !== "menu:dal-ember")).toBe(true);
+    expect(res.blocks[0]).toMatchObject({ type: "recommendation" });
+  });
+  it("says first that the dish asked for is unavailable (live LV-GAP-015; code reads the dish's own words, so 'pomfret')", async () => {
+    const { res } = await go("Can you recommend the pomfret from the tandoor?", { course: "tandoor" }, {}, "malai-chicken-tikka");
+    expect(res.text).toMatch(/^The Tandoori Pomfret is currently unavailable\. /);
+  });
+});

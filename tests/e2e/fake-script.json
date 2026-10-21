@@ -101,21 +101,12 @@
     "answerable": true
   },
   "planner:There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?": {
-    "items": [
-      {
-        "id": "dal-ember",
-        "qty": 1
-      },
-      {
-        "id": "yellow-dal-tadka",
-        "qty": 1
-      },
-      {
-        "id": "butter-naan",
-        "qty": 1
-      }
+    "dishes": [
+      "dal-ember",
+      "yellow-dal-tadka",
+      "tandoori-roti"
     ],
-    "note": "Two lentil dishes, one smoky and one bright, with naan to share."
+    "note": "Two lentil dishes, one smoky and one bright, with rotis to share."
   },
   "What are your opening hours?": {
     "intent": "faq",
