@@ -113,7 +113,7 @@ describe("buildPrompt matches probe prompt v2 apart from the approved changes", 
   });
 
   it("user message: v2 with the history as one JSON <history> block", () => {
-    const want = ref.user.replace("\n\nConversation so far:", "\n\nCurrent food preferences: none\n\nLast suggested dishes: none\n\nConversation so far:").replace(
+    const want = ref.user.replace("\n\nConversation so far:", "\n\nCurrent food preferences: none\n\nDishes last shown to the guest, in order (\"the second one\" is number 2): none\n\nConversation so far:").replace(
       "Conversation so far:\nGuest: hi\nAssistant: Hello! How can I help?",
       'Conversation so far:\n<history>[{"role":"guest","content":"hi"},{"role":"assistant","content":"Hello! How can I help?"}]</history>',
     );
@@ -126,7 +126,7 @@ describe("buildPrompt matches probe prompt v2 apart from the approved changes", 
 
   it("is pinned by a snapshot", async () => {
     const p = buildPrompt(input({ draft: { branch: "hauz-khas", date: "2026-10-17", time: null, timeWindow: "dinner", partySize: 4 } }));
-    await expect(`${p.version}\n=== system ===\n${p.system}\n=== user ===\n${p.user}\n`).toMatchFileSnapshot("../golden/prompt-v8.txt");
+    await expect(`${p.version}\n=== system ===\n${p.system}\n=== user ===\n${p.user}\n`).toMatchFileSnapshot("../golden/prompt-v9.txt");
   });
 });
 
@@ -200,7 +200,7 @@ describe("per-turn food lines (D-20)", () => {
     const prefs = JSON.stringify({ diet: ["vegan"], avoid: ["nuts"], maxPrice: 300, course: "desserts", mild: false, allergy: true, unlisted: [] });
     const p = buildPrompt(input({ prefs, suggested: "Mango Sorbet (₹245)" }));
     expect(p.user).toContain(`Current food preferences: ${prefs}`);
-    expect(p.user).toContain("Last suggested dishes: Mango Sorbet (₹245)");
+    expect(p.user).toContain('Dishes last shown to the guest, in order ("the second one" is number 2): Mango Sorbet (₹245)');
     expect(p.system).not.toContain("Mango Sorbet (₹245)");
   });
 });

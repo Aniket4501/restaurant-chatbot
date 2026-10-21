@@ -16,23 +16,31 @@ export type EvidenceKind = "sales" | "reviews" | "evidence";
 // Saturday a popular time?" and "is Hauz Khas popular?").
 const SALES = /\b(?:best[- ]?sell(?:er|ers|ing)|top[- ]sell(?:er|ers|ing)|(?:best|top|biggest)[- ]?(?:[a-z]+[- ]){0,2}?sell(?:er|ers|ing)|sells? (?:the )?(?:most|best)|most (?:popular|ordered|loved|liked|requested|famous) (?:dish|dishes|item|items|food|dessert|desserts|main|mains|course|starter|starters|drink|drinks|thing|one|on the menu)|(?:what|which)(?:'s| is| are)? (?:your |the )?most (?:popular|ordered|loved|liked|requested|famous)\b(?! (?:time|day|night|branch|location|place|hours?))|popular (?:dish|dishes|item|items|food|dessert|desserts|main|mains|starter|starters|drink|drinks|choice|choices|on the menu)|popularity|(?:fan|guest|customer|crowd)(?:'s|s')? favou?rites?|signature (?:dish|dishes)|what (?:do|does) (?:most )?(?:people|guests|everyone|customers|others) (?:usually |normally |mostly |tend to )?(?:order|get|eat|choose|pick))\b/i;
 const IS_POPULAR = /\bis (?:the |your )?([a-z][a-z' -]{2,40}?) (?:very |really |quite )?popular\b(?! (?:time|day|night|place|branch|location|spot|hours?|area))/i;
-const REVIEWS = /\b(?:reviews?|reviewed|ratings?|rated|stars?)\b/i;
+// Reviews and ratings of food, in so many words (failure-mode audit FM-023: "star anise", "spice rating" and "hygiene
+// rating" were answered "we don't collect reviews").
+const REVIEWS = /\b(?:reviews?|reviewed|(?:best|highest|well|top|most|poorly|badly)[- ]rated|rated (?:the )?(?:best|highest|well|top)|star ratings?|(?:customer|guest|online|google|zomato|swiggy) ratings?|ratings? (?:of|for|on) (?:the )?(?:dish|dishes|food|menu)|how (?:is|are) (?:the |your )?[a-z' ]{2,40} rated)\b/i;
+const NOT_REVIEWS = /\bstar anise\b|\b(?:spice|heat|hygiene|chilli|chili|fssai) ratings?\b|\brated (?:the )?(?:spiciest|hottest|mildest|for kids|for children)\b/i;
 const FOOD_CONTEXT = /\b(?:dish|dishes|food|menu|item|items|dessert|desserts|main|mains|starter|starters|drink|drinks|curry|curries|biryani|best|top|highest|which|what)\b/i;
+// The restaurant's "own" dish: the menu names none (FM-001: "chef's special?" got a dish presented as the answer).
+const SIGNATURE = /\bchef'?s (?:special|speciality|specialty|choice|pick)\b|\b(?:your|the) (?:speciality|specialty)\b|\bsignature (?:dish|dishes)\b|\b(?:famous|known) for\b|\bwhat do (?:your )?(?:regulars|locals|people|most people) (?:usually )?order\b/i;
 // Asking for data in so many words.
 const DATA_ASK = /\b(?:sales (?:data|figures|numbers|records)|data (?:to (?:support|back)|behind|for that)|any (?:data|evidence|proof)|actual (?:data|evidence|numbers))\b/i;
 // Challenging the last suggestion: only right after one, and not about hours, safety or a booking.
 const CHALLENGE = /\b(?:how do you know|based on what|what (?:is|'s) that based on|is that (?:really )?(?:popular|a bestseller|true|right))\b/i;
-const OTHER_TOPIC = /\b(?:open|close|hours?|timings?|safe|allerg\w*|book\w*|table|reservation|parking|address)\b/i;
+const OTHER_TOPIC = /\b(?:open|close|hours?|timings?|safe|allerg\w*|book\w*|table|reservation|parking|address|vegan|vegetarian|gluten|jain|dairy|nuts?|eggs?|spicy|price|cost|₹|contain\w*|ingredients?)\b/i;
+// A popularity statement in the last reply: the only thing "is that true?" can challenge as popularity (FM-023).
+const POPULARITY_SAID = /\bbest[- ]?sell|\bpopular|\bsales\b|\breviews?\b|\brated\b|\bfavou?rite|\b(?:guests|people|everyone|customers) (?:love|adore|order)/i;
 
 /**
  * The kind of popularity question the message asks, or null. `suggested`: a dish was suggested in this conversation;
  * `dishes`: the menu's dish names, so "is the butter chicken popular?" counts and "is Hauz Khas popular?" doesn't.
  */
-export function evidenceQuestion(text: string, suggested = false, dishes: string[] = []): EvidenceKind | null {
+export function evidenceQuestion(text: string, suggested = false, dishes: string[] = [], lastReply = ""): EvidenceKind | null {
   const t = text.toLowerCase().replace(/[’‘]/g, "'");
-  if (DATA_ASK.test(t) || (suggested && CHALLENGE.test(t) && !OTHER_TOPIC.test(t))) return "evidence";
-  if (REVIEWS.test(t) && FOOD_CONTEXT.test(t) && !/\b(?:for kids|for children|age)\b/.test(t)) return "reviews";
-  if (SALES.test(t)) return "sales";
+  const challenge = CHALLENGE.test(t) && !OTHER_TOPIC.test(t) && (/\bpopular|\bbest[- ]?sell/.test(t) || (suggested && POPULARITY_SAID.test(lastReply)));
+  if (DATA_ASK.test(t) || challenge) return "evidence";
+  if (REVIEWS.test(t) && !NOT_REVIEWS.test(t) && FOOD_CONTEXT.test(t)) return "reviews";
+  if (SALES.test(t) || SIGNATURE.test(t)) return "sales";
   const m = IS_POPULAR.exec(t);
   const subject = m?.[1].trim() ?? "";
   if (m && (FOOD_CONTEXT.test(subject) || dishes.some((n) => n.toLowerCase().includes(subject.replace(/^(?:the|your) /, "")) || subject.includes(n.toLowerCase())))) return "sales";
@@ -107,6 +115,14 @@ function answer(input: { kind: EvidenceKind; text: string; prefs: Prefs; entries
     return { text: `${head}${o.text}`, blocks: o.blocks, cited: [], asked: o.asked };
   }
 
+  // "Chef's special?", "what are you famous for?": the menu names no signature dish (FM-001). Staff bestseller marks are
+  // a different thing and are offered as such.
+  if (SIGNATURE.test(input.text) && !SALES.test(input.text.toLowerCase())) {
+    const o = offer();
+    const head = "The menu doesn't name a chef's special or a signature dish, so I can't point to one.";
+    if (fit.length) return { text: `${head} The restaurant does mark ${names(fit.slice(0, 3))} as ${fit.length === 1 ? "a bestseller" : "bestsellers"}.`, blocks: [card(fit)], cited: fit.slice(0, 3).map((d) => d.id), recommended: fit.slice(0, 3).map((d) => d.id) };
+    return { text: `${head}${o.text}`, blocks: o.blocks, cited: [], asked: o.asked };
+  }
   // Sales and popularity.
   if (fit.length) {
     const among = p.course || p.diet.length ? `Of the ${w}${w.endsWith("sh") ? "es" : "s"}, the` : "The";

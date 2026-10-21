@@ -111,6 +111,13 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // D-28: the allergy note is shown once for the allergies in force, and again when they change (a new allergen or
   // allergy) or the guest asks about safety; it isn't repeated under every later suggestion. A booking turn that
   // learns of an allergy doesn't show it, so the next food answer does.
+  // The dishes this reply put on screen, in order; a reply with none keeps the last ones (FM-004).
+  const shownOf = (step: Step): string[] => {
+    const ids = step.blocks.flatMap((b) => (b.type === "recommendation" || b.type === "meal_plan" ? b.items.map((i) => i.id) : b.type === "menu_list" ? b.groups.flatMap((g) => g.items.map((i) => i.id)) : []));
+    const cited = ids.length ? [] : (step.citedFactIds ?? []).filter((id) => id.startsWith("menu:"));
+    const now = [...new Set([...ids, ...cited])].slice(0, 8);
+    return now.length ? now : (input.context?.shown ?? []);
+  };
   const noted = (step: Step) => {
     const p = prefsOut;
     if (!p || !(p.avoid.length || p.allergy)) return false;
@@ -128,7 +135,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       draft: step.draft,
       intent,
       // A turn the model couldn't answer keeps what the conversation was about (D-21 audit: a timeout erased it).
-      context: { lastCitedIds: (step.outcome === "degraded" || step.outcome === "rate_limited" ? (input.context?.lastCitedIds ?? []) : (step.citedFactIds ?? [])).slice(0, 8), prefs: prefsOut, recommended: recommendedOut.slice(0, 6), ...(askedOut.length ? { asked: askedOut } : {}), ...(noted(step) ? { allergyNoted: true } : {}), ...(hoursOut ? { hours: hoursOut } : {}), ...(planOut ? { plan: planOut } : {}) },
+      context: { lastCitedIds: (step.outcome === "degraded" || step.outcome === "rate_limited" ? (input.context?.lastCitedIds ?? []) : (step.citedFactIds ?? [])).slice(0, 8), prefs: prefsOut, recommended: recommendedOut.slice(0, 6), ...(askedOut.length ? { asked: askedOut } : {}), ...(noted(step) ? { allergyNoted: true } : {}), ...(hoursOut ? { hours: hoursOut } : {}), ...(planOut ? { plan: planOut } : {}), ...(shownOf(step).length ? { shown: shownOf(step) } : {}) },
       trace,
       meta: {
         outcome: step.outcome,
@@ -350,7 +357,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   }
 
   // D-26: "best seller?", "most popular dessert?", "best reviews?", "any data for that?": factual, not a choice.
-  const evidenceKind = evidenceQuestion(latest, (input.context?.recommended?.length ?? 0) > 0, entries.map((e) => e.name));
+  const evidenceKind = evidenceQuestion(latest, (input.context?.recommended?.length ?? 0) > 0, entries.map((e) => e.name), history.filter((m) => m.role === "assistant").at(-1)?.content ?? "");
 
   // 4. Retrieve (D-02, D-13).
   const staticFacts = renderStaticFacts(src, input.now);
@@ -368,7 +375,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // 5. Build the prompt, within the character budget (D-15): trim history to 2 messages once, else degrade.
   const p0 = elapsed();
   const byId = new Map(entries.map((e) => [e.id, e]));
-  const suggested = recommendedOut.filter((id) => byId.has(id)).slice(0, 3).map((id) => `${byId.get(id)!.name} (₹${byId.get(id)!.price})`).join(", ") || null;
+  const lastShown = (input.context?.shown?.length ? input.context.shown : recommendedOut).filter((id) => byId.has(id)).slice(0, 6);
+  const suggested = lastShown.map((id, i) => `${i + 1}. ${byId.get(id)!.name} (₹${byId.get(id)!.price})`).join("; ") || null;
   const promptFor = (h: typeof history) =>
     buildPrompt({ now: input.now, zone, restaurant: src.restaurant ?? { name: "the restaurant" }, branches, staticFacts, retrieved, draft: draft0, history: h, guest: latest, prefs: prefsOut ? JSON.stringify(prefsOut) : null, suggested });
   let usedHistory = history;
@@ -501,7 +509,10 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const largeParty = largePartyStated(latest) !== null;
   // The branch named in the message, when exactly one is (the model fills booking.branch only for bookings).
   const branchNamed = branchIn(latest);
-  if (evidenceKind && turn.intent !== "booking" && turn.intent !== "manage_booking" && !(turn.intent === "faq" && turn.answerable && turn.citedFactIds.some((id) => /^(?:faq|doc):/.test(id)))) {
+  // A grounded FAQ answer citing a staff FAQ or document wins; so does one citing dishes, unless the question is about
+  // sales or popularity (FM-023: "what's the spice rating of the Chettinad?" lost its grounded answer).
+  const groundedFaq = turn.intent === "faq" && turn.answerable && (turn.citedFactIds.some((id) => /^(?:faq|doc):/.test(id)) || (evidenceKind !== "sales" && turn.citedFactIds.some((id) => id.startsWith("menu:"))));
+  if (evidenceKind && turn.intent !== "booking" && turn.intent !== "manage_booking" && !groundedFaq) {
     // A popularity or evidence question (D-26), whichever intent the model read ("most popular dessert?" can read as a
     // menu request). A staff FAQ or document that answers it (a grounded FAQ answer citing one) takes the FAQ path.
     const { prefs, added, inferred } = resolvePrefs(turn.prefs, prefsOut, latest, entries);
@@ -519,7 +530,10 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     const previous = prefsOut;
     const { prefs, added } = resolvePrefs(turn.prefs, prefsOut, latest, entries);
     trace.push({ action: "prefs", prefs, added });
-    prefsOut = prefs;
+    // A diet named in a question ("which desserts are gluten-free?") filters this list but isn't stored as the guest's
+    // own (failure-mode audit FM-002); a statement ("I'm vegan, show me the mains") is.
+    const asking = /\?\s*$/.test(latest) || /^(?:is|are|does|do|which|what|any|can|could)\b/i.test(latest.trim());
+    prefsOut = asking && !/\b(?:i|we)(?:'m| am|'re| are| eat| only eat| don't eat| do not eat)\b/i.test(latest) ? { ...prefs, diet: previous?.diet ?? [] } : prefs;
     // A typed menu request lists what this message asks for (D-21 audit): a stored budget or "mild" applies only when
     // restated; with nothing new and no section, the sections are offered (as the menu button does); an ingredient
     // ("paneer dishes?") lists the dishes that have it.

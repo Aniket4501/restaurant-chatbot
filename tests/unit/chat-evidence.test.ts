@@ -22,9 +22,9 @@ beforeAll(() => {
 });
 const P = (o: Partial<Prefs> = {}): Prefs => ({ ...noPrefs(), ...o });
 const marked = (...slugs: string[]) => entries.map((e) => ({ ...e, bestseller: slugs.includes(e.id.slice(5)) }));
-const step = (text: string, o: { prefs?: Prefs; menu?: MenuEntry[]; recommended?: string[]; asked?: ("diet" | "course")[] } = {}) => {
+const step = (text: string, o: { prefs?: Prefs; menu?: MenuEntry[]; recommended?: string[]; asked?: ("diet" | "course")[]; lastReply?: string } = {}) => {
   const trace: TraceEntry[] = [];
-  const kind = evidenceQuestion(text, !!o.recommended?.length, entries.map((e) => e.name));
+  const kind = evidenceQuestion(text, !!o.recommended?.length, entries.map((e) => e.name), o.lastReply ?? "");
   if (!kind) throw new Error(`not an evidence question: ${text}`);
   return { ...evidenceStep({ kind, text, prefs: o.prefs ?? P(), entries: o.menu ?? entries, context: { lastCitedIds: [], recommended: o.recommended, asked: o.asked }, branch: null, trace }), trace };
 };
@@ -71,7 +71,9 @@ describe("answers from the data, never from the model's judgment", () => {
     expect(step("Do you have actual sales data to support that?", { prefs: P({ diet: ["vegetarian"] }), recommended: ["menu:dal-ember"] }).text).toBe(
       "No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Dal Ember because it fits what you asked for (vegetarian dishes).",
     );
-    expect(step("How do you know?", { recommended: ["menu:dal-ember"] }).text).toBe("No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Dal Ember from its menu description, not from popularity.");
+    expect(step("How do you know?", { recommended: ["menu:dal-ember"], lastReply: "Guests love the Dal Ember." }).text).toBe("No, we don't keep sales or popularity figures, ratings or reviews. I suggested the Dal Ember from its menu description, not from popularity.");
+    // FM-023: with no popularity said, "how do you know?" is an ordinary question for the model.
+    expect(evidenceQuestion("How do you know?", true, [], "I'd suggest the Dal Ember: black lentils slow-cooked overnight.")).toBeNull();
     // A marked dish: the mark is said first.
     expect(step("Is that a bestseller?", { recommended: ["menu:dal-ember"], menu: marked("dal-ember") }).text).toBe("The restaurant marks the Dal Ember as a bestseller; beyond that we don't keep sales figures, ratings or reviews.");
   });
@@ -97,6 +99,22 @@ describe("review of D-26", () => {
   });
   it("says which need ruled the marked dishes out", () => {
     expect(step("What's your bestseller under ₹300?", { prefs: P({ maxPrice: 300 }), menu: marked("dal-ember") }).text).toMatch(/^None of the dishes the restaurant marks as bestsellers fits what you asked for \(dishes, up to ₹300\)\./);
+  });
+});
+
+describe("failure-mode audit FM-001/FM-023", () => {
+  const names = () => entries.map((e) => e.name);
+  it("FM-023: star anise, spice and hygiene ratings are not review questions; a dish question with a diet word is not a challenge", () => {
+    for (const t of ["Which dishes have star anise?", "What's the spice rating of the Chicken Chettinad?", "What's your hygiene rating?", "Is that true that the dal is vegan?"]) expect(evidenceQuestion(t, true, names(), "Guests love it."), t).toBeNull();
+    expect(evidenceQuestion("Which dish has the best reviews?", false, names())).toBe("reviews");
+  });
+  it("FM-001: chef's special, speciality and 'famous for' get an honest answer, not a dish presented as the answer", () => {
+    for (const t of ["What's the chef's special today?", "What's your speciality?", "What are you famous for?", "What do your regulars order?"]) {
+      expect(evidenceQuestion(t, false, names()), t).toBe("sales");
+      const r = step(t, { asked: ["diet"] });
+      expect(r.blocks.some((b) => b.type === "recommendation"), t).toBe(false);
+    }
+    expect(step("What's the chef's special today?", { asked: ["diet"] }).text).toMatch(/^The menu doesn't name a chef's special or a signature dish/);
   });
 });
 

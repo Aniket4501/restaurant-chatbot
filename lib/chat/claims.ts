@@ -79,7 +79,8 @@ export function unsupportedBookingStateSentence(text: string, citedTexts: string
 /** Smalltalk prose is shown only with no digits or number words, no claim and no booking-state words (§5.7, D-15). */
 export function smalltalkShowable(text: string): boolean {
   const t = fold(text);
-  return !/\p{Nd}/u.test(t) && !bookingClaim(t) && !hasBookingStateWords(t) && !SMALLTALK_STATE_RE.test(t) && !NUMBER_WORDS.some((w) => numberWordRe(w).test(t)) && !/\bone\b/i.test(t) && !hypeClaims(t).length;
+  // Nor talk about its own instructions or prompt (failure-mode audit FM-005: "my rules say never to…" was shown).
+  return !/\p{Nd}/u.test(t) && !bookingClaim(t) && !hasBookingStateWords(t) && !SMALLTALK_STATE_RE.test(t) && !NUMBER_WORDS.some((w) => numberWordRe(w).test(t)) && !/\bone\b/i.test(t) && !hypeClaims(t).length && !/\b(?:instructions?|system prompt|prompt|my rules|the rules|guidelines?|i(?:'m| am| was) (?:told|instructed|programmed)|i'?m not allowed)\b/i.test(t);
 }
 
 /**
@@ -87,12 +88,14 @@ export function smalltalkShowable(text: string): boolean {
  * restaurant's own bestseller mark (or a staff FAQ or document that says so) is the only support for any of them.
  */
 export const HYPE_RE =
-  /\b(?:most popular|popular(?:ity)?|best[- ]?sell(?:er|ers|ing)|top[- ]sell(?:er|ers|ing)|(?:our|the) top (?:seller|pick|choice|dish)|favou?rites?|signature|chef'?s (?:special|choice|pick|recommendation|speciality|specialty)|chef recommends|award[- ]winning|famous|highly (?:rated|recommended)|top[- ]rated|best[- ]rated|well[- ]reviewed|(?:great|good|rave|glowing|excellent|amazing|five[- ]star) reviews?|reviews? (?:say|rave)|must[- ]try|crowd[- ]pleaser|speciality|specialty|house (?:special|classic|favou?rite)|everyone(?:'s)? (?:loves?|favou?rite|orders)|(?:much|well|most)[- ]loved|beloved|loved by|guests (?:love|adore|rave)|people (?:love|order)|customers love|go-to|most ordered|most requested|always a hit|sells out|iconic|(?:our|the) (?:best|top) (?:dish|dishes|seller))\b/gi;
+  /\b(?:most popular|popular(?:ity)?|best[- ]?sell(?:er|ers|ing)|top[- ]sell(?:er|ers|ing)|(?:our|the) top (?:seller|pick|choice|dish)|favou?rites?|signature|chef'?s (?:special|choice|pick|recommendation|speciality|specialty)|chef recommends|award[- ]winning|famous|highly (?:rated|recommended)|top[- ]rated|best[- ]rated|well[- ]reviewed|(?:great|good|rave|glowing|excellent|amazing|five[- ]star) reviews?|reviews? (?:say|rave)|must[- ]try|crowd[- ]pleaser|speciality|specialty|house (?:special|classic|favou?rite)|everyone(?:'s)? (?:loves?|favou?rite|orders)|(?:much|well|most)[- ]loved|beloved|loved by|guests (?:love|adore|rave)|people (?:love|order)|customers love|go-to|most[- ]ordered|most requested|always a hit|sells out|iconic|(?:our|the) (?:best|top) (?:dish|dishes|seller)|known for|can't stop ordering|in (?:high )?demand|trending)\b/gi;
 // "We don't track what's popular", "I can't say which is the bestseller": an honest statement, not a claim.
 // An honest statement about the data, not a claim: a negator that governs knowing or keeping it ("we don't track
 // what's popular", "I can't say which is the bestseller", "no sales data", "it isn't marked as a bestseller"). Review
 // of D-26: "which", "if", "any" and a bare "can't" ("you can't go wrong with our most popular dish") let claims through.
-const HYPE_NEGATED = /\b(?:(?:don't|do not|doesn't|does not|didn't|can't|cannot|can not|unable to|never|won't)\s+(?:\w+\s+){0,2}(?:track|keep|know|say|tell|have|record|collect|claim|call|rank|measure|mark)|(?:hasn't|haven't|has not|have not|isn't|is not|aren't|are not|wasn't|not)\s+(?:\w+\s+){0,2}(?:marked|listed|known|ranked|rated|tracked|recorded)|no (?:sales|data|popularity|reviews?|ratings?|figures|records|way to (?:know|tell|say)))\b[^.!?]{0,40}$/i;
+// Failure-mode audit FM-001: "have", "say" and "tell" counted for any object ("we don't have a more popular dish", "you
+// can't say no to our bestseller"); now only as statements about data or about saying which.
+const HYPE_NEGATED = /\b(?:(?:don't|do not|doesn't|does not|didn't|can't|cannot|can not|unable to|never|won't)\s+(?:\w+\s+){0,2}(?:track|keep|know|record|collect|claim|rank|measure|mark)|(?:don't|do not|doesn't|does not)\s+have\s+(?:any\s+)?(?:sales|popularity|ratings?|reviews?|figures|data|records)|(?:can't|cannot|can not|unable to)\s+(?:say|tell)\s+(?:which|whether|if|how|what)|(?:hasn't|haven't|has not|have not|isn't|is not|aren't|are not|wasn't|not)\s+(?:\w+\s+){0,2}(?:marked|listed|known|ranked|rated|tracked|recorded)|no (?:sales|data|popularity|reviews?|ratings?|figures|records|way to (?:know|tell|say))|there(?:'s| is) no(?: (?:official|real|such))?|no official)\b[^.!?]{0,40}$/i;
 
 /** The popularity claims a reply makes (negated mentions left out), with where each starts. */
 export function hypeMatches(text: string): { claim: string; index: number }[] {

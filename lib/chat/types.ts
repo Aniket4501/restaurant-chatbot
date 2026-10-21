@@ -92,6 +92,8 @@ export const ContextSchema = z.strictObject({
   recommended: z.array(z.string().max(100)).max(6).optional(),
   /** D-26: clarifying questions already asked in this conversation, so none is asked twice. */
   asked: z.array(z.enum(["diet", "course", "plan_diet"])).max(4).optional(),
+  /** Dishes last on screen, in display order (cards, menu lists, plans, dishes an answer cited): "cheaper" and "the second one" refer to these (FM-004). */
+  shown: z.array(z.string().regex(/^menu:[a-z0-9]+(?:-[a-z0-9]+)*$/).max(100)).max(8).optional(),
   /** D-28: the allergy note has been shown for the allergies now in force (shown again only when they change). */
   allergyNoted: z.boolean().optional(),
   /** D-28: the meal being planned for a group: party, total budget, what they eat, and the last plan's total and dishes. */
@@ -102,7 +104,8 @@ export const ContextSchema = z.strictObject({
       basis: z.enum(["total", "per_person"]),
       diet: z.enum(["vegetarian", "vegan", "any", "mixed", "mixed_vegan"]).nullable(),
       subtotal: z.number().int().min(0).nullable(),
-      items: z.array(z.string().max(100)).max(10),
+      // Dish IDs only: the client sends this back, and it reaches the planner prompt (failure-mode audit FM-026).
+      items: z.array(z.string().regex(/^menu:[a-z0-9]+(?:-[a-z0-9]+)*$/).max(100)).max(10),
     })
     .optional(),
   /** D-27: what the last hours answer was about, for a follow-up ("what about Golf Course Road?"). */

@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "about": "D-24 latency benchmark scenarios. Fixed so runs compare; facts from data/seed. Warm scenarios run round-robin for --trials rounds; cold runs unload both models first. v2 (D-24): chip scenarios, sent as actions as the browser does; earlier runs have none.",
+  "version": 3,
+  "about": "D-24 latency benchmark scenarios. Fixed so runs compare; facts from data/seed. Warm scenarios run round-robin for --trials rounds; cold runs unload both models first. v2 (D-24): chip scenarios, sent as actions as the browser does; earlier runs have none. v3 (failure-mode campaign): a meal plan for two (P-plan, the planner call with no intent call) and a popularity question (E-bestseller, answered from data); earlier runs have neither.",
   "warm": [
     {
       "id": "L-hours",
@@ -160,6 +160,24 @@
             "text": "Anything cheaper?"
           },
           "label": "Something cheaper"
+        }
+      ]
+    },
+    {
+      "id": "P-plan",
+      "kind": "plan",
+      "turns": [
+        {
+          "text": "There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?"
+        }
+      ]
+    },
+    {
+      "id": "E-bestseller",
+      "kind": "evidence",
+      "turns": [
+        {
+          "text": "What is your best seller?"
         }
       ]
     }

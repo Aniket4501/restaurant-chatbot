@@ -70,7 +70,16 @@ export type GroundingContext = {
   zoneOf: (slug: string) => string;
 };
 
-export function checkGrounding(answer: string, citedFactIds: string[], ctx: GroundingContext): GroundingResult {
+// A sentence about opening hours: its times must come from the hours and special-date facts, never from an FAQ or a
+// staff document (failure-mode audit FM-007/FM-008: a valet FAQ's "12:00 PM" grounded a lunch claim, and a document's
+// "open until 11:00 PM" grounded a date the exception closes).
+const HOURS_SENTENCE = /\b(?:open(?:s|ing)?|clos(?:e|es|ed|ing)|lunch|dinner|hours?|timings?|until|till|serv(?:e|es|ing))\b/i;
+
+/**
+ * `guestDates`: the dates the guest asked about (FM-007): a weekly fact cited for that weekday is replaced by that
+ * date's exception, as it is for a date the answer itself mentions.
+ */
+export function checkGrounding(answer: string, citedFactIds: string[], ctx: GroundingContext, opts: { guestDates?: { day: number; month: number | null }[] } = {}): GroundingResult {
   const fail = (reason: GroundingFailure, detail: string): GroundingResult => ({ ok: false, reason, detail });
   if (citedFactIds.length === 0) return fail("no_citation", "no cited fact");
   const unknown = citedFactIds.find((id) => !ctx.factsById.has(id));
@@ -81,7 +90,7 @@ export function checkGrounding(answer: string, citedFactIds: string[], ctx: Grou
   const text = answer.normalize("NFKC");
   // D-10 (review RT-1): a weekly fact that names an exception on a date the answer mentions is replaced by that
   // exception, and the weekly fact's "Except …" pointers never ground anything themselves.
-  const mentioned = dateSpans(text);
+  const mentioned = [...dateSpans(text), ...(opts.guestDates ?? [])];
   const cited = [
     ...new Set(
       supersede(citedFactIds, ctx.zoneOf).flatMap((id) => {
@@ -99,11 +108,18 @@ export function checkGrounding(answer: string, citedFactIds: string[], ctx: Grou
   const factText = cited.map(groundText).join("\n");
 
   const factTimes = timesIn(factText);
+  const hoursTimes = timesIn(cited.filter((id) => /^(?:hours|exception):/.test(id)).map(groundText).join("\n"));
+  const sentenceAt = (pos: number) => {
+    const start = Math.max(text.lastIndexOf(".", pos - 1), text.lastIndexOf("!", pos - 1), text.lastIndexOf("?", pos - 1)) + 1;
+    const end = [".", "!", "?"].map((c) => text.indexOf(c, pos)).filter((i) => i >= 0);
+    return text.slice(start, end.length ? Math.min(...end) : text.length);
+  };
   const factPrices = pricesIn(factText);
   const factPhones = phonesIn(factText);
   const spans = canonicalSpans(text);
   for (const s of spans) {
     if (s.kind === "time" && !factTimes.has(s.value as number)) return fail("time", text.slice(s.start, s.end));
+    if (s.kind === "time" && HOURS_SENTENCE.test(sentenceAt(s.start)) && !hoursTimes.has(s.value as number)) return fail("time", text.slice(s.start, s.end));
     if (s.kind === "price" && !factPrices.has(s.value as number)) return fail("price", text.slice(s.start, s.end));
     if (s.kind === "phone" && !factPhones.has(s.value as string)) return fail("phone", text.slice(s.start, s.end));
   }

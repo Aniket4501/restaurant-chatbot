@@ -259,7 +259,7 @@ export type FactCtx = GroundingContext & {
 };
 
 // An allergen named in the guest's message: the answer gets the allergy note (D-21 audit: FAQ answers had none).
-const ALLERGEN_WORDS = /\ballerg\w*|\banaphyla|\b(?:pea|tree )?nuts?\b|\bcashews?\b|\balmonds?\b|\bpistachios?\b|\bdairy\b|\blactose\b|\beggs?\b|\bgluten\b|\bco?eliac\b|\bsesame\b|\bshellfish\b|\bsoy\b/i;
+const ALLERGEN_WORDS = /\ballerg\w*|\banaphyla|\b(?:pea|tree )?nuts?\b|\bcashews?\b|\balmonds?\b|\bpistachios?\b|\bdairy\b|\blactose\b|\beggs?\b|\bgluten\b|\bwheat\b|\bco?eliac\b|\bsesame\b|\bshellfish\b|\bsoy\b/i;
 
 // The same starting points as the welcome (D-20). "Find a table" asks for the branch with no model call.
 const QUICK_REPLIES = (): Block => ({
@@ -383,10 +383,22 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       const stored = facts.foodPrefs && needsAllergyNote(facts.foodPrefs) ? facts.foodPrefs : null;
       const citedHasAllergen = !!stored && cited.some((id) => (facts.menu ?? []).find((d) => d.id === id)?.contains.some((c) => stored.avoid.includes(c as never)));
       const allergyLead: Block[] = ALLERGEN_WORDS.test(guestText) || explicitPrefs(guestText).allergy || (!!stored && (SAFETY_QUESTION.test(guestText) || citedHasAllergen)) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
-      const g = unknown ? ({ ok: false, reason: unknown, detail: "" } as const) : checkGrounding(turn.answer ?? "", cited, facts);
+      // Hours cited with other facts (FM-007): the guest's own dates decide which hours apply (an exception replaces the
+      // weekly hours for its date), an hours fact for a branch other than the one asked about is refused, and if the
+      // answer can't be grounded the hours part is answered with the card instead of "I don't have that information".
+      const hoursCited = cited.filter((id) => /^(?:hours|exception):/.test(id));
+      const hq = facts.hours && hoursCited.length ? readHoursQuestion(guestText, ctx.now, ctx.zone, facts.hours.src.branches, { draftBranch: facts.hours.draftBranch }) : null;
+      const wrongBranch = !!facts.branchNamed && hoursCited.some((id) => id.split(":")[1] !== facts.branchNamed);
+      const g = unknown ? ({ ok: false, reason: unknown, detail: "" } as const) : wrongBranch ? ({ ok: false, reason: "unknown_citation", detail: "hours for another branch" } as const) : checkGrounding(turn.answer ?? "", cited, facts, { guestDates: (hq?.dates ?? []).map((d) => ({ day: Number(d.slice(8, 10)), month: Number(d.slice(5, 7)) })) });
       if (!g.ok || !turn.answer?.trim()) {
         ctx.trace.push({ action: "fallback_unknown", reason: g.ok ? "empty_answer" : g.reason });
         if (safetyAsk) return safetyFallback();
+        if (hq && facts.hours) {
+          const a = hoursAnswer(hq, facts.hours.src, ctx.now, { known: new Set(facts.factsById.keys()) });
+          facts.hours.onHours(a.focus);
+          ctx.trace.push({ action: "answer_faq", ids: a.cited, rendered: true });
+          return reply(prose(a.text), "hours_answer", { lead: a.blocks, cited: a.cited });
+        }
         return reply(T.fallback(phoneBranches(ctx, known)), "faq_fallback", { lead: allergyLead });
       }
       // Grounding checks numbers and booking words; the claims about dishes are checked against the cited dishes'

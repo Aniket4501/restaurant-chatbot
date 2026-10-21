@@ -35,10 +35,17 @@ const DAIRY_FOOD = String.raw`dairy|lactose|milk|cream|ghee|cheese`;
 const EGG = String.raw`eggs?`;
 const DAIRY_NAMED = /^(?:paneer|cheese|ghee|cream|butter|curd|yog(?:h)?urt|milk|dairy|lactose)$/;
 const ALLERGY_WORD = /\ballerg(?:y|ic|ies)\b|\banaphyla/;
-const NO_ALLERGY = /\bno (?:food )?allerg(?:y|ies)\b|\bnot allergic(?: to \w+)?\b|\bwithout (?:any )?allerg\w*/;
-const COELIAC = /\bco?eliac\b|\bceliac\b|\bgluten (?:allerg|intoleran)\w*|\ballergic to (?:gluten|wheat)\b|\bwheat allerg\w*/;
+// The guest saying they have no allergy (failure-mode audit FM-022: "my friend has no allergies" lifted the guest's
+// own nut allergy). "Not allergic to X" lifts only X (see liftedPrefs).
+const NO_ALLERGY = /^\s*no(?:,| -)? (?:food )?allerg(?:y|ies)\b|\b(?:i|we)(?:'m| am| are|'re)? (?:have )?no (?:food )?allerg(?:y|ies)\b|\b(?:i|we) (?:don't|do not) have (?:any )?(?:food )?allerg\w*|\b(?:i'm|i am|we're|we are) not allergic\b(?! to)|\bno (?:food )?allerg(?:y|ies) (?:for (?:me|us)|here|at all)\b|\b(?:i|we) (?:have|am|are) (?:without|free of) (?:any )?allerg\w*/;
+const NOT_ALLERGIC_TO = /\bnot allergic to ((?:\w+(?: and | or |, )?){1,3})/;
+const COELIAC = /(?<!\b(?:not|no|never|isn't|aren't)[- ](?:\w+ ){0,2})\b(?:co?eliac|celiac)\b|\bgluten (?:allerg|intoleran)\w*|\ballergic to (?:gluten|wheat)\b|\bwheat allerg\w*/;
 // "no nuts", "can't eat dairy", "without egg", "nut-free", "egg allergy": the avoidance is tied to the allergen.
-const avoids = (food: string) => new RegExp(String.raw`\b(?:no|without|avoid(?:ing)?|skip|hold the|can't (?:eat|have)|cannot (?:eat|have)|don't (?:eat|want)|free (?:of|from))\s+(?:any |the )?(?:\w+ (?:or|and|,) )?(?:${food})\b|\b(?:${food})[- ]free\b|\b(?:${food}) (?:allerg|intoleran)\w*`);
+// Also "nothing with nuts", "not eating dairy", "off dairy", "eggless", "non-dairy" (failure-mode audit FM-021: these were
+// read by neither reader, so the guest's allergen was dropped).
+const avoids = (food: string) => new RegExp(String.raw`\b(?:no|without|avoid(?:ing)?|skip|hold the|can't (?:eat|have)|cannot (?:eat|have)|don't (?:eat|want)|free (?:of|from)|nothing with|not eating|off)\s+(?:any |the )?(?:\w+ (?:or|and|,) )?(?:${food})\b|\b(?:${food})[- ]free\b|\b(?:${food}) (?:allerg|intoleran)\w*|\b(?:${food})-?less\b|\bnon[- ](?:${food})\b`);
+// The words for each labelled allergen, for keeping the model's reading when the guest named it (FM-021).
+const ALLERGEN_NAMED: Record<Avoid, RegExp> = { nuts: new RegExp(String.raw`\b(?:${NUTS})\b`), dairy: /\b(?:dairy|lactose|milk|cream|ghee|cheese|paneer|butter)\b/, egg: /\beggs?\b|\beggless\b/ };
 const UNLISTED_RE: [Unlisted, RegExp][] = [
   ["shellfish", /\bshellfish\b|\bprawns?\b|\bshrimps?\b|\bcrabs?\b|\blobsters?\b|\bmolluscs?\b|\bcrustaceans?\b/],
   ["fish", /\bfish\b/],
@@ -85,14 +92,15 @@ export function explicitPrefs(raw: string): Stated {
   const diet: Diet[] = [];
   if (new RegExp(`${NEG_BEFORE}\\bvegans?\\b`).test(t) || /\bplant[- ]based\b|\bno animal products\b/.test(t)) diet.push("vegan");
   if (new RegExp(`${NEG_BEFORE}\\b(?:vegetarians?|veggie|veg|shakahari|pure veg)\\b`).test(t) || NO_MEAT.test(t)) diet.push("vegetarian");
-  if (/\bgluten[- ]free\b|\bno gluten\b|\bcoeliac\b|\bceliac\b|\bgluten (?:allerg|intoleran)\w*|\ballergic to (?:gluten|wheat)\b|\bwheat allerg\w*|\bcan't (?:eat|have) (?:gluten|wheat)\b/.test(t)) diet.push("gluten-free");
-  if (/\bjain\b/.test(t)) diet.push("jain");
+  // Negated mentions ("forget the gluten-free", "I'm not coeliac", "forget Jain") are lifts, not statements (FM-002).
+  if (new RegExp(String.raw`${NEG_BEFORE}(?:\bgluten[- ]free\b|\bco?eliac\b|\bceliac\b)`).test(t) || /\bno gluten\b|\bgluten (?:allerg|intoleran)\w*|\ballergic to (?:gluten|wheat)\b|\bwheat allerg\w*|\bcan't (?:eat|have) (?:gluten|wheat)\b/.test(t)) diet.push("gluten-free");
+  if (new RegExp(String.raw`${NEG_BEFORE}\bjain\b`).test(t)) diet.push("jain");
   if (diet.length) out.diet = diet;
   if (/\bnot (?:too |very |that |so )?spicy\b|(?<!\b(?:not|nothing|no) (?:too |so |very )?)\bmild\b|\bless spicy\b|\bno spice\b|\bnon[- ]spicy\b/.test(t)) out.mild = true;
   // "No allergies for me, but my daughter is allergic to peanuts" (D-21 audit): the negated phrase is removed before
   // looking for an allergy, so it cancels nothing stated elsewhere in the message. Coeliac is a medical need too: the
   // kitchen handles gluten, so the allergy note applies.
-  const positive = t.replace(new RegExp(NO_ALLERGY.source, "g"), " ");
+  const positive = t.replace(new RegExp(NO_ALLERGY.source, "g"), " ").replace(new RegExp(NOT_ALLERGIC_TO.source, "g"), " ");
   const allergy = ALLERGY_WORD.test(positive) || COELIAC.test(t);
   if (allergy) out.allergy = true;
   const avoid: Avoid[] = [];
@@ -121,10 +129,10 @@ export function explicitPrefs(raw: string): Stated {
   if (exclude.length) out.exclude = [...new Set(exclude)];
   // "I can't have paneer, I'm allergic": a dairy food the guest can't have because of an allergy is a dairy allergy.
   if (out.allergy && exclude.some((w) => DAIRY_NAMED.test(w)) && !(out.avoid ?? []).includes("dairy")) out.avoid = [...(out.avoid ?? []), "dairy"];
-  if (/^anything cheaper\??$|\bcheaper\b|\bless expensive\b|\bmore affordable\b|\blower[- ]priced?\b/.test(t)) out.relation = "cheaper";
+  if (/^anything cheaper\??$|\bcheaper\b|\bless (?:expensive|pricey|costly)\b|\bmore affordable\b|\blower[- ](?:priced?|cost)\b|\bbudget[- ]friendly\b/.test(t)) out.relation = "cheaper";
   else if (/\bless spicy\b|\bmilder\b|\bnot (?:as|so) (?:spicy|hot)\b|\bless (?:hot|heat)\b/.test(t)) out.relation = "milder";
   else if (/\bspicier\b|\bmore (?:spicy|heat)\b|\bhotter\b|\bmore of a kick\b/.test(t)) out.relation = "spicier";
-  else if (/^show me another option$|\banother (?:one|option|dish|suggestion|idea)\b|\bsomething (?:else|different)\b|\bother options?\b|\bnot that one\b|\bwhat else\b|\banything else\b|\bsomething other than\b/.test(t)) out.relation = "another";
+  else if (/^show me another option$|\banother (?:one|option|dish|suggestion|idea)\b|\bsomething (?:else|different)\b|\bother options?\b|\bnot that one\b|\bwhat else\b|\banything else\b|\bsomething other than\b|\ba different (?:one|dish|option)\b|\balternatives?\b/.test(t)) out.relation = "another";
   return out;
 }
 
@@ -139,7 +147,7 @@ const SPICE_AVERSE = /\b(?:don't|do not|doesn't|does not|didn't|not a fan of|can
 // "not paneer", "no mushrooms", "without onion", "anything but chicken", "I can't have paneer": a candidate exclusion.
 const EXCLUDE_RE = /\b(?:but not|not|no|without|except|other than|nothing with|don't (?:like|want)|do not (?:like|want)|can't (?:eat|have)|cannot (?:eat|have)|can not (?:eat|have)|skip|hold the|minus|anything but)\s+(?:any\s+|the\s+|more\s+|too much\s+)?([a-z]{3,20})\b/g;
 // Words after "no"/"not" that aren't ingredients, or are read elsewhere (diet, allergens, spice, price).
-const NOT_AN_EXCLUSION = new Set(["spicy", "spice", "hot", "mild", "too", "that", "this", "one", "ones", "more", "much", "very", "sure", "really", "expensive", "cheap", "pricey", "heavy", "big", "veg", "vegetarian", "vegan", "dairy", "milk", "cream", "ghee", "cheese", "lactose", "nuts", "nut", "peanuts", "egg", "eggs", "gluten", "wheat", "allergies", "allergy", "budget", "problem", "worries", "thanks", "thank", "need", "idea", "preference", "preferences", "restrictions", "fussy", "bother", "matter", "something", "anything", "everything", "dish", "dishes", "food", "main", "mains", "dessert", "desserts", "starter", "starters", "drink", "drinks", "same", "again", "longer", "fan", "big", "keen", "into"]);
+const NOT_AN_EXCLUSION = new Set(["allergic", "spicy", "spice", "hot", "mild", "too", "that", "this", "one", "ones", "more", "much", "very", "sure", "really", "expensive", "cheap", "pricey", "heavy", "big", "veg", "vegetarian", "vegan", "dairy", "milk", "cream", "ghee", "cheese", "lactose", "nuts", "nut", "peanuts", "egg", "eggs", "gluten", "wheat", "allergies", "allergy", "budget", "problem", "worries", "thanks", "thank", "need", "idea", "preference", "preferences", "restrictions", "fussy", "bother", "matter", "something", "anything", "everything", "dish", "dishes", "food", "main", "mains", "dessert", "desserts", "starter", "starters", "drink", "drinks", "same", "again", "longer", "fan", "big", "keen", "into"]);
 const MEAT_WORDS = /^(?:meat|chicken|fish|mutton|lamb|seafood|prawns?|keema|non)$/;
 
 /** Constraints the guest's words lift ("I'm not vegetarian", "price doesn't matter", "spicy is fine", "no allergies"). */
@@ -147,20 +155,30 @@ export function liftedPrefs(raw: string): { diet: Diet[]; maxPrice: boolean; mil
   const t = clean(raw);
   const noMeat = NO_MEAT.test(t);
   // "I eat chicken now", "fine with meat" lift vegetarian too (D-26; "I don't eat chicken" is caught by NO_MEAT first).
+  // Said of the guest themselves (failure-mode audit FM-022: "my husband wants chicken" lifted the guest's own diet).
   const meat =
     !ALLERGY_WORD.test(t) &&
     !noMeat &&
-    (/(?<!\b(?:no|not|without|avoid|than|any|or|nor|with|of the|instead of) )\b(?:chicken|mutton|lamb|goat|fish|prawns?|shrimps?|meat|keema|seafood|pork|beef|non[- ]?veg\w*)\b/.test(t) ||
+    (/\b(?:i|we)(?:'ll| will| do| can| also| now)? (?:eat|have|want|like|love|fancy|order|prefer)\b[^.?!]{0,24}\b(?:chicken|mutton|lamb|goat|fish|prawns?|shrimps?|meat|keema|seafood|pork|beef|non[- ]?veg\w*)\b/.test(t) ||
       /\b(?:fine|ok|okay|happy|good|alright) with (?:meat|chicken|fish|lamb|mutton|non[- ]?veg\w*)\b/.test(t));
   const diet: Diet[] = [];
+  // Gluten-free and Jain can be lifted too (FM-002: only vegetarian and vegan could), and "vegetarian now" or "dairy is
+  // fine" lifts vegan.
+  const anyDiet = /\bno (?:dietary )?restrictions?\b|\b(?:i|we) (?:eat|can eat) (?:everything|anything)\b/.test(t);
+  if (anyDiet || /\b(?:gluten|wheat) (?:is|are) (?:fine|ok|okay)\b|\bcan (?:eat|have) (?:gluten|wheat)\b|\bnot (?:a )?co?eliac\b|\b(?:forget|drop|ignore|never ?mind) (?:the )?gluten[- ]free\b/.test(t)) diet.push("gluten-free");
+  if (anyDiet || /\b(?:forget|drop|ignore|never ?mind) (?:the )?jain\b|\b(?:onions?|garlic)(?: and (?:onions?|garlic))? (?:is|are) (?:fine|ok|okay)\b|\bnot jain\b/.test(t)) diet.push("jain");
+  const veganLift = /\b(?:now|actually|just|only)\b[^.?!]{0,20}\bvegetarian\b|\bvegetarian\b[^.?!]{0,12}\b(?:now|actually)\b|\b(?:dairy|milk|eggs?|paneer)(?: and (?:dairy|milk|eggs?|paneer))? (?:is|are) (?:fine|ok|okay)\b|\bcan (?:have|eat) (?:dairy|milk|eggs?|paneer)\b/.test(t);
   if (meat || /\bnot (?:a |really |strictly |fully )?(?:vegetarian|veg|veggie)\b|(?<!\b(?:don't|do not|never|can't|cannot|won't) )\b(?:i )?eat (?:meat|everything|anything)\b|\b(?:forget|drop|ignore|never ?mind) (?:the )?(?:veg\w*)\b/.test(t)) diet.push("vegetarian", "vegan");
-  else if (/\bnot (?:a |really |strictly |fully )?vegan\b|\b(?:forget|drop|ignore|never ?mind) (?:the )?vegan\b/.test(t)) diet.push("vegan");
+  else if (veganLift || /\bnot (?:a |really |strictly |fully )?vegan\b|\b(?:forget|drop|ignore|never ?mind) (?:the )?vegan\b/.test(t)) diet.push("vegan");
   const maxPrice = /\bprice (?:doesn't|does not|isn't|is not) (?:matter|an issue|a concern)|\bno budget\b|\bany (?:price|budget)\b|\bmoney is no (?:object|issue)|\bbudget (?:doesn't|does not) matter|\bdon't (?:care|worry) about (?:the )?(?:price|cost|budget)|\bsplurge\b|\bforget (?:the |my )?budget\b|\bexpensive is (?:fine|ok|okay)\b/.test(t);
   const mild = !SPICE_AVERSE.test(t) && /\b(?:nothing|not) (?:too |so )?mild\b|\bspicier\b|\b(?:like|love|want|prefer) (?:it )?(?:spicy|heat)\b|\b(?:like|love|prefer) (?:it|my food|food) hot\b|\b(?:extra|very|really) spicy\b|\bspic(?:y|e) (?:is )?(?:fine|ok|okay|good)\b|\bsomething (?:spicy|fiery)\b/.test(t);
-  // Lifted only when the message states no allergy anywhere else ("no allergies, but I'm allergic to nuts" lifts nothing).
-  const allergy = NO_ALLERGY.test(t) && !ALLERGY_WORD.test(t.replace(new RegExp(NO_ALLERGY.source, "g"), " "));
+  // Lifted only when the guest says it of themselves and states no allergy anywhere else ("no allergies, but I'm
+  // allergic to nuts" lifts nothing).
+  const allergy = NO_ALLERGY.test(t) && !ALLERGY_WORD.test(t.replace(new RegExp(NO_ALLERGY.source, "g"), " ").replace(NOT_ALLERGIC_TO, " "));
   const avoid: Avoid[] = [];
-  const canEat = (food: string) => new RegExp(String.raw`\bcan (?:eat|have) (?:${food})\b|\b(?:${food}) (?:is|are) (?:fine|ok|okay)\b`).test(t);
+  // "Not allergic to dairy" lifts dairy only; the other allergens stay ("…only nuts").
+  const notTo = NOT_ALLERGIC_TO.exec(t)?.[1] ?? "";
+  const canEat = (food: string) => new RegExp(String.raw`\bcan (?:eat|have) (?:${food})\b|\b(?:${food}) (?:is|are) (?:fine|ok|okay)\b`).test(t) || new RegExp(String.raw`\b(?:${food})\b`).test(notTo);
   if (allergy || canEat(NUTS)) avoid.push("nuts");
   if (allergy || canEat(DAIRY_FOOD)) avoid.push("dairy");
   if (allergy || canEat(EGG)) avoid.push("egg");
@@ -189,8 +207,11 @@ export function resolvePrefs(model: Turn["prefs"], previous: Prefs | null | unde
   const lift = liftedPrefs(text);
   const m = model ? { diet: model.diet, avoid: model.avoid, maxPrice: model.maxPrice && model.maxPrice > 0 ? model.maxPrice : null, course: model.course, mild: model.mild, allergy: model.allergy } : null;
   const keep = <T,>(xs: T[], lifted: T[]) => xs.filter((x) => !lifted.includes(x));
-  const relation = model?.relation ?? ex.relation ?? null;
-  const digits = /\d/.test(foldDigits(text));
+  // "Cheaper" and "another" come from the guest's words (or a chip's), like "less spicy" (failure-mode audit FM-024: a
+  // relation the model read into "something vegan please" narrowed it to the last dish's section).
+  const relation = ex.relation ?? null;
+  // A budget figure in the message ("under 400", "₹500"), not any digit ("for the 2 of us"; FM-002).
+  const priceSaid = /₹|\brs\.?\s*\d|\brupees?\b|\binr\b|\b(?:under|below|within|budget|max(?:imum)?|up ?to|less than|no more than)\s*\d/.test(foldDigits(text).toLowerCase());
   // D-28 provenance: only what the guest's words state (explicitPrefs, or a chip they tapped, whose text is read the
   // same way) or stated earlier becomes a constraint. What the model proposes beyond that is an inference: recorded in
   // the trace as such, never stored or used as a filter. The section is taken from the guest's words, else kept for a
@@ -199,7 +220,7 @@ export function resolvePrefs(model: Turn["prefs"], previous: Prefs | null | unde
   // dietary or safety constraint, and it lasts only for this request and its follow-ups), else the last one for a
   // follow-up.
   const stated = courseIn(text);
-  const course = stated ?? m?.course ?? (relation ? prev.course : null);
+  const course = stated ?? (relation ? prev.course : (m?.course ?? null));
   // A per-dish budget belongs to the request it was given for: it is dropped when the guest names another section
   // (D-28: "a main under ₹400", then "now a dessert" kept ₹400), unless restated, whatever relation the model read.
   const budgetCarries = stated === null || prev.course === null || stated === prev.course;
@@ -208,8 +229,9 @@ export function resolvePrefs(model: Turn["prefs"], previous: Prefs | null | unde
     // An allergen to avoid the model read is kept when the guest's words are about avoiding something ("lactose
     // intolerant", "can't have shellfish"): over-filtering is the safe side. Never from a diet alone ("vegetarian" is
     // not dairy-free or nut-free).
-    avoid: AVOIDS.filter((a) => ex.avoid?.includes(a) || keep(prev.avoid, lift.avoid).includes(a) || (!!m?.avoid.includes(a) && AVOID_CUE.test(text))),
-    maxPrice: ex.maxPrice ?? (lift.maxPrice ? null : digits && m?.maxPrice ? m.maxPrice : budgetCarries ? prev.maxPrice : null),
+    // FM-021: also when the guest named that allergen in this message ("nothing with nuts in it").
+    avoid: AVOIDS.filter((a) => ex.avoid?.includes(a) || keep(prev.avoid, lift.avoid).includes(a) || (!!m?.avoid.includes(a) && (AVOID_CUE.test(text) || ALLERGEN_NAMED[a].test(clean(text))))),
+    maxPrice: ex.maxPrice ?? (lift.maxPrice ? null : priceSaid && m?.maxPrice ? m.maxPrice : budgetCarries ? prev.maxPrice : null),
     course,
     mild: !!ex.mild || (!lift.mild && (prev.mild || (!!m?.mild && SPICE_WORD.test(text)))),
     allergy: !!ex.allergy || (!lift.allergy && prev.allergy) || (!!m?.allergy && AVOID_CUE.test(text)),
@@ -228,7 +250,8 @@ export function resolvePrefs(model: Turn["prefs"], previous: Prefs | null | unde
     ? [
         ...m.diet.filter((d) => !prefs.diet.includes(d)),
         ...m.avoid.filter((a) => !prefs.avoid.includes(a)).map((a) => `no ${a}`),
-        ...(m.course && stated && m.course !== stated ? [`course ${m.course}`] : []),
+        ...(m.course && m.course !== stated ? [`course ${m.course}${stated || relation ? "" : " (used for this request only)"}`] : []),
+        ...(model?.relation && model.relation !== relation ? [`relation ${model.relation}`] : []),
         ...(m.mild && !prefs.mild ? ["mild"] : []),
         ...(m.allergy && !prefs.allergy ? ["allergy"] : []),
         ...(m.maxPrice !== null && m.maxPrice !== prefs.maxPrice ? [`up to ₹${m.maxPrice}`] : []),
@@ -285,10 +308,11 @@ export function suitabilityClaim(text: string): boolean {
 const DIET_WORDS: { re: RegExp; label: string; has: (d: MenuEntry) => boolean }[] = [
   { re: /\bvegans?\b|\bplant[- ]based\b/gi, label: "vegan", has: (d) => d.dietary.includes("vegan") },
   { re: /\bvegetarians?\b|\bveg\b|\bveggie\b|\bmeat[- ]?free\b|\bmeatless\b/gi, label: "vegetarian", has: (d) => d.dietary.includes("vegetarian") || d.dietary.includes("vegan") },
-  { re: /\bgluten[- ]free\b|\bno gluten\b|\bwithout gluten\b/gi, label: "labelled gluten-free", has: (d) => d.dietary.includes("gluten-free") },
+  { re: /\bgluten[- ]free\b|\bno gluten\b|\bwithout gluten\b|\bwheat[- ]free\b|\b(?:no|without) wheat\b|\bmade without wheat\b/gi, label: "labelled gluten-free", has: (d) => d.dietary.includes("gluten-free") },
   { re: /\bjain\b/gi, label: "a Jain option", has: (d) => d.dietary.includes("jain-available") },
   // Only a vegan dish is known to have no dairy or egg.
-  { re: /\b(?:dairy|egg|milk|lactose)[- ]free\b|\b(?:no|without|zero) (?:any )?(?:dairy|milk|cream|ghee|paneer|cheese|lactose|eggs?)\b|\b(?:free (?:of|from)) (?:any )?(?:dairy|milk|eggs?)\b|\b(?:doesn't|does not|has no|won't)\s+(?:contain|have|include|use)\s+(?:any\s+)?(?:dairy|milk|cream|ghee|cheese|eggs?)\b/gi, label: "vegan (the only dishes known to have no dairy or egg)", has: (d) => d.dietary.includes("vegan") },
+  // FM-009: also "non-dairy", "eggless", "no animal products".
+  { re: /\b(?:dairy|egg|milk|lactose)[- ]free\b|\bnon[- ]dairy\b|\begg[- ]?less\b|\bno animal products\b|\b(?:no|without|zero) (?:any )?(?:dairy|milk|cream|ghee|paneer|cheese|lactose|eggs?)\b|\b(?:free (?:of|from)) (?:any )?(?:dairy|milk|eggs?)\b|\b(?:doesn't|does not|has no|won't)\s+(?:contain|have|include|use)\s+(?:any\s+)?(?:dairy|milk|cream|ghee|cheese|eggs?)\b/gi, label: "vegan (the only dishes known to have no dairy or egg)", has: (d) => d.dietary.includes("vegan") },
 ];
 const NEGATED = /\b(?:not|isn't|aren't|non|nor|never|no)[- ](?:\w+ ){0,2}$/i;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -301,7 +325,11 @@ function nameRe(d: MenuEntry, partial: boolean, menu: MenuEntry[]): RegExp {
   const words = norm(d.name).split(" ");
   const join = (ws: string[]) => ws.map((w) => (w === "and" ? "(?:and|&)" : escapeRe(w))).join("[^a-z0-9₹]+");
   const shorts = partial && words.length >= 3 ? [words.slice(0, 2), words.slice(-2)].filter((ws) => !menu.some((o) => o.id !== d.id && ` ${norm(o.name)} `.includes(` ${ws.join(" ")} `))) : [];
-  const alts = [join(words), ...shorts.map(join)];
+  // The last word alone when no other dish's name has it ("the kulfi", "the pomfret", "the sorbet"; failure-mode audit
+  // FM-006/FM-009: a claim about "the kulfi" was checked against no dish).
+  const last = words.at(-1)!;
+  const single = partial && words.length >= 2 && last.length >= 4 && !menu.some((o) => o.id !== d.id && norm(o.name).split(" ").includes(last)) ? [[last]] : [];
+  const alts = [join(words), ...shorts.map(join), ...single.map(join)];
   return new RegExp(`(?<![a-z0-9])(?:${alts.join("|")})(?![a-z0-9])`, "gi");
 }
 type Mention = { d: MenuEntry; start: number; end: number };
@@ -316,6 +344,9 @@ const ATTRIBUTE_RE = /\b(?:halal|kosher|organic|keto|paleo|low[- ]carb|low[- ]fa
 const INGREDIENT_RE = new RegExp(`\\b(${INGREDIENTS.join("|")})(?:e?s)?\\b`, "gi");
 
 /** Words that say a dish can't be ordered now (D-25). */
+// Removal or absence of an allergen, by the words for it (FM-027).
+const absence = (words: string) => new RegExp(String.raw`\b(?:no longer (?:uses?|contains?|has|includes?|made with|cooked with)|without|removed|free (?:of|from)|not (?:made|cooked) with|(?:doesn't|does not|won't|will not|don't|do not) (?:contain|have|use|include)|(?:has|have) no|no)\s+(?:any\s+)?(?:\w+\s+)?(?:${words})\b|\b(?:${words})\w* (?:have|has) been (?:removed|taken out)\b|\b(?:${words})[- ]free\b`, "i");
+const ABSENCE_OF = { nuts: absence(String.raw`nuts?|peanuts?|pistachios?|cashews?|almonds?|walnuts?`), dairy: absence(String.raw`dairy|milk|butter|cream|ghee|paneer|cheese|yog(?:h)?urt|curd|lactose`), egg: absence(String.raw`eggs?`) };
 const UNAVAILABLE_WORDS = /\b(?:unavailable|not available|(?:is|are)n['’]t available|sold out|off the menu|not on the menu|not serving|not being served|not on today)\b/i;
 
 /**
@@ -348,7 +379,7 @@ export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry
   const unsupportedBestseller = (h: { claim: string }) => reasons.push(`"${h.claim}" is not supported: there is no sales, popularity or review data`);
   // The cited dishes, and any other dish the answer names by its full name: a label claim is checked against the
   // dish's own labels whether or not the model cited it (D-24).
-  const pool = [...new Set([...dishes, ...mentionsOf(text, menu, false, menu).map((m) => m.d)])];
+  const pool = [...new Set([...dishes, ...mentionsOf(text, menu, true, menu).map((m) => m.d)])];
   if (!pool.length) {
     for (const h of bestsellerAt) if (!/best[- ]?sell/i.test(citedText)) unsupportedBestseller(h);
     return [...new Set(reasons)];
@@ -356,9 +387,33 @@ export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry
   const named = mentionsOf(text, pool, true, menu);
   // A dish marked unavailable may be named only in an answer that says so (D-25: when staff mark a dish unavailable,
   // "Yes, the Tandoori Pomfret is ₹895" would present it as orderable; its fact says "Currently unavailable.").
-  const out = named.find((m) => !m.d.available);
-  if (out && !UNAVAILABLE_WORDS.test(text)) reasons.push(`${out.d.name} is currently unavailable`);
   const sentences = [...text.matchAll(/[^.!?]+[.!?]*/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
+  const sentenceOf = (pos: number) => sentences.find((s) => s.start <= pos && pos < s.end) ?? { start: 0, end: text.length };
+  // The sentence that names it must say so; a cited unavailable dish not named in words needs it anywhere (FM-006: "Yes,
+  // the pomfret is ₹895." and "…unavailable… The Tandoori Pomfret is ₹895." were shown).
+  const out = named.find((m) => !m.d.available && !UNAVAILABLE_WORDS.test(text.slice(sentenceOf(m.start).start, sentenceOf(m.start).end)));
+  const outCited = dishes.find((d) => !d.available && !named.some((m) => m.d === d) && !UNAVAILABLE_WORDS.test(text));
+  if (out || outCited) reasons.push(`${(out?.d ?? outCited)!.name} is currently unavailable`);
+  // An allergen the dish's own labels list, said to be absent or removed ("no longer uses nuts", "made without
+  // pistachio"): a safety promise against verified data (FM-027).
+  for (const s0 of sentences) {
+    const t = text.slice(s0.start, s0.end);
+    const inIt = [...new Set(named.filter((m) => m.start >= s0.start && m.start < s0.end).map((m) => m.d))];
+    const subjects = inIt.length ? inIt : pool.length === 1 ? pool : [];
+    for (const d of subjects)
+      for (const a of d.contains) {
+        const hit = ABSENCE_OF[a as keyof typeof ABSENCE_OF]?.exec(t);
+        // "It isn't dairy-free" is the honest answer, not a promise.
+        if (hit && !/\b(?:isn't|is not|aren't|are not|not|never)\s+(?:\w+\s+){0,2}$/i.test(t.slice(0, hit.index))) reasons.push("promises allergen safety");
+      }
+  }
+  // A price next to a dish's name must be that dish's menu price, whatever else is cited (FM-008: a document's "₹395"
+  // for the Dal Ember was shown although the menu says ₹445).
+  for (const p of priceSpans(text)) {
+    const s1 = sentenceOf(p.start);
+    const m = named.filter((x) => x.end <= p.start && x.start >= s1.start).at(-1);
+    if (m && /^\s*(?:\(|,)?\s*(?:is|at|costs?|for|priced at|comes to|:|-|–|—)?\s*(?:only|just|about)?\s*$/i.test(text.slice(m.end, p.start)) && p.value !== m.d.price) reasons.push(`the answer gives ${m.d.name} the wrong price (₹${p.value})`);
+  }
   const subjectAt = (pos: number): MenuEntry | null => {
     const sent = sentences.find((s) => s.start <= pos && pos < s.end) ?? { start: 0, end: text.length };
     const before = named.filter((m) => m.end <= pos && m.start >= sent.start).at(-1);
@@ -379,7 +434,9 @@ export function claimProblems(text: string, dishes: MenuEntry[], menu: MenuEntry
       const inSentence = sent ? named.filter((n) => n.start >= sent.start && n.start < sent.end) : [];
       const prev = si > 0 ? sentences[si - 1] : null;
       const plural = !inSentence.length && prev ? [...new Set(named.filter((n) => n.start >= prev.start && n.start < prev.end).map((n) => n.d))] : [];
-      const subjects = plural.length > 1 ? plural : [subjectAt(m.index)].filter((d): d is MenuEntry => !!d);
+      // "…are vegan, as is the kulfi" / "so is the kulfi": the dish after "as is" shares the claim (FM-009).
+      const echoed = sent ? named.filter((n) => n.start > m.index && n.start < sent.end && /\b(?:as|so)\s+(?:is|are)\s+(?:the\s+)?$/i.test(text.slice(m.index, n.start))).map((n) => n.d) : [];
+      const subjects = [...new Set([...(plural.length > 1 ? plural : [subjectAt(m.index)].filter((d): d is MenuEntry => !!d)), ...echoed])];
       for (const d of subjects) if (!w.has(d)) reasons.push(`${d.name} is not ${w.label}`);
     }
   // A label given for the wrong reason: nuts, gluten, soy or sesame never make a dish non-vegan (D-24 final run
@@ -633,9 +690,12 @@ export async function recommendTurn(
   // The chips send fixed texts, so "cheaper" and "another" never depend on the model alone. "Less spicy" and "spicier"
   // are read in code only (D-26; the model's relation has no word for them).
   const stated = explicitPrefs(input.text).relation ?? null;
-  const relation: Relation | null = stated === "milder" || stated === "spicier" ? stated : (input.turn.prefs?.relation ?? stated);
+  // Every relation is read from the guest's words or a chip's (FM-024); the model's is recorded as inferred.
+  const relation: Relation | null = stated;
   // The dish "cheaper" is measured against: the last suggestion, else the first dish this conversation last showed.
-  const anchorId = previous[0] ?? (input.context?.lastCitedIds ?? []).find((id) => byId.has(id)) ?? null;
+  // The dish "cheaper" is measured against: the first dish last on screen, whichever kind of reply showed it (failure-mode
+  // audit FM-004: after "how much is the Lamb Rogan Josh?", "anything cheaper?" compared with an older suggestion).
+  const anchorId = [...(input.context?.shown ?? []), ...previous, ...(input.context?.lastCitedIds ?? [])].find((id) => byId.has(id)) ?? null;
   const last = anchorId ? byId.get(anchorId)! : null;
   const cheaperThan = relation === "cheaper" && last ? last.price : null;
   // "Less spicy" / "spicier" than the last dish (D-26), when its spice level is listed.
@@ -680,7 +740,10 @@ export async function recommendTurn(
   // D-28: "something light" with no meal type known (no section stated, nothing suggested yet): one question about it,
   // instead of a mix of snacks and desserts that happen to share a label.
   // Only when nothing else is said: "light and not spicy for my kid" is answered at once (live LV-RET-001).
-  if (APPETITE.test(input.text) && !hasPrefs(prefs) && !prefs.allergy && !relation && !previous.length && !asked.includes("course") && !DELEGATE.test(input.text) && !foodWords(input.text, input.entries).length) {
+  // Gated on what the guest's words say, not on a section the model guessed (FM-003: a model-read "desserts" skipped it).
+  const saidNow = explicitPrefs(input.text);
+  const saidSomething = !!(saidNow.diet?.length || saidNow.avoid?.length || saidNow.maxPrice !== undefined || saidNow.mild || saidNow.allergy || saidNow.spicy || saidNow.exclude?.length);
+  if (APPETITE.test(input.text) && courseIn(input.text) === null && !saidSomething && !relation && !previous.length && !asked.includes("course") && !DELEGATE.test(input.text) && !foodWords(input.text, input.entries).length) {
     input.trace.push({ action: "ask_pref", args: { field: "course" } });
     const q = courseQuestion(/\b(?:filling|hearty|heavy|something big)\b/i.test(input.text));
     return { ...q, cited: [], prefs, recommended: previous, asked: "course" };

@@ -41,7 +41,9 @@ import { nowLine, weekdayOf } from "@/lib/time/tz";
 // outside strings (the model pretty-printed about half its replies: 96–149 tokens instead of 46–91). Measured on 10
 // messages: 951 → 516 tokens generated, all valid.
 
-export const PROMPT_VERSION = "v8";
+// v9 (failure-mode audit FM-004): the dishes line lists what the guest last saw on screen, numbered, from any kind of
+// reply (cards, menu lists, plans, answers about a dish), not only the last recommendation.
+export const PROMPT_VERSION = "v9";
 
 export type PromptDraft = { branch: string | null; date: string | null; time: string | null; timeWindow: "lunch" | "dinner" | null; partySize: number | null };
 export type HistoryMessage = { role: "guest" | "assistant"; content: string };
@@ -132,7 +134,7 @@ export function buildUserPrompt(input: PromptInput): string {
     `Menu and policy facts that may be relevant (each line: ID | fact):\n${input.retrieved.map(factLine).join("\n") || "(none)"}`,
     `Current booking draft: ${neutralise(JSON.stringify(draft))}`,
     `Current food preferences: ${input.prefs ?? "none"}`,
-    `Last suggested dishes: ${input.suggested ?? "none"}`,
+    `Dishes last shown to the guest, in order ("the second one" is number 2): ${input.suggested ?? "none"}`,
     `Conversation so far:\n<history>${JSON.stringify(history)}</history>`,
     `<guest_message>${neutralise(input.guest)}</guest_message>`,
   ].join("\n\n");
