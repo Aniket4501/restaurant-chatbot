@@ -5,7 +5,7 @@ import path from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiDeps } from "@/lib/api/deps";
-import { evalsCaseHandler, evalsJobHandlers, evalsOverviewHandler, evalsRunHandler, failureType, type EvalsDeps } from "@/lib/api/evals";
+import { evalsCaseHandler, evalsJobHandlers, evalsOverviewHandler, evalsRunHandler, failureModesHandler, failureType, type EvalsDeps } from "@/lib/api/evals";
 import { applyLine, resetJobs, runnerArgs, type Job } from "@/lib/evals/jobs";
 import { loadConfig } from "@/lib/config";
 import { createLimiter } from "@/lib/http/ratelimit";
@@ -191,3 +191,24 @@ describe("evals API: run controls", () => {
     expect(job.progress.total).toBe(30);
   });
 });
+
+describe("evals API: failure modes (D-29)", () => {
+  const get = (qs = "") => failureModesHandler(deps, ev)(new Request(`http://127.0.0.1:3100/api/admin/evals/failure-modes${qs}`));
+  it("returns the register with no runs, then the newest run compared with the baseline-labelled run before it", async () => {
+    let j = await (await get()).json();
+    expect(j.register.failureModes.length).toBeGreaterThanOrEqual(40);
+    expect([j.head, j.base, j.comparison]).toEqual([null, null, null]);
+    fs.mkdirSync(path.join(dir, "failure-modes"));
+    for (const f of fs.readdirSync("tests/e2e/fixtures/evals/failure-modes")) fs.copyFileSync(path.join("tests/e2e/fixtures/evals/failure-modes", f), path.join(dir, "failure-modes", f));
+    j = await (await get()).json();
+    expect(j.head.label).toBe("e2e-head");
+    expect(j.base.label).toBe("baseline-e2e");
+    expect(j.comparison).toMatchObject({ resolved: ["FM-021"], newFailures: ["FM-001"], recurring: [] });
+    expect(j.runs.map((r: { label: string }) => r.label)).toEqual(["e2e-head", "baseline-e2e"]);
+    expect(j.runs[0].entries).toBeUndefined(); // summaries only
+    expect((await get(`?run=${j.runs[1].id}`)).status).toBe(200);
+    expect((await get("?run=nope")).status).toBe(404);
+    expect((await get("?run=../../etc")).status).toBe(400);
+  });
+});
+

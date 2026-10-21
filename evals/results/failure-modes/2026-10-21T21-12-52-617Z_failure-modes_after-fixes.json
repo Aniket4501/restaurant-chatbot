@@ -1,0 +1,1494 @@
+{
+  "kind": "failure-modes",
+  "id": "2026-10-21T21-12-52-617Z_failure-modes_after-fixes",
+  "label": "after-fixes",
+  "startedAt": "2026-10-21T21:12:52.617Z",
+  "durationMs": 75822,
+  "gitSha": "441510f",
+  "gitDirty": true,
+  "source": {
+    "vitest": "vitest run",
+    "e2e": "playwright run"
+  },
+  "registerVersion": 1,
+  "counts": {
+    "entries": 53,
+    "pass": 52,
+    "fail": 0,
+    "notRun": 0,
+    "noTest": 1,
+    "tests": 78,
+    "testsPassed": 78,
+    "testsFailed": 0,
+    "testsSkipped": 0
+  },
+  "bySeverity": [
+    {
+      "severity": "P0",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0
+    },
+    {
+      "severity": "P1",
+      "entries": 4,
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "severity": "P2",
+      "entries": 13,
+      "pass": 13,
+      "fail": 0
+    },
+    {
+      "severity": "P3",
+      "entries": 31,
+      "pass": 30,
+      "fail": 0
+    },
+    {
+      "severity": "none",
+      "entries": 5,
+      "pass": 5,
+      "fail": 0
+    }
+  ],
+  "byCategory": [
+    {
+      "key": "ai_grounding",
+      "label": "AI reasoning and grounding",
+      "entries": 3,
+      "pass": 3,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "conversation_state",
+      "label": "Conversation state",
+      "entries": 3,
+      "pass": 3,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "menu_rag",
+      "label": "Menu, hours and retrieval",
+      "entries": 6,
+      "pass": 6,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "dietary_allergen",
+      "label": "Dietary and allergen safety",
+      "entries": 4,
+      "pass": 4,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "reservations",
+      "label": "Reservations and transactions",
+      "entries": 12,
+      "pass": 12,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "admin_ops",
+      "label": "Admin operations",
+      "entries": 10,
+      "pass": 10,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "security_access",
+      "label": "Security and access",
+      "entries": 6,
+      "pass": 6,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "frontend",
+      "label": "Frontend and accessibility",
+      "entries": 1,
+      "pass": 1,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "reliability",
+      "label": "Reliability and fault recovery",
+      "entries": 5,
+      "pass": 5,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "performance",
+      "label": "Performance and latency",
+      "entries": 3,
+      "pass": 2,
+      "fail": 0,
+      "rate": 1
+    }
+  ],
+  "gate": {
+    "ok": true,
+    "blocking": []
+  },
+  "entries": [
+    {
+      "id": "FM-001",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/chat-evidence.test.ts",
+          "name": "failure-mode audit FM-001/FM-023 > FM-023: star anise, spice and hygiene ratings are not review questions; a dish question with a diet word is not a challenge",
+          "status": "passed",
+          "durationMs": 3.5980839999999716,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/unit/chat-evidence.test.ts",
+          "name": "failure-mode audit FM-001/FM-023 > FM-001: chef's special, speciality and 'famous for' get an honest answer, not a dish presented as the answer",
+          "status": "passed",
+          "durationMs": 1.5204999999998563,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: grounding and claims > FM-001 popularity claims are caught, honest statements about the data are not",
+          "status": "passed",
+          "durationMs": 2.492625000000089,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-002",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: preferences > FM-002 changed diets are lifted: gluten-free, Jain, vegan after 'vegetarian now'; a model's copied budget needs a price in the words",
+          "status": "passed",
+          "durationMs": 12.299125000000004,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-003",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: preferences > FM-003 a section only the model read is traced as inferred",
+          "status": "passed",
+          "durationMs": 0.14083300000015697,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: conversation and grounding (full turns) > FM-003 'something light' gets the meal-type question even when the model guessed a section",
+          "status": "passed",
+          "durationMs": 23.854667000000063,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-004",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: conversation and grounding (full turns) > FM-004 'anything cheaper?' after a question about a dish compares with that dish, and the prompt numbers what was shown",
+          "status": "passed",
+          "durationMs": 85.36904200000004,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-005",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: grounding and claims > FM-005 a smalltalk reply about its own rules or prompt is not shown",
+          "status": "passed",
+          "durationMs": 8.182874999999967,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-006",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: grounding and claims > FM-006 an unavailable dish named by its short name, or cited without saying so, is refused",
+          "status": "passed",
+          "durationMs": 29.543666999999914,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-007",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: conversation and grounding (full turns) > FM-007 a mixed answer on a special date can't use the weekly dinner hours; the guest gets the day's card",
+          "status": "passed",
+          "durationMs": 30.646749999999997,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-008",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: grounding and claims > FM-008 a price next to a dish's name must be that dish's menu price",
+          "status": "passed",
+          "durationMs": 7.426749999999856,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-009",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: grounding and claims > FM-009 diet claims in other words (non-dairy, eggless, wheat-free, no animal products, 'as is the kulfi') are checked",
+          "status": "passed",
+          "durationMs": 12.54729199999997,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-010",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 1: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 3321.404375,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 2: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 3043.5202080000004,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 3: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 3012.612167,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 4: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 2782.2817080000004,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 5: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 3118.511292000001,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 6: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 2842.3778330000023,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 7: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 2652.9984589999985,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 8: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 3083.1042080000007,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 9: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 2694.3235830000012,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > run 10: exactly 1 booking, 19 SLOT_TAKEN, no server errors",
+          "status": "passed",
+          "durationMs": 3061.3509169999998,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > trigger-only run 1: the database alone lets 1 through and rejects 19 with TABLE_OVERLAP",
+          "status": "passed",
+          "durationMs": 1760.155791000001,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > trigger-only run 2: the database alone lets 1 through and rejects 19 with TABLE_OVERLAP",
+          "status": "passed",
+          "durationMs": 1803.4218340000007,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "20-process race on the last fitting table (AC-04, G-1, FM-010) > trigger-only run 3: the database alone lets 1 through and rejects 19 with TABLE_OVERLAP",
+          "status": "passed",
+          "durationMs": 1720.2302920000002,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-011",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-037/FM-011 a write that fails inside the transaction answers 503 'nothing was booked', and the client neither confirms nor locks",
+          "status": "passed",
+          "durationMs": 26.200040999999942,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details",
+          "status": "passed",
+          "durationMs": 16.073167000000012,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-040 names spelt with zero-width joiners are accepted; bidi overrides are still refused",
+          "status": "passed",
+          "durationMs": 13.482375000000047,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-041 '+91' typed again after the field's '+91' prefix is the same mobile; a number starting 91 still works",
+          "status": "passed",
+          "durationMs": 15.503999999999905,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-050 malformed requests don't use up a guest's limit, and a saved booking's retry is answered after the limit",
+          "status": "passed",
+          "durationMs": 17.222582999999986,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-039 a staff cancel whose change-log write fails is rolled back; the retry cancels and logs exactly once",
+          "status": "passed",
+          "durationMs": 14.085624999999936,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-012",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "FM-012 concurrent retries never create a second booking > FM-012 run 1: one shared key from 20 processes: 1 created (201), 19 replays (200) of the same booking",
+          "status": "passed",
+          "durationMs": 3147.5907499999958,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "FM-012 concurrent retries never create a second booking > FM-012 run 2: one shared key from 20 processes: 1 created (201), 19 replays (200) of the same booking",
+          "status": "passed",
+          "durationMs": 2933.7257080000054,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "FM-012 concurrent retries never create a second booking > FM-012 run 3: one shared key from 20 processes: 1 created (201), 19 replays (200) of the same booking",
+          "status": "passed",
+          "durationMs": 2660.2625410000037,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "FM-012 concurrent retries never create a second booking > FM-012 run 1: one guest with a new key from 20 processes: 1 created, 19 DUPLICATE_BOOKING",
+          "status": "passed",
+          "durationMs": 2604.1070420000033,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/race.test.ts",
+          "name": "FM-012 concurrent retries never create a second booking > FM-012 run 2: one guest with a new key from 20 processes: 1 created, 19 DUPLICATE_BOOKING",
+          "status": "passed",
+          "durationMs": 3525.1399999999994,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-013",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 'a table for 9:30' or 'for 12 noon' is a time, not 9 or 12 guests",
+          "status": "passed",
+          "durationMs": 12.955124999999953,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 mid-flow 'move it to a table for 9:30' keeps the party of 2 and offers 9:30 PM",
+          "status": "passed",
+          "durationMs": 29.810249999999996,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-013 code's reading of a clock time and of today/tomorrow wins over a misread",
+          "status": "passed",
+          "durationMs": 11.894625000000019,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'lunch is better after all' with an evening time held drops the old time and offers lunch times, not the old card",
+          "status": "passed",
+          "durationMs": 17.105000000000018,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'an hour later' with the model's time dropped doesn't show the same 8 PM card again",
+          "status": "passed",
+          "durationMs": 26.380459000000087,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-042 a lunch time at Golf Course Road on a Monday says there is no lunch that day",
+          "status": "passed",
+          "durationMs": 17.771375000000035,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-014",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 'a table for 9:30' or 'for 12 noon' is a time, not 9 or 12 guests",
+          "status": "passed",
+          "durationMs": 12.955124999999953,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 mid-flow 'move it to a table for 9:30' keeps the party of 2 and offers 9:30 PM",
+          "status": "passed",
+          "durationMs": 29.810249999999996,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-013 code's reading of a clock time and of today/tomorrow wins over a misread",
+          "status": "passed",
+          "durationMs": 11.894625000000019,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'lunch is better after all' with an evening time held drops the old time and offers lunch times, not the old card",
+          "status": "passed",
+          "durationMs": 17.105000000000018,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'an hour later' with the model's time dropped doesn't show the same 8 PM card again",
+          "status": "passed",
+          "durationMs": 26.380459000000087,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-042 a lunch time at Golf Course Road on a Monday says there is no lunch that day",
+          "status": "passed",
+          "durationMs": 17.771375000000035,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-015",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/warmth.test.ts",
+          "name": "warm-up round (D-23) > FM-015 a call that waits past the queue deadline is refused as busy; the queue moves on",
+          "status": "passed",
+          "durationMs": 21.810916000000134,
+          "failure": null
+        },
+        {
+          "suite": "e2e",
+          "file": "guest.spec.ts",
+          "name": "FM-015 a chat request with no reply is given up after 90 s with Try again, which then answers @cat:backend_failure",
+          "status": "passed",
+          "durationMs": 550,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-016",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "e2e",
+          "file": "guest.spec.ts",
+          "name": "FM-016 a refused booking clears an older chat turn's Try again, so it can't bring back a stale card @cat:duplicate",
+          "status": "passed",
+          "durationMs": 760,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-017",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "e2e",
+          "file": "guest.spec.ts",
+          "name": "FM-017 a long pasted link wraps inside the conversation on a 360 px phone @cat:frontend",
+          "status": "passed",
+          "durationMs": 527,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-018",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/proxy-rules.test.ts",
+          "name": "failure-mode audit FM-018 > FM-018 refuses opaque, other-port and look-alike origins on writes, and the server only listens on loopback",
+          "status": "passed",
+          "durationMs": 1.3612919999999988,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-019",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details",
+          "status": "passed",
+          "durationMs": 16.073167000000012,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-020",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: schema, index refresh and status > FM-020 after an embedding outage the refresher retries on its own (bounded), and a start-up resumes a failed refresh",
+          "status": "passed",
+          "durationMs": 56.955208000000084,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-021",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: preferences > FM-021 allergen avoidance in other words is kept",
+          "status": "passed",
+          "durationMs": 0.3977910000000975,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: conversation and grounding (full turns) > FM-021 'nothing with nuts' filters nut dishes out of what the chooser may pick, and the allergy note shows",
+          "status": "passed",
+          "durationMs": 20.190541999999937,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-022",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: preferences > FM-022 a stored allergy or diet is lifted only by the guest about themselves; 'not allergic to X' lifts only X",
+          "status": "passed",
+          "durationMs": 0.84375,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: conversation and grounding (full turns) > FM-022 'my friend has no allergies' keeps the guest's own nut allergy for the next suggestion",
+          "status": "passed",
+          "durationMs": 19.164625,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-023",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/chat-evidence.test.ts",
+          "name": "failure-mode audit FM-001/FM-023 > FM-023: star anise, spice and hygiene ratings are not review questions; a dish question with a diet word is not a challenge",
+          "status": "passed",
+          "durationMs": 3.5980839999999716,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/unit/chat-evidence.test.ts",
+          "name": "failure-mode audit FM-001/FM-023 > FM-001: chef's special, speciality and 'famous for' get an honest answer, not a dish presented as the answer",
+          "status": "passed",
+          "durationMs": 1.5204999999998563,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: conversation and grounding (full turns) > FM-023 a grounded answer about a dish's spice is kept, not replaced by 'we don't collect reviews'",
+          "status": "passed",
+          "durationMs": 21.315166999999974,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-024",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: preferences > FM-024 'cheaper' and 'another' come from the guest's words, not the model's reading",
+          "status": "passed",
+          "durationMs": 0.14679099999989376,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-025",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: turn time (FM-025) > FM-025 past the turn's budget, the dish chooser isn't called: the guest gets the code's list",
+          "status": "passed",
+          "durationMs": 19.37966700000004,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: turn time (FM-025) > FM-025 past the budget, invalid model output gets no corrective retry",
+          "status": "passed",
+          "durationMs": 19.157708999999954,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: turn time (FM-025) > FM-025 within the budget both still happen",
+          "status": "passed",
+          "durationMs": 36.36233299999992,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-026",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: preferences > FM-026 the conversation context accepts only dish IDs in a plan",
+          "status": "passed",
+          "durationMs": 0.6490420000000086,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-027",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "failure modes: grounding and claims > FM-027 an allergen the dish's labels list, said to be absent or removed, is a safety promise; 'isn't dairy-free' is honest",
+          "status": "passed",
+          "durationMs": 7.581916999999976,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-028",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: schema, index refresh and status > FM-028 a database one migration behind: health is 503 with the pending list, and chat answers a JSON 503, not a bare 500",
+          "status": "passed",
+          "durationMs": 105.19191699999999,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-029",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: schema, index refresh and status > FM-029 a document that can't be embedded is named in the index status, which says no refresh is on its way",
+          "status": "passed",
+          "durationMs": 24.224458000000027,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-030",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: schema, index refresh and status > FM-030 kb:index's pass, racing a staff edit and the server's refresh, leaves every vector current",
+          "status": "passed",
+          "durationMs": 26.51591700000006,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-031",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: menu and seed data > FM-031 a dish limited to the only open branch stays limited when the other branch reopens",
+          "status": "passed",
+          "durationMs": 14.035082999999986,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-032",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: schema, index refresh and status > FM-032 a dish's or FAQ's vector counts only for the embedding model in use; unknown when it doesn't answer",
+          "status": "passed",
+          "durationMs": 19.177250000000072,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-033",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: menu and seed data > FM-033 --overwrite-staff-changes brings back a dish staff removed and an FAQ they deactivated",
+          "status": "passed",
+          "durationMs": 19.16020900000001,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-034",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-kb.test.ts",
+          "name": "failure modes: knowledge text and the seed > FM-034 a seed dish outside the menu sections is refused before anything is written",
+          "status": "passed",
+          "durationMs": 17.514875000000075,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes-admin.test.ts",
+          "name": "failure modes: menu and seed data > FM-034 a staff edit that doesn't change the category leaves the stored one as it is",
+          "status": "passed",
+          "durationMs": 12.93487499999992,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-035",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/hours-card.test.ts",
+          "name": "failure-mode audit FM-035 > FM-035 a day already past this year is answered for next year, and the card says which year",
+          "status": "passed",
+          "durationMs": 44.66662499999984,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-036",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 'a table for 9:30' or 'for 12 noon' is a time, not 9 or 12 guests",
+          "status": "passed",
+          "durationMs": 12.955124999999953,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 mid-flow 'move it to a table for 9:30' keeps the party of 2 and offers 9:30 PM",
+          "status": "passed",
+          "durationMs": 29.810249999999996,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-013 code's reading of a clock time and of today/tomorrow wins over a misread",
+          "status": "passed",
+          "durationMs": 11.894625000000019,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'lunch is better after all' with an evening time held drops the old time and offers lunch times, not the old card",
+          "status": "passed",
+          "durationMs": 17.105000000000018,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'an hour later' with the model's time dropped doesn't show the same 8 PM card again",
+          "status": "passed",
+          "durationMs": 26.380459000000087,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-042 a lunch time at Golf Course Road on a Monday says there is no lunch that day",
+          "status": "passed",
+          "durationMs": 17.771375000000035,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-037",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-037/FM-011 a write that fails inside the transaction answers 503 'nothing was booked', and the client neither confirms nor locks",
+          "status": "passed",
+          "durationMs": 26.200040999999942,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details",
+          "status": "passed",
+          "durationMs": 16.073167000000012,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-040 names spelt with zero-width joiners are accepted; bidi overrides are still refused",
+          "status": "passed",
+          "durationMs": 13.482375000000047,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-041 '+91' typed again after the field's '+91' prefix is the same mobile; a number starting 91 still works",
+          "status": "passed",
+          "durationMs": 15.503999999999905,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-050 malformed requests don't use up a guest's limit, and a saved booking's retry is answered after the limit",
+          "status": "passed",
+          "durationMs": 17.222582999999986,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-039 a staff cancel whose change-log write fails is rolled back; the retry cancels and logs exactly once",
+          "status": "passed",
+          "durationMs": 14.085624999999936,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-038",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/evals.test.ts",
+          "name": "invariants detect violations (§6.4) > FM-038 INV-01: a card whose branch, date, time or guest name differs from the saved row is a violation",
+          "status": "passed",
+          "durationMs": 16.575375000000008,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-039",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-037/FM-011 a write that fails inside the transaction answers 503 'nothing was booked', and the client neither confirms nor locks",
+          "status": "passed",
+          "durationMs": 26.200040999999942,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details",
+          "status": "passed",
+          "durationMs": 16.073167000000012,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-040 names spelt with zero-width joiners are accepted; bidi overrides are still refused",
+          "status": "passed",
+          "durationMs": 13.482375000000047,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-041 '+91' typed again after the field's '+91' prefix is the same mobile; a number starting 91 still works",
+          "status": "passed",
+          "durationMs": 15.503999999999905,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-050 malformed requests don't use up a guest's limit, and a saved booking's retry is answered after the limit",
+          "status": "passed",
+          "durationMs": 17.222582999999986,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-039 a staff cancel whose change-log write fails is rolled back; the retry cancels and logs exactly once",
+          "status": "passed",
+          "durationMs": 14.085624999999936,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-040",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-037/FM-011 a write that fails inside the transaction answers 503 'nothing was booked', and the client neither confirms nor locks",
+          "status": "passed",
+          "durationMs": 26.200040999999942,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details",
+          "status": "passed",
+          "durationMs": 16.073167000000012,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-040 names spelt with zero-width joiners are accepted; bidi overrides are still refused",
+          "status": "passed",
+          "durationMs": 13.482375000000047,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-041 '+91' typed again after the field's '+91' prefix is the same mobile; a number starting 91 still works",
+          "status": "passed",
+          "durationMs": 15.503999999999905,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-050 malformed requests don't use up a guest's limit, and a saved booking's retry is answered after the limit",
+          "status": "passed",
+          "durationMs": 17.222582999999986,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-039 a staff cancel whose change-log write fails is rolled back; the retry cancels and logs exactly once",
+          "status": "passed",
+          "durationMs": 14.085624999999936,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-041",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-037/FM-011 a write that fails inside the transaction answers 503 'nothing was booked', and the client neither confirms nor locks",
+          "status": "passed",
+          "durationMs": 26.200040999999942,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details",
+          "status": "passed",
+          "durationMs": 16.073167000000012,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-040 names spelt with zero-width joiners are accepted; bidi overrides are still refused",
+          "status": "passed",
+          "durationMs": 13.482375000000047,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-041 '+91' typed again after the field's '+91' prefix is the same mobile; a number starting 91 still works",
+          "status": "passed",
+          "durationMs": 15.503999999999905,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-050 malformed requests don't use up a guest's limit, and a saved booking's retry is answered after the limit",
+          "status": "passed",
+          "durationMs": 17.222582999999986,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-039 a staff cancel whose change-log write fails is rolled back; the retry cancels and logs exactly once",
+          "status": "passed",
+          "durationMs": 14.085624999999936,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-042",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 'a table for 9:30' or 'for 12 noon' is a time, not 9 or 12 guests",
+          "status": "passed",
+          "durationMs": 12.955124999999953,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-036 mid-flow 'move it to a table for 9:30' keeps the party of 2 and offers 9:30 PM",
+          "status": "passed",
+          "durationMs": 29.810249999999996,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-013 code's reading of a clock time and of today/tomorrow wins over a misread",
+          "status": "passed",
+          "durationMs": 11.894625000000019,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'lunch is better after all' with an evening time held drops the old time and offers lunch times, not the old card",
+          "status": "passed",
+          "durationMs": 17.105000000000018,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-014 'an hour later' with the model's time dropped doesn't show the same 8 PM card again",
+          "status": "passed",
+          "durationMs": 26.380459000000087,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking details (FM-013, FM-014, FM-036, FM-042) > FM-042 a lunch time at Golf Course Road on a Monday says there is no lunch that day",
+          "status": "passed",
+          "durationMs": 17.771375000000035,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-043",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/evals-api.test.ts",
+          "name": "evals API: run controls > FM-043 a finished run with failing cases isn't headlined 'every case passed', whatever its exit code",
+          "status": "passed",
+          "durationMs": 16.89133300000003,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-044",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/eval-report.test.ts",
+          "name": "comparisons > FM-044 an unfinished full run is compared case by case only, with a note, never by area rate or pass rate",
+          "status": "passed",
+          "durationMs": 3.639666000000034,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-045",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/api-dedupe.test.ts",
+          "name": "requestDeduper > FM-045 never expires or evicts a turn that is still running",
+          "status": "passed",
+          "durationMs": 1.1305830000001151,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-046",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/warmth.test.ts",
+          "name": "warm-up round (D-23) > FM-046 runs one round at a time: a request during a round runs one more after it, never two at once",
+          "status": "passed",
+          "durationMs": 1.7008749999999964,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-047",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "e2e",
+          "file": "admin-evals.spec.ts",
+          "name": "FM-047 when a run finishes and is shown, the previous run's numbers are never left under its name while it loads @cat:evals",
+          "status": "passed",
+          "durationMs": 2841,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-048",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-kb.test.ts",
+          "name": "failure modes: knowledge text and the seed > FM-048 a markdown document with thousands of blank lines is tidied at once; table separators still go",
+          "status": "passed",
+          "durationMs": 2.501541999999972,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-049",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/evals-api.test.ts",
+          "name": "evals API: run controls > FM-049 Cancel then Start never runs two runners: Start waits for the first to exit, and the next run can be cancelled",
+          "status": "passed",
+          "durationMs": 26.603125000000034,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-050",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-037/FM-011 a write that fails inside the transaction answers 503 'nothing was booked', and the client neither confirms nor locks",
+          "status": "passed",
+          "durationMs": 26.200040999999942,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-019 a booking's response and a duplicate's refusal never echo the guest's mobile or email; a stranger's name gets no details",
+          "status": "passed",
+          "durationMs": 16.073167000000012,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-040 names spelt with zero-width joiners are accepted; bidi overrides are still refused",
+          "status": "passed",
+          "durationMs": 13.482375000000047,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-041 '+91' typed again after the field's '+91' prefix is the same mobile; a number starting 91 still works",
+          "status": "passed",
+          "durationMs": 15.503999999999905,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-050 malformed requests don't use up a guest's limit, and a saved booking's retry is answered after the limit",
+          "status": "passed",
+          "durationMs": 17.222582999999986,
+          "failure": null
+        },
+        {
+          "suite": "vitest",
+          "file": "tests/integration/failure-modes.test.ts",
+          "name": "failure modes: booking writes and the API (FM-011, FM-037, FM-039, FM-040, FM-041, FM-050) > FM-039 a staff cancel whose change-log write fails is rolled back; the retry cancels and logs exactly once",
+          "status": "passed",
+          "durationMs": 14.085624999999936,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-051",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-kb.test.ts",
+          "name": "failure modes: knowledge text and the seed > FM-051 a phone number or email that isn't a branch's is flagged; the branch's own number is not",
+          "status": "passed",
+          "durationMs": 4.375667000000021,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-052",
+      "status": "no test",
+      "tests": []
+    },
+    {
+      "id": "FM-053",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-kb.test.ts",
+          "name": "failure modes: knowledge text and the seed > FM-053 staff booking searches (guest names in the query) are not written to the dev request log",
+          "status": "passed",
+          "durationMs": 0.16495800000006966,
+          "failure": null
+        }
+      ]
+    }
+  ]
+}

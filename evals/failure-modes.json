@@ -1,0 +1,1544 @@
+{
+  "version": 1,
+  "decision": "D-29",
+  "description": "Failure-mode register: the 20 given scenarios (FM-001 to FM-020) and the discovered ones (FM-021 on). Verdicts from the investigation of 2026-10-21/22; tests carry their ID in the test name. Severity: P0 data loss or guest harm now, P1 safety or booking integrity at risk, P2 wrong answers or broken flows, P3 limited impact. Results are written by npm run eval:failure-modes.",
+  "releaseGate": {
+    "severities": [
+      "P0",
+      "P1"
+    ],
+    "categories": [
+      "security_access",
+      "reservations",
+      "dietary_allergen"
+    ],
+    "rule": "Blocked while any P0/P1 entry in these categories has a failing test, no test, or a fix status other than fixed or no change needed."
+  },
+  "categories": [
+    {
+      "key": "ai_grounding",
+      "label": "AI reasoning and grounding"
+    },
+    {
+      "key": "conversation_state",
+      "label": "Conversation state"
+    },
+    {
+      "key": "menu_rag",
+      "label": "Menu, hours and retrieval"
+    },
+    {
+      "key": "dietary_allergen",
+      "label": "Dietary and allergen safety"
+    },
+    {
+      "key": "reservations",
+      "label": "Reservations and transactions"
+    },
+    {
+      "key": "admin_ops",
+      "label": "Admin operations"
+    },
+    {
+      "key": "security_access",
+      "label": "Security and access"
+    },
+    {
+      "key": "frontend",
+      "label": "Frontend and accessibility"
+    },
+    {
+      "key": "reliability",
+      "label": "Reliability and fault recovery"
+    },
+    {
+      "key": "performance",
+      "label": "Performance and latency"
+    }
+  ],
+  "journeys": [
+    {
+      "id": "A",
+      "title": "First-time customer: what's good, the menu, hours, then a table",
+      "adaptation": "Adapted: no accounts, so 'first-time' is a fresh session.",
+      "evalCases": [
+        "LV-SMOKE-01",
+        "LV-SMOKE-02",
+        "LV-SMOKE-03",
+        "LV-SMOKE-04",
+        "SC-BOOK-001"
+      ],
+      "failureModes": [
+        "FM-001",
+        "FM-003"
+      ],
+      "e2e": [
+        "J3 chips only"
+      ]
+    },
+    {
+      "id": "B",
+      "title": "Budget meal: ₹1,000 for two, then a changed budget",
+      "adaptation": "Code-planned meal (D-28).",
+      "evalCases": [
+        "SC-PLAN-001",
+        "SC-PLAN-002",
+        "SC-PLAN-003",
+        "SC-PLAN-004",
+        "LV-PLAN-001",
+        "LV-PLAN-002",
+        "LV-PLAN-003",
+        "LV-PLAN-004",
+        "LV-PLAN-005",
+        "LV-PLAN-006",
+        "LV-PLAN-007"
+      ],
+      "failureModes": [
+        "FM-002",
+        "FM-026"
+      ],
+      "e2e": [
+        "a meal for two within a budget"
+      ]
+    },
+    {
+      "id": "C",
+      "title": "Dietary: vegetarian, a nut allergy, then a change",
+      "adaptation": "Labels only (no ingredient lists).",
+      "evalCases": [
+        "SC-AUD-009",
+        "SC-AUD-010",
+        "SC-AUD-011",
+        "LV-SAFE-001",
+        "LV-SAFE-002",
+        "LV-SAFE-003",
+        "LV-GAP-001",
+        "LV-GAP-002"
+      ],
+      "failureModes": [
+        "FM-009",
+        "FM-021",
+        "FM-022",
+        "FM-027"
+      ],
+      "e2e": []
+    },
+    {
+      "id": "D",
+      "title": "Timings: a branch switch, a special date, 'tonight'",
+      "adaptation": null,
+      "evalCases": [
+        "SC-HOURS-001",
+        "LV-HR-001",
+        "LV-HR-002",
+        "LV-HR-003",
+        "LV-HRS-001"
+      ],
+      "failureModes": [
+        "FM-007",
+        "FM-035",
+        "FM-042"
+      ],
+      "e2e": [
+        "opening hours: a general question"
+      ]
+    },
+    {
+      "id": "E",
+      "title": "Reservation creation",
+      "adaptation": null,
+      "evalCases": [
+        "SC-BOOK-001",
+        "SC-BOOK-002",
+        "SC-BOOK-003",
+        "LV-BOOK-001",
+        "LV-RES-001"
+      ],
+      "failureModes": [
+        "FM-013",
+        "FM-014",
+        "FM-036",
+        "FM-038",
+        "FM-040",
+        "FM-041"
+      ],
+      "e2e": [
+        "J3 chips only"
+      ]
+    },
+    {
+      "id": "F",
+      "title": "Reservation failure: slot taken, database error, rate limit",
+      "adaptation": null,
+      "evalCases": [
+        "SC-UNAVAIL-001",
+        "SC-UNAVAIL-002",
+        "SC-UNAVAIL-003",
+        "SC-BACK-001",
+        "SC-BACK-002"
+      ],
+      "failureModes": [
+        "FM-011",
+        "FM-037",
+        "FM-050"
+      ],
+      "e2e": [
+        "Start over on a locked card"
+      ]
+    },
+    {
+      "id": "G",
+      "title": "Admin update reaches guests",
+      "adaptation": "Staff workspace (D-25).",
+      "evalCases": [],
+      "failureModes": [
+        "FM-020",
+        "FM-031",
+        "FM-033",
+        "FM-034",
+        "FM-039"
+      ],
+      "e2e": []
+    },
+    {
+      "id": "H",
+      "title": "Model failure: down, slow, malformed",
+      "adaptation": null,
+      "evalCases": [
+        "SC-MALF-001",
+        "SC-MALF-002",
+        "SC-RETRY-001",
+        "SC-RETRY-002",
+        "SC-BACK-003",
+        "LV-FAIL-001"
+      ],
+      "failureModes": [
+        "FM-015",
+        "FM-025",
+        "FM-028",
+        "FM-045"
+      ],
+      "e2e": [
+        "a failed chat request says so"
+      ]
+    },
+    {
+      "id": "I",
+      "title": "Malicious input: injection, crafted context, hostile documents",
+      "adaptation": null,
+      "evalCases": [
+        "LV-INJ-001",
+        "LV-INJ-002",
+        "LV-INJ-003",
+        "SC-INJ-001",
+        "LV-SMOKE-05"
+      ],
+      "failureModes": [
+        "FM-005",
+        "FM-026",
+        "FM-048",
+        "FM-051"
+      ],
+      "e2e": []
+    },
+    {
+      "id": "J",
+      "title": "Concurrent operations: last table, retries, double taps",
+      "adaptation": null,
+      "evalCases": [
+        "SC-DUP-001",
+        "SC-DUP-002",
+        "LV-DUP-001",
+        "LV-DUP-002"
+      ],
+      "failureModes": [
+        "FM-010",
+        "FM-012",
+        "FM-016",
+        "FM-049"
+      ],
+      "e2e": [
+        "one guest action sends one chat request"
+      ]
+    }
+  ],
+  "failureModes": [
+    {
+      "id": "FM-001",
+      "origin": "given",
+      "scenario": 1,
+      "category": "ai_grounding",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Unsupported bestseller or popularity claims",
+      "trigger": "Popularity worded as 'most-ordered', 'known for', 'can't stop ordering', 'trending', or 'chef's special' / 'what are you famous for?'.",
+      "expected": "No dish is called popular without the staff bestseller mark; signature or speciality questions get an honest answer.",
+      "actual": "Those phrasings passed the claim check (HYPE_RE), and signature questions went to the chooser, which presented a dish as the answer.",
+      "rootCause": "The claim patterns covered only a few words, and the evidence classifier had no signature/speciality reading.",
+      "resolution": "Wider claim patterns with honest-statement exceptions (lib/chat/claims.ts); signature questions answered from data (lib/chat/evidence.ts).",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/chat-evidence.test.ts",
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-001"
+    },
+    {
+      "id": "FM-002",
+      "origin": "given",
+      "scenario": 2,
+      "category": "conversation_state",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A changed dietary preference keeps controlling recommendations",
+      "trigger": "'Forget the gluten-free', 'I'm not coeliac', 'Forget Jain', 'I'm vegetarian now' (from vegan); a model that copies an old budget into a new request.",
+      "expected": "The latest stated preference wins; a budget needs a price in the guest's words.",
+      "actual": "Gluten-free and Jain were re-read from the negation; the model's copied maxPrice narrowed a new request.",
+      "rootCause": "Diet readers ignored negation, and the model's maxPrice was trusted without the guest saying a price.",
+      "resolution": "Negation guards and lifts in lib/chat/recommend.ts; the model's maxPrice is used only when a price is in the message.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-002"
+    },
+    {
+      "id": "FM-003",
+      "origin": "given",
+      "scenario": 3,
+      "category": "ai_grounding",
+      "severity": "P3",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "'Something light' produces an assumed menu section",
+      "trigger": "'I want something light.' The model guesses a section (desserts).",
+      "expected": "Ask which kind of dish (snack, main, dessert) before choosing, and trace any section only the model read.",
+      "actual": "The model's guessed course was used, and a chooser call picked from that section.",
+      "rootCause": "The model's course was taken as stated.",
+      "resolution": "Only a stated course narrows; a model-only course is used for that request only and traced as inferred; the meal-type question is asked.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts",
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-003"
+    },
+    {
+      "id": "FM-004",
+      "origin": "given",
+      "scenario": 4,
+      "category": "conversation_state",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "'Make it cheaper' and 'the second one' lose their reference",
+      "trigger": "A follow-up after a question about one dish, or 'the second one' after a list.",
+      "expected": "Comparisons anchor to the dish last shown; the prompt numbers the dishes shown, in order.",
+      "actual": "'Cheaper' compared with an older suggestion; the prompt listed suggested dishes unnumbered.",
+      "rootCause": "The context kept only recommended IDs, not what was last shown.",
+      "resolution": "context.shown records what each reply showed; the prompt (v9) numbers it; the anchor for cheaper/another uses it.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-004"
+    },
+    {
+      "id": "FM-005",
+      "origin": "given",
+      "scenario": 5,
+      "category": "security_access",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "code-level",
+      "fix": "partly fixed",
+      "title": "Prompt injection overrides instructions or exposes internals",
+      "trigger": "Guest text asking the bot to reveal its rules or to state a fact the data lacks.",
+      "expected": "No instructions or prompt text reach the guest; facts come only from the data.",
+      "actual": "A smalltalk reply could paraphrase its own rules ('my rules say...'); the guards blocked fabricated numbers, prices and dishes.",
+      "rootCause": "The smalltalk filter did not look for talk about instructions.",
+      "resolution": "smalltalkShowable refuses replies about instructions, prompts or rules. Live injection cases (LV-INJ-*) still pass.",
+      "remainingRisk": "A non-numeric fabricated fact in a free-text FAQ answer is caught only if it contradicts a known claim pattern; the live evals measure it.",
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-005"
+    },
+    {
+      "id": "FM-006",
+      "origin": "given",
+      "scenario": 6,
+      "category": "menu_rag",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "An unavailable dish is still offered",
+      "trigger": "An answer naming an unavailable dish by its short name ('the pomfret'), or citing it without saying it is unavailable.",
+      "expected": "Unavailable dishes are never offered as available.",
+      "actual": "The unavailable check matched only full names in the same sentence.",
+      "rootCause": "Name matching used full names only.",
+      "resolution": "claimProblems checks partial names per sentence and any cited unavailable dish.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-006"
+    },
+    {
+      "id": "FM-007",
+      "origin": "given",
+      "scenario": 7,
+      "category": "menu_rag",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Wrong branch or special-date hours in an answer",
+      "trigger": "A mixed question on a special date ('open for dinner on 22 October, and is there parking?').",
+      "expected": "The day's exception (closed for a private event) is used, from the hours card.",
+      "actual": "The FAQ path accepted the weekly dinner hours for a date with an exception.",
+      "rootCause": "Grounding didn't check hours against the asked date.",
+      "resolution": "Hours sentences are grounded against the date's hours and exceptions; a failure falls back to the hours card.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-007"
+    },
+    {
+      "id": "FM-008",
+      "origin": "given",
+      "scenario": 8,
+      "category": "menu_rag",
+      "severity": "P2",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "partly fixed",
+      "title": "An outdated document or FAQ overrides the menu",
+      "trigger": "A document or answer giving a dish an old price.",
+      "expected": "The menu table is authoritative for prices.",
+      "actual": "A price next to a dish's name wasn't compared with the menu.",
+      "rootCause": "No price check per dish.",
+      "resolution": "claimProblems refuses a dish named with a price that isn't its menu price.",
+      "remainingRisk": "Non-price conflicts between a staff document and the FAQs (policy wording) are not detected; staff see content warnings only for times and booking words.",
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-008"
+    },
+    {
+      "id": "FM-009",
+      "origin": "given",
+      "scenario": 9,
+      "category": "dietary_allergen",
+      "severity": "P1",
+      "likelihood": "medium",
+      "impact": "A guest with an allergy or diet could order a dish the menu labels contradict.",
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Unsupported dietary or allergen claims",
+      "trigger": "Claims worded 'non-dairy', 'eggless', 'wheat-free', 'no animal products', or 'as is the kulfi'.",
+      "expected": "Every diet claim matches the dish's labels.",
+      "actual": "Those wordings weren't read as diet claims.",
+      "rootCause": "DIET_WORDS covered only the main labels.",
+      "resolution": "More diet wordings and echoed subjects are checked (lib/chat/recommend.ts).",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-009"
+    },
+    {
+      "id": "FM-010",
+      "origin": "given",
+      "scenario": 10,
+      "category": "reservations",
+      "severity": null,
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "not-reproduced",
+      "fix": "no change needed",
+      "title": "Two requests book the last table at once",
+      "trigger": "20 processes book the one fitting table at the same instant.",
+      "expected": "Exactly one booking; the others get SLOT_TAKEN.",
+      "actual": "Held: 1 booking, 19 SLOT_TAKEN, in 10 runs (and the triggers alone hold it).",
+      "rootCause": "IMMEDIATE transactions plus overlap triggers.",
+      "resolution": "No change. Existing race test tagged FM-010.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/race.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-010"
+    },
+    {
+      "id": "FM-011",
+      "origin": "given",
+      "scenario": 11,
+      "category": "reservations",
+      "severity": null,
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "not-reproduced",
+      "fix": "no change needed",
+      "title": "A booking is confirmed although the write failed",
+      "trigger": "SQLITE_FULL, a failing trigger, or a thrown error during the insert.",
+      "expected": "No confirmation without a saved row.",
+      "actual": "No false confirmation found; the client builds the card only from a 201/200 body.",
+      "rootCause": "By design (BR-12).",
+      "resolution": "No change needed for the invariant; FM-037 made the message say 'nothing was booked' when the write was rolled back.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-011"
+    },
+    {
+      "id": "FM-012",
+      "origin": "given",
+      "scenario": 12,
+      "category": "reservations",
+      "severity": null,
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "not-reproduced",
+      "fix": "no change needed",
+      "title": "Retries create duplicate bookings",
+      "trigger": "20 processes retry with one idempotency key, or one guest double-taps with new keys.",
+      "expected": "One booking: replays get 200 with the same row; new keys get DUPLICATE_BOOKING.",
+      "actual": "Held in every run.",
+      "rootCause": "Idempotency key with request hash, and a per-branch guest-overlap check and trigger.",
+      "resolution": "No change. New 20-process races for both cases (tests/integration/race.test.ts).",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/race.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-012"
+    },
+    {
+      "id": "FM-013",
+      "origin": "given",
+      "scenario": 13,
+      "category": "reservations",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Relative dates or times resolve incorrectly",
+      "trigger": "'Tomorrow at 7:30 pm' read by the model as 19:00 on the day after tomorrow.",
+      "expected": "Code's reading of one unambiguous clock time and of today/tonight/tomorrow wins.",
+      "actual": "The model's time was kept if its 12-hour hour appeared anywhere; relative days were left to the model.",
+      "rootCause": "statedClockTime only filled a missing time; no relative-day reader.",
+      "resolution": "guardExtraction corrects the time from the text and reads today/tonight/tomorrow/the day after tomorrow when no other date words are present.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-013"
+    },
+    {
+      "id": "FM-014",
+      "origin": "given",
+      "scenario": 14,
+      "category": "reservations",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A mid-flow change leaves a stale time",
+      "trigger": "'Lunch is better after all' with 8 PM held, or 'make it an hour later'.",
+      "expected": "The old time is dropped and the guest picks a new one.",
+      "actual": "The same 8 PM confirm card came back.",
+      "rootCause": "The time was cleared only when the stored meal differed; relative changes were dropped.",
+      "resolution": "A meal that contradicts the held time, or a relative change with no clock time, clears the time.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-014"
+    },
+    {
+      "id": "FM-015",
+      "origin": "given",
+      "scenario": 15,
+      "category": "reliability",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Ollama slow or stuck: the guest waits with no way out",
+      "trigger": "A guest turn queued behind a slow warm-up step, or a request that never answers.",
+      "expected": "Bounded waits; Try again after a timeout.",
+      "actual": "The queue had no deadline and the client fetch had no timeout; 'Still working on it' could stay for minutes with controls disabled.",
+      "rootCause": "Per-call timeouts only, set after the queue.",
+      "resolution": "The model gate refuses a call after 30 s in the queue (busy reply); the client gives up after 90 s with Try again (a retry joins the running turn).",
+      "remainingRisk": null,
+      "baselineEvidence": "The E2E spec failed against the chat panel of c99e3e7 (git show c99e3e7:components/chat/ChatPanel.tsx, rebuilt; 2026-10-22), and passes with the fix.",
+      "testFiles": [
+        "tests/e2e/guest.spec.ts",
+        "tests/unit/warmth.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-015"
+    },
+    {
+      "id": "FM-016",
+      "origin": "given",
+      "scenario": 16,
+      "category": "reliability",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "code-level",
+      "fix": "fixed",
+      "title": "An old chat turn's Try again brings back a stale card",
+      "trigger": "A lost chat response, then a refused booking, then Try again.",
+      "expected": "A reply newer than the failed turn clears its Try again.",
+      "actual": "Try again replayed the cached older reply, whose confirm card was for a slot just taken.",
+      "rootCause": "The retry state survived a refused booking.",
+      "resolution": "A booking outcome that adds a reply clears the failed turn and chatPending.",
+      "remainingRisk": null,
+      "baselineEvidence": "The E2E spec failed against the chat panel of c99e3e7 (rebuilt; 2026-10-22), and passes with the fix.",
+      "testFiles": [
+        "tests/e2e/guest.spec.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-016"
+    },
+    {
+      "id": "FM-017",
+      "origin": "given",
+      "scenario": 17,
+      "category": "frontend",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "code-level",
+      "fix": "fixed",
+      "title": "Long text overflows the phone layout",
+      "trigger": "A pasted 250-character link at 360 px.",
+      "expected": "Text wraps; nothing scrolls sideways.",
+      "actual": "The conversation scroller widened; the E2E check measured only the document, which the clipped frame hides.",
+      "rootCause": "No overflow-wrap in the chat; the check measured the wrong element.",
+      "resolution": "wrap-anywhere on the conversation; the E2E overflow check measures the conversation scroller.",
+      "remainingRisk": null,
+      "baselineEvidence": "The E2E spec failed with the fix removed (rebuilt; 2026-10-22) and against the chat panel of c99e3e7, and passes with the fix.",
+      "testFiles": [
+        "tests/e2e/guest.spec.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-017"
+    },
+    {
+      "id": "FM-018",
+      "origin": "given",
+      "scenario": 18,
+      "category": "security_access",
+      "severity": null,
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "not-applicable",
+      "fix": "no change needed",
+      "title": "Unauthorized admin operations",
+      "trigger": "A browser on another site or port, DNS rebinding, a LAN client, or an opaque origin.",
+      "expected": "Staff routes are reachable only from this computer.",
+      "actual": "All refused (403); the server binds to 127.0.0.1. There is no sign-in, by decision D-22.",
+      "rootCause": "D-22: no staff password; loopback and same-origin rules only.",
+      "resolution": "No change; regression tests for the rules and the loopback bind.",
+      "remainingRisk": "Anyone using this computer can read and change bookings (accepted in D-22). A start command without -H 127.0.0.1 would expose the routes.",
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/proxy-rules.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-018"
+    },
+    {
+      "id": "FM-019",
+      "origin": "given",
+      "scenario": 19,
+      "category": "security_access",
+      "severity": null,
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "not-reproduced",
+      "fix": "no change needed",
+      "title": "A guest sees another guest's details",
+      "trigger": "A booking with the same mobile and a different name; any booking response.",
+      "expected": "Responses never echo phone or email; a stranger learns no reference, time or name.",
+      "actual": "Held; the generic 409 confirms only that a booking exists around that time (J7, by design).",
+      "rootCause": "By design (D-14 J7).",
+      "resolution": "No change; a regression test, and the code comment no longer overstates what a stranger learns.",
+      "remainingRisk": "Knowledge documents can hold personal contact details (FM-051, warned).",
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-019"
+    },
+    {
+      "id": "FM-020",
+      "origin": "given",
+      "scenario": 20,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "partly fixed",
+      "title": "An admin update is saved but not reflected for guests",
+      "trigger": "An embedding-model outage while staff edit; a restart during a refresh.",
+      "expected": "Edits reach guests at once; semantic search comes back without staff action.",
+      "actual": "Text edits applied at once, but after an embedder failure nothing re-ran the refresh, so retrieval stayed keyword-only until staff acted.",
+      "rootCause": "The refresher had no retry and no start-up resume.",
+      "resolution": "Bounded retries after a failed refresh (1, 5, 15 min) and a start-up resume of an interrupted or failed refresh.",
+      "remainingRisk": "Open guest tabs keep the branch status rendered when the page loaded until reload.",
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-020"
+    },
+    {
+      "id": "FM-021",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "dietary_allergen",
+      "severity": "P1",
+      "likelihood": "medium",
+      "impact": "A guest avoiding an allergen could be recommended a dish containing it.",
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Allergen avoidance in other words is dropped",
+      "trigger": "'Nothing with nuts', 'non-dairy', 'eggless', 'I'm not eating dairy', 'nut-less'.",
+      "expected": "The allergen is excluded and the allergy note shows.",
+      "actual": "Nut dishes were offered.",
+      "rootCause": "avoids() knew only 'no X' / 'without X'.",
+      "resolution": "More avoidance phrasings; a model-read avoid is kept when the guest named the allergen.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts",
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-021"
+    },
+    {
+      "id": "FM-022",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "dietary_allergen",
+      "severity": "P1",
+      "likelihood": "medium",
+      "impact": "A guest's allergy silently stops filtering suggestions.",
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A stored allergy is erased by a sentence about someone else",
+      "trigger": "'My friend has no allergies', 'Not allergic to dairy, only nuts', 'my husband wants chicken'.",
+      "expected": "Only a first-person statement lifts a stored allergy or diet, and only the allergen named.",
+      "actual": "The nut allergy was erased and a pistachio kulfi was offered with no allergy note.",
+      "rootCause": "Lift readers ignored who the sentence was about and lifted everything.",
+      "resolution": "First-person lifts only; 'not allergic to X' lifts X; 'allergic' is never an exclusion word.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts",
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-022"
+    },
+    {
+      "id": "FM-023",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "ai_grounding",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "The evidence classifier takes over factual questions",
+      "trigger": "'Which dishes have star anise?', 'spice rating of the Chettinad', 'how do you know?' after a plain suggestion.",
+      "expected": "Factual menu questions get grounded answers; only popularity questions go to the evidence path.",
+      "actual": "Answered 'we don't collect reviews'.",
+      "rootCause": "Over-broad review and challenge patterns.",
+      "resolution": "Narrowed patterns with exceptions; a challenge counts only after a popularity statement.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts",
+        "tests/unit/chat-evidence.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-023"
+    },
+    {
+      "id": "FM-024",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "conversation_state",
+      "severity": "P3",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "The model's 'another'/'cheaper' narrows a fresh request",
+      "trigger": "'Something vegan please' after mains, with the model returning relation 'another'.",
+      "expected": "A fresh request isn't narrowed by a relation the guest didn't state.",
+      "actual": "The old course was kept.",
+      "rootCause": "The model's relation was trusted.",
+      "resolution": "Relation only from the guest's words (more phrasings read); the model's is traced as inferred.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-024"
+    },
+    {
+      "id": "FM-025",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "performance",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Turn time isn't bounded",
+      "trigger": "A slow intent call, then the corrective retry and the chooser.",
+      "expected": "No optional model call after the turn's 18 s budget.",
+      "actual": "The corrective retry and chooser attempt 1 always ran: up to 3 x 15 s.",
+      "rootCause": "Only chooser attempt 2 checked the budget.",
+      "resolution": "Every optional call (corrective retry, FAQ correction, context retry, chooser and planner attempt 1) checks the budget; past it the code answers.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-025"
+    },
+    {
+      "id": "FM-026",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "security_access",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Client-supplied plan context reaches the planner prompt",
+      "trigger": "A crafted context.plan.items entry with prompt text.",
+      "expected": "The context accepts only dish IDs.",
+      "actual": "Arbitrary strings were accepted.",
+      "rootCause": "The context schema allowed any string.",
+      "resolution": "plan.items and shown accept only menu IDs.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-026"
+    },
+    {
+      "id": "FM-027",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "dietary_allergen",
+      "severity": "P1",
+      "likelihood": "low",
+      "impact": "A guest could be told a dish is free of an allergen its labels list.",
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Allergen-absence claims that contradict the labels are shown",
+      "trigger": "'The kulfi no longer uses nuts', 'made without butter' (from a stale document).",
+      "expected": "A claim that a labelled allergen is absent is refused.",
+      "actual": "Shown as an answer.",
+      "rootCause": "Absence claims weren't checked against labels.",
+      "resolution": "claimProblems treats them as safety promises.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-ai.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-027"
+    },
+    {
+      "id": "FM-028",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reliability",
+      "severity": "P2",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Chat fails on every turn when the database is one migration behind; health says ok",
+      "trigger": "The app updated without npm run db:migrate.",
+      "expected": "Health 503 with the pending migrations; chat answers a clear error.",
+      "actual": "Every chat turn was a bare 500; health returned 200.",
+      "rootCause": "No schema check; the chat handler had no catch.",
+      "resolution": "/api/health lists pending migrations (503); a thrown turn answers a JSON error (503 when the schema is behind).",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-028"
+    },
+    {
+      "id": "FM-029",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "menu_rag",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "partly fixed",
+      "title": "One document that can't be embedded turns semantic search off, with misleading status",
+      "trigger": "A document whose embedding keeps failing.",
+      "expected": "Staff are told which document holds search back and whether a refresh is coming.",
+      "actual": "Status said 'until the index refresh finishes' with none pending, and named no document.",
+      "rootCause": "D-13 needs every fact's vector; the status text was generic.",
+      "resolution": "The status names the failing documents and says whether a refresh is pending.",
+      "remainingRisk": "Retrieval stays keyword-only while such a document is active (D-13). Exempting failed documents from coverage is proposed, not applied.",
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-029"
+    },
+    {
+      "id": "FM-030",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "menu_rag",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "kb:index while the server runs deletes newer vectors",
+      "trigger": "npm run kb:index during staff edits.",
+      "expected": "No vector from an edit is lost or overwritten with old text.",
+      "actual": "indexKb wrote vectors for its old snapshot and deleted the rest.",
+      "rootCause": "The script used the pre-refresher indexer.",
+      "resolution": "kb:index runs the refresher's pass, which re-reads facts in its write transaction.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-030"
+    },
+    {
+      "id": "FM-031",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Limiting a dish to the only open branch stores 'all branches'",
+      "trigger": "Golf Course Road inactive; a dish limited to Hauz Khas; the branch reopens.",
+      "expected": "The dish stays Hauz Khas only.",
+      "actual": "Stored as null (every branch).",
+      "rootCause": "Compared with active branches only.",
+      "resolution": "Compared with all branches.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-031"
+    },
+    {
+      "id": "FM-032",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Dish and FAQ pages show vectors 'current' from any model",
+      "trigger": "Vectors from an old embedding model.",
+      "expected": "Only the model in use counts; 'unknown' when it doesn't answer.",
+      "actual": "'current' while retrieval was keyword-only.",
+      "rootCause": "The status query ignored the model digest.",
+      "resolution": "Filtered by the current digest.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-032"
+    },
+    {
+      "id": "FM-033",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A reseed leaves removed dishes and inactive FAQs hidden",
+      "trigger": "db:seed --overwrite-staff-changes after staff removed a dish.",
+      "expected": "Seeded rows return to their seeded state.",
+      "actual": "They stayed hidden.",
+      "rootCause": "The upsert didn't set is_listed / is_active.",
+      "resolution": "The upserts restore the flags.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-033"
+    },
+    {
+      "id": "FM-034",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A seed category outside the menu sections",
+      "trigger": "A seed dish in 'soups'.",
+      "expected": "Refused at seed time; edits never rewrite a category silently.",
+      "actual": "Missing from the chat menu, present in facts; a price edit rewrote it to 'mains' with no log entry.",
+      "rootCause": "The seed schema allowed any slug; edits wrote the display fallback back.",
+      "resolution": "Seed categories must be menu sections; edits keep the stored category unless changed.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes-admin.test.ts",
+        "tests/unit/failure-modes-kb.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-034"
+    },
+    {
+      "id": "FM-035",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "menu_rag",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "An hours card for a past date shows no year",
+      "trigger": "'Open on 20 October?' asked on 22 October.",
+      "expected": "The card says which year it answers for.",
+      "actual": "'Wed 20 Oct' (2027) with no year.",
+      "rootCause": "The label never included the year.",
+      "resolution": "A date in another year shows the year.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/hours-card.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-035"
+    },
+    {
+      "id": "FM-036",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reservations",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "'A table for 9:30' is read as 9 guests",
+      "trigger": "'Can I get a table for 9:30 tonight?', 'a table for 12 noon'.",
+      "expected": "The time is kept; the party size is asked or kept.",
+      "actual": "The large-party reply, and a known party size wiped.",
+      "rootCause": "The party pattern didn't check for a time after the number.",
+      "resolution": "A time after 'table for N' isn't a party size.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-036"
+    },
+    {
+      "id": "FM-037",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reservations",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Rolled-back failures reported as 'couldn't confirm', locking the card",
+      "trigger": "A failure inside the create transaction (I/O error, failing trigger).",
+      "expected": "503 'nothing was booked, try again'.",
+      "actual": "500 'we couldn't confirm whether your booking was saved'; the card locked.",
+      "rootCause": "Every error was treated as possibly committed.",
+      "resolution": "Errors thrown inside the transaction are known rolled back: 503 UNAVAILABLE.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-037"
+    },
+    {
+      "id": "FM-038",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reservations",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "The INV-01 oracle compared only the party size",
+      "trigger": "A confirmation card with a wrong branch, date, time or name.",
+      "expected": "INV-01 catches any detail that differs from the saved row.",
+      "actual": "Not caught.",
+      "rootCause": "The oracle compared ref, status and party only.",
+      "resolution": "Evals and E2E compare branch, date, time, party and name with the row.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/evals.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-038"
+    },
+    {
+      "id": "FM-039",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A staff cancel and its change-log entry were separate transactions",
+      "trigger": "The change-log write fails after the cancel committed.",
+      "expected": "Both commit or neither; staff never told 'nothing changed' when it did.",
+      "actual": "Cancelled, 500, no log entry ever; the dialog said 'Nothing changed'.",
+      "rootCause": "The log was written after the cancel, in its own transaction.",
+      "resolution": "The log is written inside the cancel transaction; an unknown outcome reloads the list and says so.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-039"
+    },
+    {
+      "id": "FM-040",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reservations",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Names with zero-width joiners are refused",
+      "trigger": "A Malayalam or Marathi name with ZWJ/ZWNJ.",
+      "expected": "Accepted.",
+      "actual": "'Please use letters, spaces and punctuation only'.",
+      "rootCause": "All format characters were refused.",
+      "resolution": "ZWJ and ZWNJ are allowed; bidi overrides are still refused.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-040"
+    },
+    {
+      "id": "FM-041",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reservations",
+      "severity": "P3",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "'+91' typed after the field's '+91' prefix is refused",
+      "trigger": "'+91 +91 98765 43210'.",
+      "expected": "The same mobile.",
+      "actual": "'Please enter a valid Indian mobile number'.",
+      "rootCause": "Parsed as one number.",
+      "resolution": "A doubled country code is normalised.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-041"
+    },
+    {
+      "id": "FM-042",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reservations",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A time in a service the branch never opens that day gets the wrong reason",
+      "trigger": "Lunch at Golf Course Road on a Monday.",
+      "expected": "'No open lunch times on Mon 19 Oct'.",
+      "actual": "'1:00 PM isn't available'.",
+      "rootCause": "Only exception-closed services were explained.",
+      "resolution": "A service missing from the weekly hours that day is named.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-042"
+    },
+    {
+      "id": "FM-043",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P2",
+      "likelihood": "medium",
+      "impact": "Staff could ship believing every eval passed.",
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "The eval banner says 'every case passed' for runs with failures",
+      "trigger": "A live run whose gates were met with failing cases (exit 0).",
+      "expected": "'271 of 282 cases passed'.",
+      "actual": "'Finished: every case passed'.",
+      "rootCause": "Derived from the exit code.",
+      "resolution": "Derived from the case counts.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/evals-api.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-043"
+    },
+    {
+      "id": "FM-044",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Unfinished runs compared as complete",
+      "trigger": "Viewing a running or interrupted full run.",
+      "expected": "Case-level changes only, with a note.",
+      "actual": "Area, metric and pass-rate deltas from partial data.",
+      "rootCause": "The comparison ignored run status.",
+      "resolution": "An unfinished run counts as a different case set; a note says so; no pass-rate delta.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/eval-report.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-044"
+    },
+    {
+      "id": "FM-045",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reliability",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "The deduper expired a running turn after 120 s",
+      "trigger": "Try again more than 120 s after a slow turn started.",
+      "expected": "The retry joins the running turn.",
+      "actual": "A second model turn started.",
+      "rootCause": "The TTL counted from the start, for pending entries too.",
+      "resolution": "Pending entries are never expired or evicted.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/api-dedupe.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-045"
+    },
+    {
+      "id": "FM-046",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "performance",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Overlapping warm-up rounds",
+      "trigger": "Start-up, interval and staff-edit warm-ups at once.",
+      "expected": "One round at a time.",
+      "actual": "Rounds interleaved; a guest waited behind steps from each.",
+      "rootCause": "No single-flight guard.",
+      "resolution": "Single-flight with one follow-up round.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/warmth.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-046"
+    },
+    {
+      "id": "FM-047",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "code-level",
+      "fix": "fixed",
+      "title": "The eval dashboard shows the previous run's numbers under a new run",
+      "trigger": "A finished run is shown while its detail loads (or fails to).",
+      "expected": "Only the selected run's numbers.",
+      "actual": "The previous run's numbers stayed.",
+      "rootCause": "Detail wasn't keyed to the selected run.",
+      "resolution": "Detail is shown only when it is the selected run's.",
+      "remainingRisk": null,
+      "baselineEvidence": "The E2E spec failed against the dashboard before the fix (git show 0882bae:components/admin/evals/EvalsDashboard.tsx, rebuilt; 2026-10-22), and passes with the fix.",
+      "testFiles": [
+        "tests/e2e/admin-evals.spec.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-047"
+    },
+    {
+      "id": "FM-048",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reliability",
+      "severity": "P2",
+      "likelihood": "low",
+      "impact": "Any staff upload could stall all guest chat and bookings.",
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "A markdown document with many blank lines freezes the server",
+      "trigger": "A .md upload or article with thousands of blank lines.",
+      "expected": "Tidied in milliseconds.",
+      "actual": "11.7 s event-loop stall for 4,000 blank lines (cubic regex); every guest waited.",
+      "rootCause": "Overlapping \\s* in a multiline regex.",
+      "resolution": "Line-local patterns ([ \\t]).",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-kb.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-048"
+    },
+    {
+      "id": "FM-049",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "admin_ops",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Cancel then Start ran two eval processes",
+      "trigger": "Cancel a run, Start another before the first exits.",
+      "expected": "One runner at a time; the second can be cancelled.",
+      "actual": "Two runners; the second couldn't be cancelled.",
+      "rootCause": "The state said cancelled before exit; close cleared any child.",
+      "resolution": "'stopping' until exit; Start refused meanwhile; close clears only its own child.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/evals-api.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-049"
+    },
+    {
+      "id": "FM-050",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "reservations",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Booking rate limits charged before validation and replay",
+      "trigger": "Five invalid requests with a guest's mobile; a retry of a saved booking.",
+      "expected": "Invalid requests don't use a guest's budget; a saved key's replay is always answered.",
+      "actual": "429 for the guest; the saved booking's replay was limited.",
+      "rootCause": "Limits were charged first.",
+      "resolution": "Only well-formed requests are charged; replays of saved keys aren't.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/integration/failure-modes.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-050"
+    },
+    {
+      "id": "FM-051",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "security_access",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "confirmed",
+      "fix": "fixed",
+      "title": "Guest contact details in a knowledge document raise no warning",
+      "trigger": "A staff note with a guest's mobile and email.",
+      "expected": "Staff are warned before guests can be shown them.",
+      "actual": "No warning; the chatbot could repeat them.",
+      "rootCause": "Warnings covered only times and booking words.",
+      "resolution": "A warning for any phone that isn't a branch's, and any email.",
+      "remainingRisk": "A warning, not a block: staff can still save it.",
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-kb.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-051"
+    },
+    {
+      "id": "FM-052",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "performance",
+      "severity": "P3",
+      "likelihood": "low",
+      "impact": null,
+      "verdict": "code-level",
+      "fix": "accepted risk",
+      "title": "A live eval run from the dashboard shares the model with guests",
+      "trigger": "Starting a live run while guests chat.",
+      "expected": "Staff know the trade-off.",
+      "actual": "Guest replies slow or time out; the run's latency is skewed.",
+      "rootCause": "One Ollama, gates per process.",
+      "resolution": "The live option says so plainly. Not blocked (D-21 lets staff start live runs).",
+      "remainingRisk": "Live runs during service slow guests.",
+      "baselineEvidence": null,
+      "testFiles": [],
+      "deterministic": true,
+      "repro": null
+    },
+    {
+      "id": "FM-053",
+      "origin": "discovered",
+      "scenario": null,
+      "category": "security_access",
+      "severity": "P3",
+      "likelihood": "medium",
+      "impact": null,
+      "verdict": "code-level",
+      "fix": "fixed",
+      "title": "The dev request log prints guest names from staff searches",
+      "trigger": "A staff booking search by name with npm run dev.",
+      "expected": "No guest names in logs.",
+      "actual": "The URL with ?q=<name> was logged.",
+      "rootCause": "Next's request log with defaults.",
+      "resolution": "Staff booking search requests aren't logged.",
+      "remainingRisk": null,
+      "baselineEvidence": null,
+      "testFiles": [
+        "tests/unit/failure-modes-kb.test.ts"
+      ],
+      "deterministic": true,
+      "repro": "npm run eval:failure-modes -- --only FM-053"
+    }
+  ]
+}

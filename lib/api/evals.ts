@@ -7,6 +7,7 @@ import { describeExpect } from "@/evals/describe";
 import { baselineFile, resultsDir } from "@/evals/paths";
 import { baselineFor, baselineKey, caseStatuses, compareRuns, listBenches, listRuns, previousComparable, readBaseline, type Comparison, type Run } from "@/evals/report";
 import type { ApiDeps } from "@/lib/api/deps";
+import { compareFm, fmBaseFor, fmResultsDir, listFmRuns, loadRegister, registerFile } from "@/evals/failure-modes";
 import { cancelJob, currentJob, startJob } from "@/lib/evals/jobs";
 import { errorResponse, okResponse, readJson } from "@/lib/http/json";
 
@@ -184,3 +185,36 @@ export function evalsJobHandlers(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps
 }
 
 export { baselineKey };
+
+const FmQuery = z.object({ run: z.string().regex(/^[\w.-]{1,120}$/).optional() });
+
+/**
+ * GET /api/admin/evals/failure-modes[?run=:id] (D-29): the failure-mode register, the runs of npm run eval:failure-modes
+ * (newest first), the selected run (default: the newest) and its comparison with the baseline-labelled run before it.
+ * Read-only: every status comes from a results file the runner wrote.
+ */
+export function failureModesHandler(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps()) {
+  return async (req: Request): Promise<Response> => {
+    const q = FmQuery.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+    if (!q.success) return errorResponse(400, "VALIDATION", "Please check the run.");
+    let register;
+    try {
+      register = loadRegister(registerFile(ev.root()));
+    } catch {
+      return errorResponse(503, "UNAVAILABLE", "The failure-mode register (evals/failure-modes.json) couldn't be read.");
+    }
+    const runs = listFmRuns(fmResultsDir(ev.resultsDir()));
+    const head = (q.data.run ? runs.find((r) => r.id === q.data.run) : runs[0]) ?? null;
+    if (q.data.run && !head) return errorResponse(404, "NOT_FOUND", "No such failure-mode run.");
+    const base = head ? fmBaseFor(runs, head) : null;
+    return okResponse(200, {
+      register,
+      runs: runs.slice(0, 30).map((r) => ({ id: r.id, label: r.label, startedAt: r.startedAt, gitSha: r.gitSha, gitDirty: r.gitDirty, source: r.source, counts: r.counts, gate: r.gate })),
+      head,
+      base,
+      comparison: head && base ? compareFm(base, head) : null,
+      now: deps.now(),
+    });
+  };
+}
+

@@ -60,7 +60,7 @@ async function race(mode: "service" | "trigger" | "replay" | "same-guest") {
   return { results, exits, rows, stderr: stderr.join("") };
 }
 
-describe("20-process race on the last fitting table (AC-04, G-1)", () => {
+describe("20-process race on the last fitting table (AC-04, G-1, FM-010)", () => {
   it.each(Array.from({ length: 10 }, (_, i) => i + 1))("run %i: exactly 1 booking, 19 SLOT_TAKEN, no server errors", async () => {
     const { results, exits, rows, stderr } = await race("service");
     expect(stderr).toBe("");

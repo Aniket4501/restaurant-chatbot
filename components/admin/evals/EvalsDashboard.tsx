@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart, LineChart, Sparkline } from "@/components/admin/evals/Charts";
 import { CaseDetailDialog } from "@/components/admin/evals/CaseDetail";
 import { FailureExplorer } from "@/components/admin/evals/FailureExplorer";
+import { FailureModesPanel } from "@/components/admin/evals/FailureModesPanel";
 import { LatencyPanel } from "@/components/admin/evals/LatencyPanel";
 import { RunControls } from "@/components/admin/evals/RunControls";
 import { clock, duration, pct, pts, runLabel, shortWhen, statDelta, statValue, when } from "@/components/admin/evals/format";
@@ -267,6 +268,8 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
             {!detail && !loadError && <p className="text-muted">Loading the run…</p>}
           </>
         )}
+
+        <FailureModesPanel />
       </div>
       {openCase && runId && <CaseDetailDialog runId={runId} caseId={openCase} onClose={() => setOpenCase(null)} onRerun={start} rerunDisabled={job?.state === "running" || job?.state === "stopping"} />}
     </div>

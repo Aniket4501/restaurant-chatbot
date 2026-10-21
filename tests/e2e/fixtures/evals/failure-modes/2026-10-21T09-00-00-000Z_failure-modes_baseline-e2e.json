@@ -1,0 +1,178 @@
+{
+  "kind": "failure-modes",
+  "id": "2026-10-21T09-00-00-000Z_failure-modes_baseline-e2e",
+  "label": "baseline-e2e",
+  "startedAt": "2026-10-21T09:00:00.000Z",
+  "durationMs": 1000,
+  "gitSha": "e2e0000",
+  "gitDirty": false,
+  "source": {
+    "vitest": "e2e fixture",
+    "e2e": null
+  },
+  "registerVersion": 1,
+  "counts": {
+    "entries": 2,
+    "pass": 1,
+    "fail": 1,
+    "notRun": 0,
+    "noTest": 0,
+    "tests": 2,
+    "testsPassed": 1,
+    "testsFailed": 1,
+    "testsSkipped": 0
+  },
+  "bySeverity": [
+    {
+      "severity": "P0",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0
+    },
+    {
+      "severity": "P1",
+      "entries": 1,
+      "pass": 0,
+      "fail": 1
+    },
+    {
+      "severity": "P2",
+      "entries": 1,
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "severity": "P3",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0
+    },
+    {
+      "severity": "none",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0
+    }
+  ],
+  "byCategory": [
+    {
+      "key": "ai_grounding",
+      "label": "AI reasoning and grounding",
+      "entries": 1,
+      "pass": 1,
+      "fail": 0,
+      "rate": 1
+    },
+    {
+      "key": "conversation_state",
+      "label": "Conversation state",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    },
+    {
+      "key": "menu_rag",
+      "label": "Menu, hours and retrieval",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    },
+    {
+      "key": "dietary_allergen",
+      "label": "Dietary and allergen safety",
+      "entries": 1,
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    {
+      "key": "reservations",
+      "label": "Reservations and transactions",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    },
+    {
+      "key": "admin_ops",
+      "label": "Admin operations",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    },
+    {
+      "key": "security_access",
+      "label": "Security and access",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    },
+    {
+      "key": "frontend",
+      "label": "Frontend and accessibility",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    },
+    {
+      "key": "reliability",
+      "label": "Reliability and fault recovery",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    },
+    {
+      "key": "performance",
+      "label": "Performance and latency",
+      "entries": 0,
+      "pass": 0,
+      "fail": 0,
+      "rate": null
+    }
+  ],
+  "gate": {
+    "ok": false,
+    "blocking": [
+      {
+        "id": "FM-021",
+        "reason": "a test fails"
+      }
+    ]
+  },
+  "entries": [
+    {
+      "id": "FM-001",
+      "status": "pass",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "fixture > FM-001 e2e fixture test",
+          "status": "passed",
+          "durationMs": 1,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "id": "FM-021",
+      "status": "fail",
+      "tests": [
+        {
+          "suite": "vitest",
+          "file": "tests/unit/failure-modes-ai.test.ts",
+          "name": "fixture > FM-021 e2e fixture test",
+          "status": "failed",
+          "durationMs": 1,
+          "failure": "AssertionError: e2e fixture failure"
+        }
+      ]
+    }
+  ]
+}

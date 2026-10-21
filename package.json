@@ -26,6 +26,7 @@
     "eval:smoke": "tsx scripts/eval-suite.ts smoke",
     "eval:full": "tsx scripts/eval-suite.ts full",
     "eval:report": "tsx scripts/eval-report.ts",
+    "eval:failure-modes": "tsx scripts/eval-failure-modes.ts",
     "bench": "tsx scripts/bench.ts",
     "model:check": "tsx scripts/model-check.ts",
     "model:warm": "tsx scripts/model-warm.ts",

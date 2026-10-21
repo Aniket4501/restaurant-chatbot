@@ -117,6 +117,44 @@ test("a scripted smoke run started from the page runs the real runner, and its r
   await expect(page.getByText(pct(passed(run), run.results.length), { exact: true })).toBeVisible();
 });
 
+test("FM-047 when a run finishes and is shown, the previous run's numbers are never left under its name while it loads @cat:evals", async ({ page }) => {
+  test.setTimeout(150_000);
+  await openEvals(page);
+  const headLine = new RegExp(`^${passed(HEAD)} of ${HEAD.results.length} cases(?! run)`);
+  await expect(page.getByText(headLine)).toBeVisible();
+  const headId = "2026-10-21T08-30-00-000Z_qwen3.5-9b_e2e-head";
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  // Hold the new run's detail, so the page is caught between selecting it and receiving it.
+  await page.route(/\/api\/admin\/evals\/runs\//, async (route) => {
+    if (!route.request().url().includes(headId)) await held;
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page.getByRole("button", { name: "View results" })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText("Loading the run…")).toBeVisible();
+  await expect(page.getByText(headLine)).toHaveCount(0);
+  release();
+  await expect(page.getByText("Loading the run…")).toHaveCount(0);
+});
+
+test("the failure-mode panel shows the register and the latest run against its baseline, with each entry's details (D-29) @cat:evals", async ({ page }) => {
+  const register = JSON.parse(fs.readFileSync("evals/failure-modes.json", "utf8")) as { failureModes: { id: string; trigger: string }[] };
+  await openEvals(page);
+  const panel = page.getByRole("region", { name: "Failure modes" });
+  await expect(panel.getByText(/^Run .* on code e2e0000/)).toBeVisible();
+  await expect(panel.getByText(/1 resolved, 1 new failures, 0 still failing/)).toBeVisible();
+  await expect(panel.getByText(String(register.failureModes.length), { exact: true })).toBeVisible();
+  await panel.getByLabel("Show").selectOption("changed");
+  const list = panel.getByRole("list", { name: "Failure modes" });
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await list.getByText("FM-021", { exact: true }).click();
+  await expect(list.getByText(register.failureModes.find((f) => f.id === "FM-021")!.trigger)).toBeVisible();
+  await expect(list.getByText("npm run eval:failure-modes -- --only FM-021")).toBeVisible();
+  await expect(list.getByRole("listitem").filter({ hasText: "FM-001" }).getByText("failing")).toBeVisible();
+  await axe(page, "failure modes");
+});
+
 test("with no results the page says how to start, instead of showing zeros @cat:evals", async ({ page, server }) => {
   const dir = path.resolve(serverFiles(server.port).evals);
   const hidden = `${dir}-hidden`;
