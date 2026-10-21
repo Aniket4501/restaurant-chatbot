@@ -9,7 +9,6 @@ export function testResetHandler(deps: ApiDeps) {
     if (!config.testMode) return errorResponse(404, "NOT_FOUND", "Not found.");
     const now = deps.now();
     const r = await resetTestDatabase(config, now);
-    deps.limits.adminLogin.reset();
     deps.limits.createsGlobal.reset();
     deps.limits.createsPerPhone.reset();
     deps.chat.limiter.reset?.();

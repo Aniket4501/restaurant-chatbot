@@ -23,7 +23,6 @@ export const LIMITS = {
   historyMax: 8,
   bodyBytesMax: 16 * 1024, // D-15
   turnsPerMin: 20, // per session and per socket address
-  adminLoginPerMin: 5,
   createsPerMinPerPhone: 5, // D-14
   createsPerMinGlobal: 30,
   retrievalTopK: 8,
@@ -39,14 +38,12 @@ export const MODEL = {
   keepAlive: "30m",
   promptBudgetTokens: 8192 - 512, // §5.8 CONTEXT_TOO_LARGE threshold
   chatTimeoutMs: 15_000,
+  // A call made while Ollama reports the model unloaded gets time to load it (D-23).
+  coldTimeoutMs: 45_000,
+  // The server warms the model this often (D-23): it stays loaded (keepAlive 30m) and its prompt prefixes stay cached.
+  rewarmEveryMs: 15 * 60_000,
   warmTimeoutMs: 120_000,
   embedTimeoutMs: 2_500, // over this, retrieval falls back to lexical for the turn (D-02)
-} as const;
-
-// Placeholders shipped in .env.example. Real values must differ (D-16).
-export const ENV_EXAMPLE_PLACEHOLDERS = {
-  ADMIN_PASSWORD: "change-me-to-12-or-more-chars",
-  ADMIN_SESSION_SECRET: "replace-with-output-of-openssl-rand-hex-32",
 } as const;
 
 export class ConfigError extends Error {
@@ -88,7 +85,6 @@ const EnvSchema = z.object({
   FAKE_SCRIPT: z.string().min(1).optional(),
   NOW_OVERRIDE: z.string().min(1).optional(),
   RATE_LIMIT_TURNS_PER_MIN: z.coerce.number().int().positive().optional(),
-  ADMIN_LOGIN_PER_MIN: z.coerce.number().int().positive().optional(),
   RESERVATION_CREATES_PER_MIN: z.coerce.number().int().positive().optional(),
   TEST_TRACE_PATH: z.string().min(1).optional(),
 });
@@ -106,7 +102,6 @@ export type AppConfig = Readonly<{
     fakeScript?: string;
     nowOverrideMs?: number;
     turnsPerMin?: number;
-    adminLoginPerMin?: number;
     createsPerMin?: number;
     tracePath?: string;
   }> | null;
@@ -173,7 +168,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         fakeScript: e.FAKE_SCRIPT,
         nowOverrideMs,
         turnsPerMin: e.RATE_LIMIT_TURNS_PER_MIN,
-        adminLoginPerMin: e.ADMIN_LOGIN_PER_MIN,
         createsPerMin: e.RESERVATION_CREATES_PER_MIN,
         tracePath: e.TEST_TRACE_PATH,
       }),
@@ -198,37 +192,4 @@ let cached: AppConfig | null = null;
 export function getConfig(): AppConfig {
   cached ??= loadConfig();
   return cached;
-}
-
-export type AdminSecrets =
-  | { ok: true; password: string; secretKey: Buffer }
-  | { ok: false; problems: string[] };
-
-function decodeSecret(s: string): Buffer | null {
-  if (/^[0-9a-f]+$/i.test(s) && s.length % 2 === 0) return Buffer.from(s, "hex");
-  if (/^[A-Za-z0-9+/_-]+={0,2}$/.test(s)) return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-  return null;
-}
-
-/**
- * D-16: ADMIN_PASSWORD (≥ 12 chars) and a separate ADMIN_SESSION_SECRET (≥ 32 random bytes, hex or base64).
- * Admin routes return 503 when this fails; problems name variables only.
- */
-export function loadAdminSecrets(env: Record<string, string | undefined> = process.env): AdminSecrets {
-  const problems: string[] = [];
-  const password = env.ADMIN_PASSWORD ?? "";
-  const secret = env.ADMIN_SESSION_SECRET ?? "";
-  if (!password) problems.push("ADMIN_PASSWORD is not set");
-  else if (password === ENV_EXAMPLE_PLACEHOLDERS.ADMIN_PASSWORD) problems.push("ADMIN_PASSWORD is still the .env.example placeholder");
-  else if ([...password].length < 12) problems.push("ADMIN_PASSWORD must be at least 12 characters");
-  let secretKey: Buffer | null = null;
-  if (!secret) problems.push("ADMIN_SESSION_SECRET is not set");
-  else if (secret === ENV_EXAMPLE_PLACEHOLDERS.ADMIN_SESSION_SECRET) problems.push("ADMIN_SESSION_SECRET is still the .env.example placeholder");
-  else {
-    secretKey = decodeSecret(secret);
-    if (!secretKey || secretKey.length < 32) problems.push("ADMIN_SESSION_SECRET must decode (hex or base64) to at least 32 bytes");
-  }
-  if (password && secret && password === secret) problems.push("ADMIN_SESSION_SECRET must differ from ADMIN_PASSWORD");
-  if (problems.length || !secretKey) return { ok: false, problems };
-  return { ok: true, password, secretKey };
 }

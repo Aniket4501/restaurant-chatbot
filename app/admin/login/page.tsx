@@ -1,12 +1,6 @@
-import type { Metadata } from "next";
-import { LoginForm } from "@/components/admin/LoginForm";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Staff sign-in · Neem & Ember" };
-
+// There is no staff sign-in any more (D-22); old links to the sign-in page open the bookings page.
 export default function LoginPage() {
-  return (
-    <main className="flex min-h-dvh items-center justify-center px-4 py-10">
-      <LoginForm />
-    </main>
-  );
+  redirect("/admin");
 }

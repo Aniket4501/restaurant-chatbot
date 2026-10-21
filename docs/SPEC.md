@@ -54,7 +54,7 @@ Payments, guest accounts, SMS or email, guest self-cancel or modify, table joini
 ## Assumptions
 
 - **A1** Demo date unknown, so seed exceptions use relative dates (`+5d`) and stay valid whenever the seed loads. Eval fixtures use absolute dates (§6.3).
-- **A2** Admin sign-in uses one shared password, `ADMIN_PASSWORD` in `.env.local`, which the user fills in (§5.9, §7.4).
+- **A2** ~~Admin sign-in uses one shared password, `ADMIN_PASSWORD` in `.env.local`, which the user fills in (§5.9, §7.4).~~ Superseded by D-22: the staff pages have no password.
 - **A3** Seed size: about 45 menu items across 6 categories and about 22 FAQ entries. That is enough that retrieval has to rank, not just return everything.
 - **A4** English only, prices in whole rupees, one machine, one SQLite file on local disk.
 

@@ -64,6 +64,16 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
   const [initial] = useState<Saved>(() => load() ?? fresh(restaurantName));
   const [s, setS] = useState<Saved>(initial);
   const [busy, setBusy] = useState(false);
+  // After 8 seconds of waiting, say it's still working (a model that has to load can take longer; D-23).
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!busy) return;
+    const t = setTimeout(() => setSlow(true), 8_000);
+    return () => {
+      clearTimeout(t);
+      setSlow(false);
+    };
+  }, [busy]);
   const [failed, setFailed] = useState<ChatRequest | null>(null);
   const [card, setCard] = useState<CardState>(() => (initial.pending ? { ...NO_CARD, locked: initial.pending.unknown } : NO_CARD));
   const [text, setText] = useState("");
@@ -335,8 +345,10 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
               <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neem-tint text-neem">
                 <LeafMark className="h-5 w-5" />
               </span>
-              <p className="rounded-2xl rounded-tl-md border border-line bg-paper px-4 py-2.5 text-muted" aria-label="Checking">
-                <span className="inline-block animate-pulse">Checking…</span>
+              <p className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-line bg-paper px-4 py-2.5 text-muted" aria-label="Checking">
+                {/* The dot pulses, not the text: faded text failed the contrast check mid-pulse (D-23). */}
+                <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-neem motion-safe:animate-pulse" />
+                <span>{slow ? "Still working on it, one moment…" : "Checking…"}</span>
               </p>
             </div>
           )}

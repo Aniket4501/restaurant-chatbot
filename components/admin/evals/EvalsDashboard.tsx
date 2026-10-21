@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { BarChart, LineChart, Sparkline } from "@/components/admin/evals/Charts";
@@ -22,7 +21,6 @@ function pickDefault(runs: RunSummary[]): string | null {
 }
 
 export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serverNow: number }) {
-  const router = useRouter();
   const [overview, setOverview] = useState<Overview>(initial);
   const [runId, setRunId] = useState<string | null>(() => pickDefault(initial.runs));
   const [baseId, setBaseId] = useState<string>("auto");
@@ -37,13 +35,12 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
 
   const loadOverview = useCallback(async () => {
     const r = await fetch("/api/admin/evals", { cache: "no-store" });
-    if (r.status === 401) return router.replace("/admin/login");
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const j = (await r.json()) as Overview & { now: number };
     setOverview(j);
     setNow(j.now);
     return j;
-  }, [router]);
+  }, []);
 
   // The selected run, its comparison and its cases.
   useEffect(() => {
@@ -52,10 +49,6 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
     const base = baseId === "auto" ? "" : `?base=${encodeURIComponent(baseId)}`;
     fetch(`/api/admin/evals/runs/${encodeURIComponent(runId)}${base}`, { cache: "no-store" })
       .then(async (r) => {
-        if (r.status === 401) {
-          router.replace("/admin/login");
-          return null;
-        }
         if (!r.ok) throw new Error((await r.json().catch(() => null))?.error?.message ?? `HTTP ${r.status}`);
         return (await r.json()) as RunDetail;
       })
@@ -66,7 +59,7 @@ export function EvalsDashboard({ initial, serverNow }: { initial: Overview; serv
         }
       })
       .catch((e: Error) => id === detailReq.current && setLoadError(`Couldn't load this run: ${e.message}`));
-  }, [runId, baseId, router]);
+  }, [runId, baseId]);
 
   // Follow a running job; when it ends, reload the runs and show the new one.
   useEffect(() => {

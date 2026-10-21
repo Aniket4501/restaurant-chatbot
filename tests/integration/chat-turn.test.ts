@@ -54,6 +54,26 @@ const say = (text: string, d: Partial<TurnInput> = {}, history: TurnInput["messa
 const act = (action: TurnInput["action"], draft: Draft): TurnInput => ({ now: NOW, sessionId: SID, messages: [], draft, action });
 const block = <K extends Block["type"]>(r: TurnReply, type: K) => r.reply.blocks.find((b) => b.type === type) as Extract<Block, { type: K }> | undefined;
 
+describe("cold model (D-23)", () => {
+  it("asks Ollama whether the model is loaded once per turn that calls the model, and the turn still answers", async () => {
+    const script = { "can I bring my dog": faq("Well-behaved dogs are welcome on the Golf Course Road terrace.", ["faq:pets"]) };
+    for (const state of [false, true, null]) {
+      let asked = 0;
+      const r = await runTurn(say("can I bring my dog"), { ...deps({ script }), modelLoaded: async () => (asked++, state) });
+      expect(r.reply.text).toBe("Well-behaved dogs are welcome on the Golf Course Road terrace.");
+      expect(asked).toBe(1);
+    }
+  });
+  it("doesn't ask when the turn needs no model call, or when the timeout is fixed", async () => {
+    let asked = 0;
+    const modelLoaded = async () => (asked++, false);
+    await runTurn(act({ type: "set_field", field: "branch", value: "hauz-khas" }, emptyDraft()), { ...deps(), modelLoaded });
+    const script = { "can I bring my dog": faq("Well-behaved dogs are welcome on the Golf Course Road terrace.", ["faq:pets"]) };
+    await runTurn(say("can I bring my dog"), { ...deps({ script }), modelLoaded, modelTimeoutMs: 5_000 });
+    expect(asked).toBe(0);
+  });
+});
+
 describe("booking flow (J3, J5; AC-01 logic)", () => {
   it("typed only: one message with every field and an open time gives the confirm card; model prose is dropped", async () => {
     const script = { "table for 4 tomorrow at 8pm in Hauz Khas": { ...booking({ branch: "hauz-khas", date: "2026-10-17", time: "20:00", partySize: 4 }), answer: "I've booked it!" } };
@@ -337,8 +357,7 @@ describe("POST /api/chat handler (D-15 caps, 429)", () => {
       now: () => NOW,
       config: () => configFor(!!o.test),
       fetch: (async () => Response.json({ models: [] })) as typeof fetch,
-      adminEnv: () => ({}),
-      limits: { createsPerPhone: createLimiter({ limit: 5, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 30, windowMs: 60_000 }), adminLogin: createLimiter({ limit: 5, windowMs: 60_000 }) },
+      limits: { createsPerPhone: createLimiter({ limit: 5, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 30, windowMs: 60_000 }) },
       chat: o.chat ?? testChatDeps(),
     };
     return api;

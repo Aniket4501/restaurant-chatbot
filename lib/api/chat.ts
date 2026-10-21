@@ -75,7 +75,7 @@ async function turnResult(deps: ApiDeps, body: ReturnType<typeof ChatBodySchema.
     const { sessionId, messages, draft, action, context } = body;
     const r = await runTurn(
       { now, sessionId, messages, draft, action, context },
-      { db: deps.db(), model: deps.chat.model(), embedder: deps.chat.embedder(), limiter: deps.chat.limiter, gate: deps.chat.gate, onPrompt: tracePath ? (p) => prompts.push(p) : undefined },
+      { db: deps.db(), model: deps.chat.model(), embedder: deps.chat.embedder(), limiter: deps.chat.limiter, gate: deps.chat.gate, modelLoaded: deps.chat.modelLoaded, onPrompt: tracePath ? (p) => prompts.push(p) : undefined },
     );
     if (tracePath) {
       // Test mode only: what was shown, plus an engine re-check of every offered time for INV-03 (§6.4).

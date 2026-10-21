@@ -384,8 +384,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
       now: () => now,
       config: () => loadConfig({ DATABASE_PATH: file }),
       fetch: (...a) => fetch(...a),
-      adminEnv: () => ({}),
-      limits: { createsPerPhone: createLimiter({ limit: 1000, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 1000, windowMs: 60_000 }), adminLogin: createLimiter({ limit: 5, windowMs: 60_000 }) },
+      limits: { createsPerPhone: createLimiter({ limit: 1000, windowMs: 60_000 }), createsGlobal: createLimiter({ limit: 1000, windowMs: 60_000 }) },
       chat: { model: () => model, embedder: () => embedder, limiter: noTurnLimit, gate: openGate },
     });
 

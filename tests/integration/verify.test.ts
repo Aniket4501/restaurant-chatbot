@@ -52,8 +52,7 @@ describe("POST /api/__test/reset", () => {
       now: () => 0,
       config: () => loadConfig({ DATABASE_PATH: path.join(os.tmpdir(), "x.db") }),
       fetch,
-      adminEnv: () => ({}),
-      limits: { createsPerPhone: createLimiter({ limit: 1, windowMs: 1 }), createsGlobal: createLimiter({ limit: 1, windowMs: 1 }), adminLogin: createLimiter({ limit: 1, windowMs: 1 }) },
+      limits: { createsPerPhone: createLimiter({ limit: 1, windowMs: 1 }), createsGlobal: createLimiter({ limit: 1, windowMs: 1 }) },
       chat: testChatDeps(),
     } as unknown as ApiDeps;
     const res = await testResetHandler(deps)();

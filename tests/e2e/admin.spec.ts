@@ -1,6 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { E2E_ADMIN, PORTS } from "./env";
 import { expect, test } from "./fixtures";
 
 // Admin UI (T-17, AC-07, J10, BR-13). The E2E server's today is Fri 16 Oct 2026 (NOW_OVERRIDE).
@@ -10,11 +9,10 @@ async function axe(page: Page, state: string) {
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`), `axe (${state})`).toEqual([]);
 }
 
-async function signIn(page: Page, password: string = E2E_ADMIN.password) {
+// No sign-in (D-22): the staff page opens directly.
+async function openAdmin(page: Page) {
   await page.goto("/admin");
-  await expect(page).toHaveURL(/\/admin\/login$/); // no session: the proxy sends staff to sign in
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible();
 }
 
 const SAT_8PM = Date.parse("2026-10-17T20:00:00+05:30");
@@ -33,7 +31,7 @@ test("AC-07 a booking made in chat appears in admin, by date and branch @cat:boo
   await form.getByRole("button", { name: "Confirm" }).click();
   const ref = await page.locator("[data-confirmation-ref]").getAttribute("data-confirmation-ref");
 
-  await signIn(page);
+  await openAdmin(page);
   await expect(page.getByRole("heading", { name: "Bookings" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Friday, 16 October 2026" })).toBeVisible(); // opens on today
   await expect(page.getByText("No bookings for this day.")).toBeVisible();
@@ -62,7 +60,7 @@ test("J10 cancelling in admin frees the slot straight away @cat:booking_success"
   const eightOpen = async () => ((await (await request.get(`${server.origin}/api/availability?branch=hauz-khas&date=2026-10-17&party=7&time=20:00`)).json()).slots as { time: string }[]).some((s) => s.time === "20:00");
   expect(await eightOpen()).toBe(false);
 
-  await signIn(page);
+  await openAdmin(page);
   await page.getByRole("button", { name: "Next day" }).click();
   const row = page.getByRole("row").filter({ hasText: "Kabir Mehta" });
   await row.getByRole("button", { name: "Cancel Kabir Mehta's booking at 8:00 PM" }).click();
@@ -81,30 +79,16 @@ test("J10 cancelling in admin frees the slot straight away @cat:booking_success"
   expect(observed.cancelResponses).toEqual([{ status: 200, ref: expect.stringMatching(/^NE-/) }]);
 });
 
-test("signing out revokes the session, including copies of the cookie", async ({ page, request, server }) => {
-  await signIn(page);
-  await expect(page.getByRole("heading", { name: "Bookings" })).toBeVisible();
-  const cookie = (await page.context().cookies()).find((c) => c.name === "ne_admin")!;
-  expect((await request.get(`${server.origin}/api/admin/reservations`, { headers: { cookie: `ne_admin=${cookie.value}` } })).status()).toBe(200);
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/admin\/login$/);
-  expect((await request.get(`${server.origin}/api/admin/reservations`, { headers: { cookie: `ne_admin=${cookie.value}` } })).status()).toBe(401);
-});
-
-test.describe("on the low-limit server", () => {
-  test.use({ baseURL: `http://127.0.0.1:${PORTS.lowLimit}` });
-
-  test("sign-in is throttled after repeated attempts", async ({ page }) => {
-    const error = page.locator("#login-error"); // Next.js's route announcer is also role=alert
-    await signIn(page, "not-the-password");
-    await expect(error).toHaveText("That password isn't right.");
-    await axe(page, "login error");
-    await page.getByLabel("Password").fill("still-not-it");
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(error).toHaveText("That password isn't right.");
-    await page.getByLabel("Password").fill(E2E_ADMIN.password);
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(error).toHaveText("Too many sign-in attempts. Please wait a minute.");
-    await expect(page).toHaveURL(/\/admin\/login$/);
-  });
+test("the staff pages open without a password, and the old sign-in address opens Bookings (D-22)", async ({ page, request, server }) => {
+  await page.goto("/admin/login");
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible();
+  await expect(page.getByLabel("Password")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Evals" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Evals" })).toBeVisible();
+  expect((await request.get(`${server.origin}/api/admin/reservations`)).status()).toBe(200);
+  // Changes still need the app's own origin: another site can't cancel a booking.
+  expect((await request.patch(`${server.origin}/api/admin/reservations/NE-00000000`, { headers: { origin: "https://evil.example", "content-type": "application/json" }, data: { status: "cancelled" } })).status()).toBe(403);
+  await axe(page, "evals without sign-in");
 });

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
-import { E2E_ADMIN, serverFiles } from "./env";
+import { serverFiles } from "./env";
 
 // D-21 evals dashboard on the test-mode server. Its results directory is seeded with two fixture runs (a baseline
 // and a later run) by scripts/e2e-prepare.ts; the numbers expected here are computed from those files, and the run
@@ -20,12 +20,7 @@ async function axe(page: Page, state: string) {
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`), `axe (${state})`).toEqual([]);
 }
 async function openEvals(page: Page) {
-  await page.goto("/admin/evals");
-  await expect(page).toHaveURL(/\/admin\/login$/);
-  await page.getByLabel("Password").fill(E2E_ADMIN.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/admin$/); // signed in (the cookie is set) before opening the evals page
-  await page.goto("/admin/evals");
+  await page.goto("/admin/evals"); // no sign-in (D-22)
   await expect(page.getByRole("heading", { level: 1, name: "Evals" })).toBeVisible();
 }
 
@@ -80,7 +75,7 @@ test("a scripted smoke run started from the page runs the real runner, and its r
   await expect(page.getByText(/^Running$/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Start run" })).toBeDisabled();
   // One run at a time, also through the API.
-  const again = await request.post(`${server.origin}/api/admin/evals/jobs`, { headers: { origin: server.origin, "content-type": "application/json", cookie: (await page.context().cookies()).map((c) => `${c.name}=${c.value}`).join("; ") }, data: { mode: "scripted", suite: "smoke" } });
+  const again = await request.post(`${server.origin}/api/admin/evals/jobs`, { headers: { origin: server.origin, "content-type": "application/json", }, data: { mode: "scripted", suite: "smoke" } });
   expect(again.status()).toBe(409);
   await expect(page.getByRole("button", { name: "View results" })).toBeVisible({ timeout: 120_000 });
   const file = fs.readdirSync(dir).find((f) => !before.has(f) && f.endsWith("_scripted_smoke.json"));

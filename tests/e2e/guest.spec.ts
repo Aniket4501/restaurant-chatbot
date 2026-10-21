@@ -165,6 +165,23 @@ test("J9 and AC-10: with the model down, booking still works through the chips @
   expect(rows(server.db)).toHaveLength(1);
 });
 
+test("a slow reply says it's still working, then shows the answer (D-23) @cat:backend_failure", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto("/");
+  // Hold the reply for 10 seconds, as when the local model has to load first.
+  await page.route("**/api/chat", async (route) => {
+    await new Promise((r) => setTimeout(r, 10_000));
+    await route.continue();
+  }, { times: 1 });
+  await say(page, "can I bring my dog?");
+  const waiting = page.getByLabel("Checking");
+  await expect(waiting).toHaveText("Checking…");
+  await expect(waiting).toHaveText("Still working on it, one moment…", { timeout: 12_000 });
+  await axe(page, "slow reply");
+  await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.").first()).toBeVisible({ timeout: 20_000 });
+  await expect(waiting).toHaveCount(0);
+});
+
 test("a failed chat request says so and can be retried @cat:backend_failure", async ({ page }) => {
   await page.goto("/");
   await page.route("**/api/chat", (route) => route.abort("failed"), { times: 1 });

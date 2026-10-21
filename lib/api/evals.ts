@@ -7,11 +7,10 @@ import { describeExpect } from "@/evals/describe";
 import { baselineFile, resultsDir } from "@/evals/paths";
 import { baselineFor, baselineKey, caseStatuses, compareRuns, listRuns, previousComparable, readBaseline, type Comparison, type Run } from "@/evals/report";
 import type { ApiDeps } from "@/lib/api/deps";
-import { requireAdmin } from "@/lib/api/admin";
 import { cancelJob, currentJob, startJob } from "@/lib/evals/jobs";
 import { errorResponse, okResponse, readJson } from "@/lib/http/json";
 
-// D-21: the evals dashboard API (admin only, like every /api/admin route: proxy.ts and requireAdmin). Every number
+// D-21: the evals dashboard API (staff pages: loopback only and same-origin changes, proxy.ts; no password, D-22). Every number
 // comes from the runner's results files (evals/report.ts); run controls start the real runner (lib/evals/jobs.ts).
 
 export type EvalsDeps = { resultsDir: () => string; baselineFile: () => string; root: () => string; casesDir: () => string };
@@ -58,9 +57,7 @@ export function evalsOverview(ev: EvalsDeps = defaultEvalsDeps()) {
 
 /** GET /api/admin/evals: every run's summary (newest first), the saved baselines and the current job. */
 export function evalsOverviewHandler(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps()) {
-  return async (req: Request): Promise<Response> => {
-    const auth = requireAdmin(req, deps);
-    if (!auth.ok) return auth.response;
+  return async (): Promise<Response> => {
     return okResponse(200, { ...evalsOverview(ev), now: deps.now() });
   };
 }
@@ -70,8 +67,6 @@ const RunQuery = z.object({ base: z.string().regex(/^[\w.-]{1,120}$/).optional()
 /** GET /api/admin/evals/runs/:id[?base=:id]: the run, its comparison and one row per case for the failure explorer. */
 export function evalsRunHandler(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps()) {
   return async (req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> => {
-    const auth = requireAdmin(req, deps);
-    if (!auth.ok) return auth.response;
     const { id } = await ctx.params;
     const q = RunQuery.safeParse(Object.fromEntries(new URL(req.url).searchParams));
     if (!q.success) return errorResponse(400, "VALIDATION", "Please check the comparison run.");
@@ -126,8 +121,6 @@ export function failureType(line: string): string {
 /** GET /api/admin/evals/runs/:id/cases/:caseId: everything recorded for one case (each repeat), and how to rerun it. */
 export function evalsCaseHandler(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps()) {
   return async (req: Request, ctx: { params: Promise<{ id: string; caseId: string }> }): Promise<Response> => {
-    const auth = requireAdmin(req, deps);
-    if (!auth.ok) return auth.response;
     const { id, caseId } = await ctx.params;
     const run = findRun(listRuns(ev.resultsDir()), id);
     const results = run?.results.filter((r) => r.id === caseId) ?? [];
@@ -161,14 +154,10 @@ const JobBody = z.strictObject({
 /** GET (status), POST (start) and DELETE (cancel) /api/admin/evals/jobs. */
 export function evalsJobHandlers(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps(), spawnFn?: Parameters<typeof startJob>[1]["spawn"]) {
   return {
-    GET: async (req: Request): Promise<Response> => {
-      const auth = requireAdmin(req, deps);
-      if (!auth.ok) return auth.response;
+    GET: async (): Promise<Response> => {
       return okResponse(200, { job: currentJob(), now: deps.now() });
     },
     POST: async (req: Request): Promise<Response> => {
-      const auth = requireAdmin(req, deps);
-      if (!auth.ok) return auth.response;
       const body = await readJson(req);
       if (!body.ok) return body.response;
       const p = JobBody.safeParse(body.value);
@@ -188,9 +177,7 @@ export function evalsJobHandlers(deps: ApiDeps, ev: EvalsDeps = defaultEvalsDeps
       if (!r.ok) return errorResponse(409, "BUSY", r.message, { job: currentJob() });
       return okResponse(202, { job: r.job });
     },
-    DELETE: async (req: Request): Promise<Response> => {
-      const auth = requireAdmin(req, deps);
-      if (!auth.ok) return auth.response;
+    DELETE: async (): Promise<Response> => {
       return okResponse(200, { job: cancelJob() });
     },
   };

@@ -10,7 +10,7 @@ One local Next.js process serves the guest chat, the admin page and the JSON API
 Browser ─ guest chat (/), admin (/admin; data loaded client-side via the admin API)
    │  JSON over fetch; confirmation cards are built only from POST /api/reservations responses
    ▼
-proxy.ts ─ Host/Origin/Content-Type checks on /api/* and /admin/*; admin cookie gate (D-16)
+proxy.ts ─ Host/Origin/Content-Type checks on /api/* and /admin/* (D-16); no staff sign-in (D-22)
    ▼
 Next.js 16.4 on 127.0.0.1 (route handlers + server components; DB opened lazily; `await connection()` before reads; one getNow())
    ├─ POST /api/chat ──► runTurn(input, deps{db, model, embedder, rateLimiter, clock})
@@ -20,7 +20,7 @@ Next.js 16.4 on 127.0.0.1 (route handlers + server components; DB opened lazily;
    │                       └─► router ──► availability engine (pure) ◄── loadAvailabilityData ◄── SQLite
    ├─ GET  /api/availability ──► engine
    ├─ POST /api/reservations ──► booking service: one IMMEDIATE transaction ──► SQLite (+ overlap triggers)
-   ├─ /api/admin/* ──► requireAdmin() ──► repo ──► SQLite
+   ├─ /api/admin/* ──► repo ──► SQLite
    └─ GET  /api/health ──► DB ping, Ollama reachability, model digests, index coverage (no secrets)
 ```
 
@@ -107,7 +107,7 @@ Phase 2 reproduced the race design: 20 processes → 1 created and 19 `SLOT_TAKE
 
 ## API
 
-The §5.9 endpoints, plus D-14's typed 409 bodies (`SLOT_TAKEN`, `SLOT_UNAVAILABLE`, `DUPLICATE_BOOKING`) and a test-only `POST /api/__test/reset`, which returns 404 unless `E2E_TEST_MODE=1`. All bodies are Zod-validated. Errors use `{ error: { code, message, fields? } }`, with the typed extras above.
+The §5.9 endpoints except `/api/admin/session` (removed with the staff password, D-22), the D-21 evals endpoints under `/api/admin/evals`, plus D-14's typed 409 bodies (`SLOT_TAKEN`, `SLOT_UNAVAILABLE`, `DUPLICATE_BOOKING`) and a test-only `POST /api/__test/reset`, which returns 404 unless `E2E_TEST_MODE=1`. All bodies are Zod-validated. Errors use `{ error: { code, message, fields? } }`, with the typed extras above.
 
 **`POST /api/chat` as built (T-13, `lib/chat/types.ts`).**
 - **Body:** `{ sessionId (UUID), messages, draft, action?, context? }`.
@@ -138,7 +138,7 @@ The §5.9 endpoints, plus D-14's typed 409 bodies (`SLOT_TAKEN`, `SLOT_UNAVAILAB
 ## Security and privacy boundaries
 
 - **Network:** the server binds `127.0.0.1` only. `proxy.ts` checks Host, Origin and Content-Type. `OLLAMA_BASE_URL` must be a loopback http URL, and cloud model names are rejected. `NEXT_TELEMETRY_DISABLED=1` is set in every script. No hosted provider exists in code (H1, H2, D-16).
-- **Admin:** `ADMIN_PASSWORD` (≥ 12 characters) and a separate `ADMIN_SESSION_SECRET` (≥ 32 bytes) are validated at startup; without them admin returns 503. The cookie holds an HMAC-SHA256-signed `{iat, exp, epoch}` payload, is httpOnly and SameSite=Strict, lasts 8 h, and is checked with `timingSafeEqual`. Sign-out revokes it. Sign-in allows 5 attempts per minute. `requireAdmin()` runs in every admin handler and on the admin page, and admin uses no Server Actions.
+- **Admin:** no sign-in since D-22 (the user's request): the staff pages and APIs rely on the 127.0.0.1 bind, the loopback Host check and the same-origin check on every state-changing request. Anyone using this computer can open them. Admin uses no Server Actions.
 - **Model containment:** guest and history text are data (neutralised fence, JSON history). The model has no tools, and its output is schema-validated. Booking turns are templated, hours answers are rendered from facts, and grounding and claim rules run on all other prose. Injection, forged-history and forged-draft cases run in the evals.
 - **PII:** phones and emails are masked in every message before retrieval and the prompt. Guest text, names, phones and emails never enter `chat_turns` or logs. Guest data lives only in `reservations`, readable through admin. `DUPLICATE_BOOKING` reveals another booking's time and ref only on a name match (proposed J7 amendment).
 - **Abuse limits:** 20 turns per minute per session and per socket address (global on loopback, documented). Bounded limiter state. 5 creates per minute per phone plus a global cap. One model call in flight at a time, with a small queue.

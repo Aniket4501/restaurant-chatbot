@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { ChevronIcon } from "@/components/ui/icons";
@@ -41,7 +40,6 @@ function longLabel(date: string, zone: string): string {
 const short = (name: string) => name.split(", ").pop()!;
 
 export function AdminDashboard({ today, branches, zone }: Props) {
-  const router = useRouter();
   const [date, setDate] = useState(today);
   const [branch, setBranch] = useState("all");
   const [data, setData] = useState<List | null>(null);
@@ -56,10 +54,6 @@ export function AdminDashboard({ today, branches, zone }: Props) {
     const id = ++request.current;
     try {
       const res = await fetch(`/api/admin/reservations?date=${date}&branch=${branch}&status=all`, { cache: "no-store" });
-      if (res.status === 401) {
-        router.replace("/admin/login");
-        return;
-      }
       if (!res.ok) throw new Error(String(res.status));
       const j = (await res.json()) as List;
       if (id === request.current) {
@@ -69,7 +63,7 @@ export function AdminDashboard({ today, branches, zone }: Props) {
     } catch {
       if (id === request.current) setError("Couldn't load bookings.");
     }
-  }, [date, branch, router]);
+  }, [date, branch]);
 
   useEffect(() => {
     const first = setTimeout(load, 0);
@@ -96,7 +90,6 @@ export function AdminDashboard({ today, branches, zone }: Props) {
     setBusy(true);
     try {
       const res = await fetch(`/api/admin/reservations/${cancelling.ref}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "cancelled" }) });
-      if (res.status === 401) return router.replace("/admin/login");
       if (!res.ok) throw new Error(String(res.status));
       dialog.current?.close();
       setCancelling(null);

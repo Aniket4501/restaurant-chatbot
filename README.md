@@ -22,13 +22,13 @@ Then:
 
 ```bash
 npm install
-cp .env.example .env.local     # set ADMIN_PASSWORD (12+ characters) and ADMIN_SESSION_SECRET (openssl rand -hex 32)
+cp .env.example .env.local     # optional: only to override the defaults
 npm run setup                  # migrate and seed data/app.db, index the menu and FAQ facts, check the model
-npm run model:warm             # optional: loads the model so the first reply is quick
+npm run model:warm             # optional: the server also warms the model when it starts
 npm run dev                    # http://127.0.0.1:3000 for guests, http://127.0.0.1:3000/admin for staff
 ```
 
-The app listens on 127.0.0.1 only. Staff pages stay disabled until both admin values are set in `.env.local`. To start from fresh demo data, run `npm run db:reset && npm run kb:index`. This rebuilds `data/app.db`, deleting any bookings made so far, and re-indexes the facts; without `kb:index`, retrieval falls back to keyword search.
+The app listens on 127.0.0.1 only. The staff pages have no password (anyone using this computer can open them); other websites still can't change anything, since every change must come from the app's own pages. To start from fresh demo data, run `npm run db:reset && npm run kb:index`. This rebuilds `data/app.db`, deleting any bookings made so far, and re-indexes the facts; without `kb:index`, retrieval falls back to keyword search.
 
 ## What you can do
 
@@ -41,9 +41,9 @@ The app listens on 127.0.0.1 only. Staff pages stay disabled until both admin va
 
 The booking reference appears only after the booking has been saved. Full times, invalid party sizes (online booking is for 1 to 8 guests), past dates and dates more than 30 days ahead are explained, with alternatives where there are any.
 
-**Staff** (`/admin`): sign in with `ADMIN_PASSWORD`, pick a date (it opens on today) and optionally a branch. You see the day's booking and guest counts and a table of each booking's time, guest, party size, branch and status. Cancelling a booking frees its table straight away.
+**Staff** (`/admin`, no sign-in): pick a date (it opens on today) and optionally a branch. You see the day's booking and guest counts and a table of each booking's time, guest, party size, branch and status. Cancelling a booking frees its table straight away.
 
-**Evals** (`/admin/evals`, staff only): how the chatbot scores on its test cases. Start a scripted or live run (smoke or full, optionally one quality area), follow its progress, compare any run with the saved baseline or another run, see quality by area with each metric's definition and case count, trends across runs, new failures and resolved cases, and open any case to see each turn's input, reply, tool calls, validation results and checks, with the command that reruns it. Every number comes from the results files in `evals/results`; see `evals/README.md`.
+**Evals** (`/admin/evals`, no sign-in): how the chatbot scores on its test cases. Start a scripted or live run (smoke or full, optionally one quality area), follow its progress, compare any run with the saved baseline or another run, see quality by area with each metric's definition and case count, trends across runs, new failures and resolved cases, and open any case to see each turn's input, reply, tool calls, validation results and checks, with the command that reruns it. Every number comes from the results files in `evals/results`; see `evals/README.md`.
 
 ## How it works
 
@@ -137,10 +137,10 @@ The eval cases, layers, metrics, baseline and how to reproduce a failure are des
 - **Menu data limits.**
   - The seed labels the Chocolate Chilli Mousse both vegetarian and containing egg; it appears for "vegetarian" with "Contains egg" on its card.
   - Allergen labels cover only dairy, nuts and egg, so every answer involving an allergy carries a "tell your server" note.
-- **Speed.** Warm replies take about 2–4 s on an M4 Pro, but were slower than 4 s when the machine was heavily loaded. The first reply after the model loads can take 8–14 s; `npm run model:warm` avoids that.
+- **Speed.** Warm replies take about 2–4 s on an M4 Pro, but were slower than 4 s when the machine was heavily loaded. The first reply after the model loads can take 8–14 s; the server warms the model when it starts and every 15 minutes, so this happens only if Ollama was restarted (the chat then says it's still working).
 - **Out of scope:**
   - guests can't change or cancel a booking themselves: the chat gives the branch phone, and staff cancel in admin;
   - no payments, SMS or email, guest accounts, waitlists or table joining;
   - English only.
-- **Not production-hardened.** It runs as a single local process (in-memory rate limits) with one shared staff password, and binds to 127.0.0.1.
+- **Not production-hardened.** It runs as a single local process (in-memory rate limits) with no staff password, and binds to 127.0.0.1.
 - **Evaluation caveat.** The evaluation is a finite set of conversations: evidence, not proof.

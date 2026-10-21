@@ -63,7 +63,7 @@ A client rejects, with `ModelError`, only when there is no HTTP response: connec
 
 The messages name the fix ("Is `ollama serve` running?", "`ollama pull qwen3.5:9b`"). They never include guest text.
 
-**Timeouts** (`MODEL` in `lib/config.ts`): 15 s per chat call, so at most 30 s with the retry. The warm-up call gets 120 s. The caller passes `AbortSignal.timeout(MODEL.chatTimeoutMs)`.
+**Timeouts** (`MODEL` in `lib/config.ts`): 15 s per chat call, so at most 30 s with the retry; 45 s when Ollama's `/api/ps` reports the chat model unloaded (D-23, `lib/llm/warmth.ts`). The warm-up call gets 120 s. The caller passes `AbortSignal.timeout(modelTimeout(...))`.
 
 **Ollama request (`lib/llm/ollama.ts`, D-05).** `POST /api/chat` with `{ model, messages, stream: false, format, think: false, truncate: false, keep_alive: "30m", options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: 400 } }`. The Modelfile sampling parameters are kept. Thinking is detected in `message.thinking` or inline `<think>` tags. Layer A tests (`tests/unit/llm-ollama.test.ts`) stub `fetch` for the body, ECONNREFUSED, a timeout, HTTP 404, 400 and 500, thinking and a non-JSON body (D-12).
 
@@ -76,7 +76,7 @@ The messages name the fix ("Is `ollama serve` running?", "`ollama pull qwen3.5:9
 - the embedder's dimension and norm;
 - retrieval index coverage for the configured database (D-13). Incomplete coverage is a warning, because retrieval falls back to lexical.
 
-**`npm run model:warm`** plants a prefix-cache snapshot at the static-prompt boundary for today (`plantSnapshot`: two requests that share the system prompt and diverge at the first user token, OL-22/23), then warms the embedder. The live eval runner does the same for its cases' date before the first scored turn.
+**`npm run model:warm`** (and the running server, at start and every 15 minutes, D-23) plants a prefix-cache snapshot at the static-prompt boundary for today (`plantSnapshot`: two requests that share the system prompt and diverge at the first user token, OL-22/23), then warms the embedder. The live eval runner does the same for its cases' date before the first scored turn.
 
 ## The recommendation chooser (D-20)
 

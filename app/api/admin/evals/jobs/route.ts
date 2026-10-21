@@ -6,6 +6,6 @@ let h: ReturnType<typeof evalsJobHandlers> | null = null;
 const handlers = () => (h ??= evalsJobHandlers(defaultDeps()));
 
 export const dynamic = "force-dynamic";
-export const GET = (req: Request) => handlers().GET(req);
+export const GET = () => handlers().GET();
 export const POST = (req: Request) => handlers().POST(req);
-export const DELETE = (req: Request) => handlers().DELETE(req);
+export const DELETE = () => handlers().DELETE();

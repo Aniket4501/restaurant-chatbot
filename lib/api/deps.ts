@@ -5,6 +5,7 @@ import { createLimiter, type Limiter } from "@/lib/http/ratelimit";
 import { embedderFor, type Embedder } from "@/lib/kb/embedder";
 import type { ModelClient } from "@/lib/llm/client";
 import { modelFor } from "@/lib/llm/provider";
+import { loadedChecker } from "@/lib/llm/warmth";
 import { getNow } from "@/lib/time/now";
 
 /**
@@ -16,11 +17,9 @@ export type ApiDeps = {
   now: () => number;
   config: () => AppConfig;
   fetch: typeof fetch;
-  /** Where admin secrets are read from (D-16); process.env in production. */
-  adminEnv: () => Record<string, string | undefined>;
-  limits: { createsPerPhone: Limiter; createsGlobal: Limiter; adminLogin: Limiter };
+  limits: { createsPerPhone: Limiter; createsGlobal: Limiter };
   /** Chat turn dependencies (D-12): the configured model and embedder, turn limits and the model-call gate (D-14). */
-  chat: { model: () => ModelClient; embedder: () => Embedder | null; limiter: TurnLimiter; gate: ModelGate };
+  chat: { model: () => ModelClient; embedder: () => Embedder | null; limiter: TurnLimiter; gate: ModelGate; modelLoaded?: () => Promise<boolean | null> };
 };
 
 function lazy<T>(make: () => T): () => T {
@@ -28,18 +27,18 @@ function lazy<T>(make: () => T): () => T {
   return () => (v ??= { value: make() }).value;
 }
 
-let shared: ApiDeps | null = null;
+// Kept on globalThis: the route bundles and the instrumentation bundle (lib/llm/warmer.ts) each get their own copy of
+// this module, and they must share one model gate and one set of limits (D-23 review; like lib/evals/jobs.ts).
+const g = globalThis as typeof globalThis & { __rcApiDeps?: ApiDeps };
 export function defaultDeps(): ApiDeps {
-  if (!shared) {
+  if (!g.__rcApiDeps) {
     const testCreates = () => getConfig().test?.createsPerMin;
-    shared = {
+    g.__rcApiDeps = {
       db: getDb,
       now: () => getNow(),
       config: getConfig,
       fetch: (...a) => fetch(...a),
-      adminEnv: () => process.env,
       limits: {
-        adminLogin: createLimiter({ limit: getConfig().test?.adminLoginPerMin ?? LIMITS.adminLoginPerMin, windowMs: 60_000 }),
         createsPerPhone: createLimiter({ limit: testCreates() ?? LIMITS.createsPerMinPerPhone, windowMs: 60_000 }),
         createsGlobal: createLimiter({ limit: (testCreates() ?? 0) * 6 || LIMITS.createsPerMinGlobal, windowMs: 60_000 }),
       },
@@ -51,10 +50,11 @@ export function defaultDeps(): ApiDeps {
           createLimiter({ limit: getConfig().test?.turnsPerMin ?? LIMITS.turnsPerMin, windowMs: 60_000 }),
         ),
         gate: createModelGate({ concurrency: 1, maxQueue: 4 }),
+        modelLoaded: getConfig().llmProvider === "ollama" ? loadedChecker(getConfig().ollamaBaseUrl, getConfig().chatModel) : undefined,
       },
     };
   }
-  return shared;
+  return g.__rcApiDeps;
 }
 
 /** Lazily bind a handler factory to the default deps on first request (never at import: `next build` imports routes). */

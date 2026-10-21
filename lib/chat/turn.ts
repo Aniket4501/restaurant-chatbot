@@ -10,6 +10,7 @@ import { CORRECTIVE_MESSAGE, interpretEnvelope, interpretJson, ModelError, type 
 import { CHOOSER_JSON_SCHEMA, CHOOSER_VERSION, ChooserSchema } from "@/lib/llm/chooser";
 import { buildPrompt, promptChars, PROMPT_VERSION, type SystemPromptInput } from "@/lib/llm/prompt";
 import { foldDigits, maskMessages } from "@/lib/llm/redact";
+import { modelTimeout } from "@/lib/llm/warmth";
 import { TURN_JSON_SCHEMA, type Intent } from "@/lib/llm/schema";
 import type { LocalDate } from "@/lib/time/tz";
 import { checkGrounding } from "@/lib/chat/grounding";
@@ -43,6 +44,8 @@ export type TurnDeps = {
   gate?: ModelGate;
   elapsed?: () => number;
   modelTimeoutMs?: number;
+  /** Whether the chat model is loaded right now (Ollama /api/ps); not loaded → the cold timeout (D-23). */
+  modelLoaded?: () => Promise<boolean | null>;
   /** Test trace (D-12): receives the masked prompt of each model turn. */
   onPrompt?: (p: { system: string; user: string }) => void;
   /** Availability reads; the eval runner injects a failing one for backend-failure cases (§6.2 #16). */
@@ -170,11 +173,16 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   metrics.promptVersion = PROMPT_VERSION;
   if (promptChars(prompt) > PROMPT_CHAR_BUDGET) return finish(degradedStep(draft0, ctx, "CONTEXT_TOO_LARGE"), null);
 
+  // How long a model call may take: longer when Ollama reports the model unloaded, so a reload is a slow reply rather
+  // than a failed one (D-23). Asked once per turn, inside the gate, so a warm-up the turn waited behind is counted.
+  let timeout: number | null = null;
+  const timeoutMs = async () => (timeout ??= modelTimeout(deps.modelTimeoutMs === undefined && deps.modelLoaded ? await deps.modelLoaded() : null, deps.modelTimeoutMs));
+
   // 6–7. Call the model through the gate; one corrective retry for invalid output, one trimmed retry for context.
   const call = async (attempt: 1 | 2, messages: LlmMessage[]): Promise<{ result: Interpreted; content: string }> => {
     const m0 = elapsed();
     try {
-      const env = await deps.model.chat({ messages, format: TURN_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(deps.modelTimeoutMs ?? MODEL.chatTimeoutMs) });
+      const env = await deps.model.chat({ messages, format: TURN_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(await timeoutMs()) });
       const result = interpretEnvelope(env);
       metrics.promptTokens = env.prompt_eval_count;
       metrics.cachedTokens = env.prompt_eval_cached_count;
@@ -200,7 +208,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const chooser: ChooserCall = async (attempt, messages) => {
     const m0 = elapsed();
     try {
-      const env = await deps.model.chat({ messages, format: CHOOSER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(deps.modelTimeoutMs ?? MODEL.chatTimeoutMs) });
+      const env = await deps.model.chat({ messages, format: CHOOSER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(await timeoutMs()) });
       const r = interpretJson(env, ChooserSchema);
       return r.ok ? { choice: r.value, code: "ok", content: env.content } : { choice: null, code: r.code, content: env.content };
     } catch (e) {

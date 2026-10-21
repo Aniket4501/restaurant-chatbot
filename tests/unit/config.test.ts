@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ConfigError, ENV_EXAMPLE_PLACEHOLDERS, loadAdminSecrets, loadConfig } from "@/lib/config";
+import { ConfigError, loadConfig } from "@/lib/config";
 import { getNow } from "@/lib/time/now";
 
 const CWD = path.resolve(__dirname, "../..");
@@ -85,31 +85,3 @@ describe("test-mode guard (D-12)", () => {
   });
 });
 
-describe("admin secrets (D-16)", () => {
-  const goodSecret = "a".repeat(64);
-  it("accepts a 12+ char password and a 32-byte hex secret", () => {
-    const r = loadAdminSecrets({ ADMIN_PASSWORD: "correct horse battery", ADMIN_SESSION_SECRET: goodSecret });
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.secretKey.length).toBe(32);
-  });
-  it("accepts a base64 secret of 32 bytes", () => {
-    expect(loadAdminSecrets({ ADMIN_PASSWORD: "correct horse battery", ADMIN_SESSION_SECRET: Buffer.alloc(32, 7).toString("base64") }).ok).toBe(true);
-  });
-  it.each([
-    [{}, ["ADMIN_PASSWORD is not set", "ADMIN_SESSION_SECRET is not set"]],
-    [{ ADMIN_PASSWORD: "short", ADMIN_SESSION_SECRET: goodSecret }, ["ADMIN_PASSWORD must be at least 12 characters"]],
-    [{ ADMIN_PASSWORD: ENV_EXAMPLE_PLACEHOLDERS.ADMIN_PASSWORD, ADMIN_SESSION_SECRET: goodSecret }, ["ADMIN_PASSWORD is still the .env.example placeholder"]],
-    [{ ADMIN_PASSWORD: "correct horse battery", ADMIN_SESSION_SECRET: ENV_EXAMPLE_PLACEHOLDERS.ADMIN_SESSION_SECRET }, ["ADMIN_SESSION_SECRET is still the .env.example placeholder"]],
-    [{ ADMIN_PASSWORD: "correct horse battery", ADMIN_SESSION_SECRET: "ab".repeat(16) }, ["ADMIN_SESSION_SECRET must decode (hex or base64) to at least 32 bytes"]],
-    [{ ADMIN_PASSWORD: goodSecret, ADMIN_SESSION_SECRET: goodSecret }, ["ADMIN_SESSION_SECRET must differ from ADMIN_PASSWORD"]],
-  ])("rejects %o", (env, expected) => {
-    const r = loadAdminSecrets(env as Record<string, string>);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.problems).toEqual(expected);
-  });
-  it("never echoes secret values in problems", () => {
-    const r = loadAdminSecrets({ ADMIN_PASSWORD: "hunter2-but-longer!", ADMIN_SESSION_SECRET: "hunter2-but-longer!" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.problems.join(" ")).not.toContain("hunter2");
-  });
-});

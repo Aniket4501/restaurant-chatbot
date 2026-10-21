@@ -1,6 +1,6 @@
 # Status
-Phase: 7 — QA and AI evaluation (DONE) + D-19 demo scope + D-20 + D-21 (eval framework, dashboard, improvements)   Gate pending: none (G1, G2, G2-M approved 2026-10-19; G3 not triggered)   Updated: 2026-10-20
-Current task: none. D-21 delivered: eval framework, /admin/evals dashboard, baseline, audit fixes, final runs (docs/EVAL_REPORT.md D-21 section)   Branch: build/reservation-bot   Last commit: see `git log -1`
+Phase: 7 — QA and AI evaluation (DONE) + D-19 demo scope + D-20 + D-21 (eval framework, dashboard, improvements)   Gate pending: none (G1, G2, G2-M approved 2026-10-19; G3 not triggered)   Updated: 2026-10-21
+Current task: D-22 (no staff password) and D-23 (model kept warm; cold timeout; still-working hint), 2026-10-21   Branch: build/reservation-bot   Last commit: see `git log -1`
 D-20 (user, 2026-10-20): LLM-chosen recommendations validated by code, preference memory, menu browsing, one reply per action, no duplicate fact card. 46955af = D-20 (1/2)
 D-20 review (docs/research/2026-10-20-d20-review.json): 48 confirmed findings, 42 fixed with a test, 6 partly fixed or deliberately unchanged (listed in the file and in DECISIONS D-20 amendment)
 D-21 (user, 2026-10-21): eval framework (9 quality areas, suites, reports, baseline comparison), /admin/evals dashboard, +85 framework cases and +36 audit cases (24 scripted, 12 live), improvements measured against the baseline
@@ -8,7 +8,8 @@ D-21 baseline (56297b8, evals/baseline.json): scripted 73/75, live 173/187, 0 in
 D-21 audit (read-only workflow): 32 confirmed findings, each a case; see DECISIONS D-21 improvements
 D-21 final (24437ac): scripted 100/100; live 206/211, 0 invariant violations, 16/16 gates; the 187 baseline cases 173 → 186; audit live 2/12 → 11/12, scripted 0/24 → 25/25; held-out 7/12 → 9/12 (LV-HOLD-009/012 fixed after scoring, verified on 11 targeted live cases)
 Remaining: meta request + restaurant question read as off_topic (LV-SAFE-008, LV-HOLD-010); chooser sometimes asks instead of choosing (LV-AUD-008); exception-day "today/tonight" grounding (audit, medium); gate-full 429 has no Try again (audit, low); release run (×3) not repeated for D-21
-Last verification (2026-10-20):
+Last verification (2026-10-21, D-22 + D-23): `npm run verify` 9/9 (unit 437, integration 222, D1 100/100, E2E 32/32). Read-only review (3 reviewers, 8 skeptics): 6 confirmed findings, all fixed (warm-up had its own gate in the built server, CLI eval runs not detected, embedder warmed under EMBED_PROVIDER=fake, two stale docs, two dropped proxy host cases); the warm-up round test fails when the gate is bypassed or held for the whole round
+Earlier verification (2026-10-20):
 - After the review fixes: unit 424, integration 212, D1 70/70, E2E 27/27 (each run separately; `npm run verify` result in the D-20 (2/2) commit message)
 - Mutation checks: each new D1 case (SC-REC-007, 014, 015, 016) and E2E guard test (reload replay, chips during a submit, in-flight flag) fails when its fix is removed; the unmutated build passes
 - Live D2 × 1 of the review fixes (8c6d6f6, d20-try3): 107/107, 0 invariant violations, every metric 1.0 except retrieval (floors met); recommendation p50/p95 7.4/8.7 s at load average 10
@@ -19,7 +20,7 @@ Local run: dev server on 127.0.0.1:3005 (`npm run dev -- -p 3005`) while tests r
 Demo data: bookings NE-XSP39FY6 and NE-FS2SXF3Q remain in data/app.db (cancel in admin, or `npm run db:reset && npm run kb:index`)
 Not done (would need a decision to resume): Phase 8 independent review of the restyle and D-17 addendum; the rest of Phase 9 (fresh-clone check AC-11, final report)
 Notes:
-- `.env.local` exists (generated admin values, git-ignored); see the password with `grep ADMIN_PASSWORD .env.local`
+- `.env.local` may still hold the old ADMIN_* values; they are ignored since D-22 (no staff password)
 - Latency on this shared machine is noisy; identical repeated prompts hit the prefix cache, so run 1 is reported separately
 - New eval-case guest texts need `npx tsx scripts/kb-embed-fixture.ts` (Ollama) for real vectors under the fake embedder
 Open questions / blockers:
