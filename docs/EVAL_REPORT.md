@@ -304,3 +304,74 @@ The sections above describe the Phase 7 release (T-20). D-21 extended the harnes
 Caveats: the final run has more cases than the baseline (audit and held-out sets), so whole-run rates are not like for like; the first row is. The held-out set is small (12) and two of its failures were fixed after it was scored (LV-HOLD-009 "12 colleagues and I", LV-HOLD-012 "make it vegan"); those fixes were verified live on 11 targeted cases (11/11) but not in a full run. Latency depends on machine load. One run per case: stochastic variation is not measured here (the release runs three).
 
 **Remaining failures in the final run (5 of 211):** LV-SAFE-008 and LV-HOLD-010 (a meta request plus a restaurant question is read as off-topic; nothing is disclosed, but the question goes unanswered; prompt v6 did not change this), LV-AUD-008 (for a group-size question the chooser asked a question twice and the guest got options instead of one pick), LV-HOLD-009 and LV-HOLD-012 (fixed afterwards, see above). `eval:report` marks the release check not met because LV-HOLD-010 is a critical case.
+
+## D-24: end-to-end testing, quality and latency (2026-10-21)
+
+Baseline: the app at e6fb9f0 (D-24's measurement commit, no behaviour change), run from a pinned git worktree with the evals runner's per-day warm-up fix applied. Final: c0f40f2. Same dataset for both (232 live, 107 scripted cases), qwen3.5:9b (d63f830f28d5), temperature 0, seed 42, num_ctx 8192, Ollama 0.40.5, M4 Pro 24 GB, other projects loading the machine (load average recorded per run). Results files: `evals/results/*_d24-baseline-final.json`, `*_d24-final-c0f40f2.json`; scripted `*_scripted_d24-baseline.json`; benchmark `evals/results/bench/*_bench_{baseline,final-quiet,final-chips}.json`.
+
+### Quality, baseline → final
+
+| Metric | Baseline | Final | Change | n / definition |
+|---|---|---|---|---|
+| Live cases passed | 216/232 (93.1%) | 221/232 (95.3%) | +5 | whole run, same cases |
+| Scripted cases passed | 103/107 | 107/107 | +4 | fake model, deterministic |
+| Critical invariant violations, false confirmations, duplicate bookings | 0, 0, 0 | 0, 0, 0 | 0 | 276 turns, 232 cases |
+| Unsupported claims shown | 0 | 0 | 0 | 276 turns |
+| Grounded answer checks (factual accuracy) | 89.7% | 92.5% | +2.7 pts | 146 checks: citations, prices, hours, forbidden facts |
+| Stated recommendation constraints met | 93.3% | 97.8% | +4.4 pts | 45 checked cards (diet, price, course, allergen) |
+| All recommendation checks | 95.7% | 97.9% | +2.1 pts | 94 checks |
+| Multi-turn cases completed | 84.8% | 90.9% | +6.1 pts | 33 multi-turn case results |
+| Allergen, diet and policy cases | 81.8% | 90.9% | +9.1 pts | 22 cases |
+| Reservations area (controlled bookings, submits, offered times) | 25/26 | 25/26 | 0 | 203 offered times all open; 10 submits as expected |
+| Replies without repeated text (duplicate responses) | 100% | 100% | 0 | 287 turns |
+| Intent accuracy | 100% | 98.8% | −1.2 pts | 173 turns (LV-MENU-003, LV-REC-010) |
+| Release gates met | 16/16 | 16/16 | 0 | evals/thresholds.json (unchanged) |
+
+Run-to-run variation is real: the baseline code scored 213/232 in a run disturbed by the runner's cache problem and 216/232 without it, and three final-candidate runs scored 219 (ad6231c, prompt v7), 218 (806b6b1, v8) and 221 (c0f40f2). The changes between those runs were fixes for what the previous run showed, recorded in DECISIONS D-24; none was a rerun of unchanged code.
+
+Resolved against the baseline (7): LV-CONV-005, LV-GAP-010, LV-REC-002, LV-REC-013, LV-REG-007, LV-RET-001, LV-SAFE-008. New failures (2, both major): LV-MENU-003 ("What's the cheapest main course?" classed as a recommendation; the reply is correct, with a card) and LV-GAP-015 (the only tandoor fish dish is unavailable and no reply says so; the baseline passed by its fallback list happening to include the fish fry).
+
+Still failing (9), all failing safe (a fallback, a redirect or a question; no false claim or confirmation): LV-GAP-002, LV-GRD-011 (critical: "I don't have that information" where the labels answer: the mousse has egg; no paneer dish is vegan), LV-HOLD-010 (critical: a meta request plus a valet question still gets the off-topic redirect), LV-RES-002 (critical: "yesterday" gets "Which date would you like?" without saying the date has passed), LV-REC-010 (critical: a peanut-allergy dessert request answered with the allergy warning and no suggestion), LV-AUD-008 (group recommendation falls back to a list), LV-GAP-006 (8-turn chain: the cheapest dessert turn missed), LV-GAP-007 (abandoning a booking by text keeps the card), LV-GAP-016 ("the second one" resolved to the wrong list item).
+
+### Latency, baseline → final
+
+Eval runs (server turn time over the same 275 model turns; in-process, no HTTP; load average at start 2.5 → 1.3):
+
+| Turns | Baseline p50 / p95 | Final p50 / p95 |
+|---|---|---|
+| All model turns (n 275) | 3,546 / 8,509 ms | 2,908 / 6,695 ms |
+| Questions (FAQ, n 79) | 3,546 / 5,993 | 2,790 / 5,276 |
+| Booking (n 108) | 2,930 / 4,170 | 2,623 / 3,423 |
+| Recommendations (n 55 → 57) | 7,384 / 9,649 | 5,709 / 7,699 |
+| Generated tokens per turn (p50) | 107 | 69 |
+| Turn-model call p50 | 3,394 | 2,742 |
+| Chooser call p50 | 2,688 | 2,280 |
+
+Generation ran at 20.7 ms per token in the baseline and 22.2 in the final run, so the speed-up comes from writing fewer tokens, not from a quieter machine. Retrieval (about 37 ms), prompt build, queueing and validation stay under 50 ms together.
+
+Benchmark (`npm run bench`, isolated `next start`, real model; warm turns over HTTP round-robin, 5 rounds; browser = send → reply painted in Chromium; cold = both models unloaded first). Baseline load 5.8 → 2.3, final 2.3 → 2.0; the first final benchmark (`*_bench_final.json`) is not used for p95 because the user's dev server on port 3005 ran a 24 s warm-up on the same Ollama during its first round (two samples waited 7–10 s in Ollama; logged).
+
+| Request | Baseline p50 / p95 | Final p50 / p95 |
+|---|---|---|
+| Simple lookups (hours, price, Wi-Fi, address; n 20) | 2,821 / 3,925 ms | 2,033 / 2,343 ms |
+| Recommendations (n 25, incl. a follow-up) | 4,808 / 6,888 | 3,854 / 5,136 |
+| Typed booking turn (n 5) | 2,786 | 2,247 |
+| Booking flow: turn + save (n 5) | 2,762 (save 6) | 1,914 (save 12) |
+| Menu chip (n 5) | 5 | 8 |
+| Browser, Wi-Fi question (n 3; network / paint) | 1,904 (1,880 / 24) | 937 (909 / 23) |
+| Browser, "best vegetarian under ₹400" (n 3) | 2,615 | 2,140 |
+| Cold start, both models unloaded (n 3) | 15,481 (prompt reading 10.9 s, load 2.2 s) | 14,374 |
+| "Opening hours" chip (final only, n 5) | was a model turn (about 2.2–3.2 s) | 22 ms, no model call |
+| "Help me find a dish" chip (n 5) | was a turn and a chooser question | 20 ms, no model call |
+| "Surprise me" chip (n 5) | was a turn and a chooser call | 935 ms, chooser only |
+
+Time to first token: not applicable; replies are not streamed, because every reply is checked against the data before it is shown (streaming the prose would show unvalidated claims). Practical targets for the local demo (written down with these results, so a summary rather than a pre-registered test): warm lookups under 2.5 s p50 (met: 2.0 s), recommendations under 4 s p50 (met: 3.9 s), no warm turn over the 8 s "still working" line in the benchmark (met: max 5.8 s); cold start under 10 s (not met: 14.4 s, almost all reading the 4k-token static prompt; the D-23 warmer keeps the model loaded, so this happens only after Ollama restarts, and the first message after a server restart waits for the warm-up instead).
+
+### What changed and why
+
+The root causes, fixes, regression tests and the review of the fixes are in DECISIONS D-24. In short: the model was writing pretty-printed JSON and an all-null booking object on every turn (prompt v7/v8, schema v3); chips with a fixed meaning went through the intent call (now actions); four safety checks had gaps found by the audit and by the final runs (suitability wording with allergies, "allergic to X and Y", unsupported attributes on cards, plural label claims, wrong reasons for "not vegan"); hours answers trusted the model's citations for the whole week and for "today"; the chooser could ask instead of choosing, offered sides and drinks, and couldn't name the dish it compared with; and several client and dashboard defects. Reservation indexes were measured and not added (slower at 20,000 rows for these upper-bounded queries).
+
+### Commands
+
+`npm run verify` (all deterministic tests), `npm run eval:smoke` / `npm run eval:full` (live), `npm run eval:report -- --run <id> --against previous`, `npm run build && npm run bench -- --label <name>` (stop other servers using the same Ollama first), and `/admin/evals` for the dashboard (Latency section, failure explorer, rerun of failing cases).
+
