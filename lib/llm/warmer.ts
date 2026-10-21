@@ -26,13 +26,39 @@ export async function warmRound(r: WarmRound): Promise<"warmed" | "eval running"
   return "warmed";
 }
 
+/**
+ * One round at a time (failure-mode audit FM-046: the start-up, interval and staff-edit triggers overlapped, and a guest
+ * waited behind a step from each). A call while a round runs asks for one more round after it, not a second at once.
+ */
+export function singleFlight(round: () => Promise<void>): () => Promise<void> {
+  let running: Promise<void> | null = null;
+  let again = false;
+  return () => {
+    if (running) {
+      again = true;
+      return running;
+    }
+    running = (async () => {
+      try {
+        do {
+          again = false;
+          await round();
+        } while (again);
+      } finally {
+        running = null;
+      }
+    })();
+    return running;
+  };
+}
+
 const evalRunning = () => currentJob()?.state === "running" || listRuns(resultsDir()).some((x) => x.summary.status === "running");
 
 export function startWarmer(): void {
   const config = getConfig();
   if (started || config.testMode || config.llmProvider !== "ollama") return;
   started = true;
-  const once = async () => {
+  const once = singleFlight(async () => {
     try {
       let shots: Awaited<ReturnType<typeof warmModel>> | null = null;
       const outcome = await warmRound({ gate: defaultDeps().chat.gate, evalRunning, warm: async (run) => (shots = await warmModel(getDb(), getNow(), run)) });
@@ -42,7 +68,7 @@ export function startWarmer(): void {
     } catch (e) {
       console.warn(JSON.stringify({ event: "model_warm_skipped", reason: (e as Error).message }));
     }
-  };
+  });
   setTimeout(once, 1_000);
   setInterval(once, MODEL.rewarmEveryMs).unref();
   // D-25: a staff edit changed the system prompt; warm again shortly after the last such edit.

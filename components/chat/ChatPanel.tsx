@@ -60,6 +60,12 @@ function fresh(name: string): Saved {
 
 const NO_CARD: CardState = { submitting: false, locked: false, fieldErrors: null, done: false, message: null };
 
+// A chat request with no reply after this long is given up, with Try again (failure-mode audit FM-015: a stuck request
+// left "Still working on it" up for good, with every control disabled). The server bounds its own turn well below this,
+// and a retry with the same request id joins the turn if it is still running.
+const CHAT_TIMEOUT_MS = 90_000;
+const TIMEOUT_TEXT = "This is taking much longer than usual. Please try again.";
+
 /** Rendered in the browser only (ChatPanelClient), so the saved conversation is read synchronously, without a hydration pass. */
 export function ChatPanel({ branches, restaurantName, scripted, header, branchCards = [], today, horizonDays = 30, onReady }: Props) {
   const [initial] = useState<Saved>(() => load() ?? fresh(restaurantName));
@@ -131,9 +137,12 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
       update((p) => ({ ...p, chatPending: req }));
       const cur = ref.current;
       timeTurn(req.requestId, "send");
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), CHAT_TIMEOUT_MS);
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
+          signal: abort.signal,
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ sessionId: cur.sessionId, requestId: req.requestId, messages: req.messages, draft: cur.draft, context: cur.context, ...(req.action ? { action: req.action } : {}) }),
         });
@@ -160,8 +169,9 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         }));
         requestAnimationFrame(() => requestAnimationFrame(() => timeTurn(req.requestId, "painted")));
       } catch {
-        if (gen === generation.current) setFailed(req);
+        if (gen === generation.current) setFailed(abort.signal.aborted ? { ...req, why: TIMEOUT_TEXT } : req);
       } finally {
+        clearTimeout(timer);
         inFlight.current = false;
         setBusy(false);
       }
@@ -219,11 +229,11 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         update((p) => ({ ...p, pending: { ...pending, unknown: true } }));
         return "unknown";
       }
-      if (o.clearDraft) {
-        generation.current += 1; // booked: any chat reply still on its way is now stale
-        setFailed(null); // and a chat turn that failed before the booking is no longer worth retrying
-      }
+      if (o.clearDraft) generation.current += 1; // booked: any chat reply still on its way is now stale
       const inCard = o.unknown || o.fields !== null || status === 503 || status === 429;
+      // A reply in the conversation (booked, or refused with a reason) is newer than any chat turn that failed before it,
+      // so that turn's Try again goes (failure-mode audit FM-016: it could bring back a card for a slot just taken).
+      if (!inCard) setFailed(null);
       setCard({ submitting: false, locked: o.unknown, fieldErrors: o.fields, done: o.clearDraft || (!inCard && !o.unknown), message: inCard ? o.text : null });
       update((p) => ({
         ...p,
@@ -231,7 +241,7 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
         draft: o.clearDraft ? null : p.draft,
         // Booked: the booking's facts are done with, but the guest's food preferences (an allergy) stay (review).
         context: o.clearDraft ? { ...p.context, lastCitedIds: [] } : p.context,
-        chatPending: o.clearDraft ? null : p.chatPending,
+        chatPending: o.clearDraft || !inCard ? null : p.chatPending,
         cardFields: o.clearDraft ? null : p.cardFields, // booked: the typed name and mobile are not kept
         selected: o.clearDraft ? null : p.selected,
         items: inCard ? p.items : [...p.items, { id: uid(), role: "assistant", text: o.text, blocks: o.blocks }],
@@ -325,7 +335,8 @@ export function ChatPanel({ branches, restaurantName, scripted, header, branchCa
     <section aria-label="Reservations and questions" className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto">
         {header}
-        <div aria-live="polite" aria-relevant="additions" className="space-y-5 px-4 py-5">
+        {/* Long tokens (a pasted link) wrap instead of widening the conversation (failure-mode audit FM-017). */}
+        <div aria-live="polite" aria-relevant="additions" className="space-y-5 px-4 py-5 wrap-anywhere">
           {s.items.map((item) => (
             <div key={item.id} className={item.role === "guest" ? "flex justify-end" : "flex gap-2.5"}>
               {item.role === "guest" ? (

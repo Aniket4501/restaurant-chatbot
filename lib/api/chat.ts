@@ -29,20 +29,29 @@ type Result = { status: number; json: Record<string, unknown>; headers?: Record<
 export function requestDeduper(opts: { ttlMs?: number; max?: number } = {}) {
   const ttl = opts.ttlMs ?? 120_000;
   const max = opts.max ?? 500;
-  const seen = new Map<string, { at: number; result: Promise<Result> }>();
+  const seen = new Map<string, { at: number; result: Promise<Result>; settled: boolean }>();
   return {
     run(key: string | null, now: number, compute: () => Promise<Result>): { result: Promise<Result>; duplicate: boolean } {
       if (!key) return { result: compute(), duplicate: false };
-      for (const [k, v] of seen) if (now - v.at > ttl || seen.size > max) seen.delete(k);
+      // A turn still running is never expired or evicted, so a retry always joins it however long it takes (failure-mode
+      // audit FM-045: after 120 s a retry started a second model turn behind the first).
+      for (const [k, v] of seen) if (v.settled && (now - v.at > ttl || seen.size > max)) seen.delete(k);
       const hit = seen.get(key);
-      if (hit && now - hit.at <= ttl) return { result: hit.result, duplicate: true };
+      if (hit && (!hit.settled || now - hit.at <= ttl)) return { result: hit.result, duplicate: true };
       const result = compute();
-      seen.set(key, { at: now, result });
+      const entry = { at: now, result, settled: false };
+      seen.set(key, entry);
       // Only a reply is remembered: a crash, a rate limit or a full queue is not, so a retry runs again (review).
       const forget = () => {
         if (seen.get(key)?.result === result) seen.delete(key);
       };
-      result.then((r) => r.status !== 200 && forget(), forget);
+      result.then(
+        (r) => {
+          entry.settled = true;
+          if (r.status !== 200) forget();
+        },
+        forget,
+      );
       return { result, duplicate: false };
     },
   };

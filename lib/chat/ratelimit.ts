@@ -25,18 +25,23 @@ export function turnLimiter(perSession: Limiter, perAddress: Limiter, addressKey
 export const noTurnLimit: TurnLimiter = { allow: () => ({ ok: true }) };
 
 export class GateFullError extends Error {
-  constructor() {
-    super("too many model calls waiting");
+  constructor(message = "too many model calls waiting") {
+    super(message);
     this.name = "GateFullError";
   }
 }
 
 export type ModelGate = { run<T>(fn: () => Promise<T>): Promise<T>; readonly active: number; readonly waiting: number };
 
-/** Run at most `concurrency` calls at once; up to `maxQueue` more wait in order; any beyond that are refused. */
-export function createModelGate(opts: { concurrency?: number; maxQueue?: number } = {}): ModelGate {
+/**
+ * Run at most `concurrency` calls at once; up to `maxQueue` more wait in order; any beyond that are refused. A call that
+ * has waited `maxWaitMs` leaves the queue with GateFullError, so a guest is told the assistant is busy instead of waiting
+ * behind a slow warm-up or a stuck model call for minutes (failure-mode audit FM-015).
+ */
+export function createModelGate(opts: { concurrency?: number; maxQueue?: number; maxWaitMs?: number } = {}): ModelGate {
   const concurrency = opts.concurrency ?? 1;
   const maxQueue = opts.maxQueue ?? 4;
+  const maxWaitMs = opts.maxWaitMs;
   let active = 0;
   const queue: (() => void)[] = [];
   const release = () => {
@@ -57,7 +62,21 @@ export function createModelGate(opts: { concurrency?: number; maxQueue?: number 
     async run(fn) {
       if (active >= concurrency) {
         if (queue.length >= maxQueue) throw new GateFullError();
-        await new Promise<void>((resolve) => queue.push(resolve));
+        await new Promise<void>((resolve, reject) => {
+          let timer: ReturnType<typeof setTimeout> | null = null;
+          const go = () => {
+            if (timer) clearTimeout(timer);
+            resolve();
+          };
+          if (maxWaitMs !== undefined)
+            timer = setTimeout(() => {
+              const i = queue.indexOf(go);
+              if (i < 0) return;
+              queue.splice(i, 1);
+              reject(new GateFullError("waited too long for the model"));
+            }, maxWaitMs);
+          queue.push(go);
+        });
       } else active++;
       try {
         return await fn();

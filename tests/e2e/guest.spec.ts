@@ -414,7 +414,15 @@ test("the name and mobile typed into the confirm card survive a question and a r
 });
 
 // D-27 and D-28 cards on a phone: structured rows, no sideways scrolling, no raw data, accessible.
-const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+// The conversation scrolls inside a clipped frame, so its own width is checked too (failure-mode audit FM-017: the page
+// check alone could not see a long token widening the conversation).
+const noOverflow = async (page: Page) =>
+  expect(
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>("section[aria-label='Reservations and questions'] > div.overflow-y-auto");
+      return document.documentElement.scrollWidth <= window.innerWidth && !!scroller && scroller.scrollWidth <= scroller.clientWidth;
+    }),
+  ).toBe(true);
 
 test("opening hours: a general question shows both branches compactly; a special date shows that day only (D-27) @cat:hours", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
@@ -454,3 +462,47 @@ test("a meal for two within a budget: the plan card with portions and the total 
   await noOverflow(page);
   await axe(page, "meal plan");
 });
+
+// Failure-mode audit (evals/failure-modes.json): client recovery and layout.
+test("FM-017 a long pasted link wraps inside the conversation on a 360 px phone @cat:frontend", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/");
+  await say(page, `https://example.com/${"a".repeat(240)}?ref=menu`);
+  await expect(page.getByText(/^https:\/\/example\.com\//)).toBeVisible();
+  await expect(page.getByText(/^Sorry, I didn't quite get that\./)).toBeVisible();
+  await noOverflow(page);
+});
+
+test("FM-016 a refused booking clears an older chat turn's Try again, so it can't bring back a stale card @cat:duplicate", async ({ page, observed }) => {
+  observed.pii.push("Asha Rao", "98765 43210");
+  await page.goto("/");
+  await chipsToConfirm(page);
+  await page.route("**/api/chat", (route) => route.abort("failed"), { times: 1 });
+  await say(page, "can I bring my dog?");
+  const alert = page.getByRole("alert").filter({ hasText: "We couldn't reach the restaurant just now." });
+  await expect(alert).toBeVisible();
+  await page.route("**/api/reservations", (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "SLOT_TAKEN", message: "That time was just taken.", alternatives: [] } }) }));
+  await (await fillDetails(page)).getByRole("button", { name: "Confirm" }).click();
+  await expect(page.getByText(/^Sorry, that time was just taken\./)).toBeVisible();
+  await expect(alert).toHaveCount(0);
+});
+
+test("FM-015 a chat request with no reply is given up after 90 s with Try again, which then answers @cat:backend_failure", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/");
+  let held = true;
+  await page.route("**/api/chat", async (route) => {
+    if (held) return; // never answered
+    await route.continue();
+  });
+  await say(page, "can I bring my dog?");
+  await expect(page.getByRole("button", { name: "New conversation" })).toBeDisabled();
+  await page.clock.fastForward(91_000);
+  const alert = page.getByRole("alert").filter({ hasText: "This is taking much longer than usual." });
+  await expect(alert).toBeVisible();
+  held = false;
+  await alert.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText("Well-behaved dogs are welcome on the Golf Course Road terrace.").first()).toBeVisible();
+  await expect(alert).toHaveCount(0);
+});
+

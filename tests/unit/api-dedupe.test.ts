@@ -40,6 +40,20 @@ describe("requestDeduper", () => {
     expect(d.run("k5", 7, () => reply(200, 99)).duplicate).toBe(true); // the newest is kept
     expect(d.run("k0", 8, () => reply(200, 99)).duplicate).toBe(false); // the oldest was evicted
   });
+  it("FM-045 never expires or evicts a turn that is still running", async () => {
+    const d = requestDeduper({ ttlMs: 1000, max: 2 });
+    let finish!: (r: R) => void;
+    const slow = d.run("k", 0, () => new Promise<R>((r) => (finish = r)));
+    let calls = 0;
+    for (let i = 0; i < 4; i++) await d.run(`other${i}`, 10 + i, () => reply(200, i)).result;
+    const retry = d.run("k", 121_000, () => reply(200, ++calls));
+    expect(retry.duplicate).toBe(true);
+    expect(calls).toBe(0);
+    finish({ status: 200, json: { n: 1 } });
+    expect(await retry.result).toEqual(await slow.result);
+    await Promise.resolve();
+    expect(d.run("k", 122_001, () => reply(200, ++calls)).duplicate).toBe(false); // settled and past the TTL
+  });
   it("treats no key as no deduplication", () => {
     const d = requestDeduper();
     expect(d.run(null, 0, () => reply(200, 1)).duplicate).toBe(false);

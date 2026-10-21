@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createModelGate, GateFullError } from "@/lib/chat/ratelimit";
 import { MODEL } from "@/lib/config";
 import type { Run } from "@/lib/llm/warm";
-import { warmRound } from "@/lib/llm/warmer";
+import { singleFlight, warmRound } from "@/lib/llm/warmer";
 import { loadedChecker, modelTimeout } from "@/lib/llm/warmth";
 
 // D-23: a model call gets the cold timeout only when Ollama says the model is unloaded.
@@ -82,6 +82,40 @@ describe("warm-up round (D-23)", () => {
     expect(await round).toBe("warmed");
     await b;
     expect(order).toEqual(["guest A", "warm 1", "guest B", "warm 2"]);
+  });
+  it("FM-046 runs one round at a time: a request during a round runs one more after it, never two at once", async () => {
+    let active = 0;
+    let peak = 0;
+    let rounds = 0;
+    const steps: (() => void)[] = [];
+    const once = singleFlight(async () => {
+      active++;
+      rounds++;
+      peak = Math.max(peak, active);
+      await new Promise<void>((r) => steps.push(r));
+      active--;
+    });
+    const a = once();
+    void once();
+    void once(); // three triggers while the first round runs
+    await Promise.resolve();
+    expect(rounds).toBe(1);
+    steps.shift()!();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(rounds).toBe(2); // one follow-up for all the requests made during round 1
+    steps.shift()!();
+    await a;
+    expect([rounds, peak]).toEqual([2, 1]);
+  });
+  it("FM-015 a call that waits past the queue deadline is refused as busy; the queue moves on", async () => {
+    const gate = createModelGate({ concurrency: 1, maxQueue: 4, maxWaitMs: 20 });
+    const hold = deferred();
+    const busy = gate.run(() => hold.done);
+    await expect(gate.run(async () => "late")).rejects.toBeInstanceOf(GateFullError);
+    expect(gate.waiting).toBe(0);
+    hold.release();
+    await busy;
+    expect(await gate.run(async () => "next")).toBe("next");
   });
   it("gives up the round when the gate's queue is full", async () => {
     const gate = createModelGate({ concurrency: 1, maxQueue: 0 });

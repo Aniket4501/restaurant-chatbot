@@ -44,6 +44,9 @@ export const MODEL = {
   // The server warms the model this often (D-23): it stays loaded (keepAlive 30m) and its prompt prefixes stay cached.
   rewarmEveryMs: 15 * 60_000,
   warmTimeoutMs: 120_000,
+  // The longest a guest's model call waits in the queue (behind a warm-up step or other guests) before the guest is
+  // told the assistant is busy (failure-mode audit FM-015).
+  queueWaitMs: 30_000,
   embedTimeoutMs: 2_500, // over this, retrieval falls back to lexical for the turn (D-02)
 } as const;
 

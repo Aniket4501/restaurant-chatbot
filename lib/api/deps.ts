@@ -1,4 +1,4 @@
-import { getConfig, LIMITS, type AppConfig } from "@/lib/config";
+import { getConfig, LIMITS, MODEL, type AppConfig } from "@/lib/config";
 import { createModelGate, turnLimiter, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
 import { getDb, type DB } from "@/lib/db/client";
 import { createLimiter, type Limiter } from "@/lib/http/ratelimit";
@@ -61,7 +61,7 @@ export function defaultDeps(): ApiDeps {
           createLimiter({ limit: getConfig().test?.turnsPerMin ?? LIMITS.turnsPerMin, windowMs: 60_000 }),
           createLimiter({ limit: getConfig().test?.turnsPerMin ?? LIMITS.turnsPerMin, windowMs: 60_000 }),
         ),
-        gate: createModelGate({ concurrency: 1, maxQueue: 4 }),
+        gate: createModelGate({ concurrency: 1, maxQueue: 4, maxWaitMs: MODEL.queueWaitMs }),
         modelLoaded: getConfig().llmProvider === "ollama" ? loadedChecker(getConfig().ollamaBaseUrl, getConfig().chatModel) : undefined,
       },
     };
