@@ -30,12 +30,14 @@ export type AdminMenuItem = {
   /** "Golf Course Road only", or null when every branch serves it. */
   scopeLabel: string | null;
   status: MenuStatus;
+  /** D-26: the restaurant's own bestseller mark, the only popularity evidence the chatbot may cite. */
+  bestseller: boolean;
   createdBy: "seed" | "staff";
   updatedAt: number | null;
   order: number;
 };
 
-type Row = { id: number; slug: string; category: string; name: string; description: string; price_inr: number; dietary: string; spice_level: number | null; branch_slugs: string | null; is_available: number; is_listed: number; created_by: "seed" | "staff"; updated_at: number | null };
+type Row = { id: number; slug: string; category: string; name: string; description: string; price_inr: number; dietary: string; spice_level: number | null; branch_slugs: string | null; is_available: number; is_listed: number; is_bestseller: number; created_by: "seed" | "staff"; updated_at: number | null };
 
 function toItem(r: Row, branchNames: Map<string, string>): AdminMenuItem {
   const branches = r.branch_slugs ? (JSON.parse(r.branch_slugs) as string[]) : null;
@@ -52,6 +54,7 @@ function toItem(r: Row, branchNames: Map<string, string>): AdminMenuItem {
     branches,
     scopeLabel: branches ? `${branches.map((s) => branchShortName(branchNames.get(s) ?? s)).join(" and ")} only` : null,
     status: r.is_listed === 0 ? "removed" : r.is_available === 1 ? "available" : "unavailable",
+    bestseller: r.is_bestseller === 1,
     createdBy: r.created_by,
     updatedAt: r.updated_at,
     order: r.id,
@@ -136,9 +139,10 @@ const Fields = {
   dietary: Dietary,
   spiceLevel: z.number().int().min(0, "Spice level is 0 to 3").max(3, "Spice level is 0 to 3").nullable(),
   branches: z.array(slugSchema).min(1, "Choose at least one branch, or all branches").max(20).nullable(),
+  bestseller: z.boolean(),
 };
 
-export const MenuCreateSchema = z.strictObject({ ...Fields, slug: slugSchema.max(60).optional(), status: z.enum(["available", "unavailable"]).default("available") });
+export const MenuCreateSchema = z.strictObject({ ...Fields, bestseller: Fields.bestseller.default(false), slug: slugSchema.max(60).optional(), status: z.enum(["available", "unavailable"]).default("available") });
 export const MenuPatchSchema = z.strictObject({
   name: Fields.name.optional(),
   description: Fields.description.optional(),
@@ -147,6 +151,7 @@ export const MenuPatchSchema = z.strictObject({
   dietary: Fields.dietary.optional(),
   spiceLevel: Fields.spiceLevel.optional(),
   branches: Fields.branches.optional(),
+  bestseller: Fields.bestseller.optional(),
   status: z.enum(MENU_STATUSES).optional(),
 });
 
@@ -171,6 +176,7 @@ const describeChange = (before: AdminMenuItem, after: AdminMenuItem): string => 
   if (before.spiceLevel !== after.spiceLevel) parts.push(`spice ${before.spiceLevel === null ? "not listed" : SPICE_WORDS[before.spiceLevel]} → ${after.spiceLevel === null ? "not listed" : SPICE_WORDS[after.spiceLevel]}`);
   if (JSON.stringify(before.branches) !== JSON.stringify(after.branches)) parts.push(`branches ${before.scopeLabel ?? "all"} → ${after.scopeLabel ?? "all"}`);
   if (before.status !== after.status) parts.push(`${before.status} → ${after.status}`);
+  if (before.bestseller !== after.bestseller) parts.push(after.bestseller ? "marked as a bestseller" : "bestseller mark removed");
   return parts.join("; ") || "no change";
 };
 
@@ -192,9 +198,9 @@ export function createMenuItem(db: DB, now: number, raw: unknown): AdminMenuItem
       slug = `${slug}-${n}`;
     }
     db.prepare(
-      `INSERT INTO menu_items (slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available, is_listed, created_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'staff', ?)`,
-    ).run(slug, input.category, input.name, input.description, input.priceInr, JSON.stringify(input.dietary), input.spiceLevel, branches ? JSON.stringify(branches) : null, input.status === "available" ? 1 : 0, now);
+      `INSERT INTO menu_items (slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available, is_listed, is_bestseller, created_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'staff', ?)`,
+    ).run(slug, input.category, input.name, input.description, input.priceInr, JSON.stringify(input.dietary), input.spiceLevel, branches ? JSON.stringify(branches) : null, input.status === "available" ? 1 : 0, input.bestseller ? 1 : 0, now);
     const item = toItem(rowBySlug(db, slug)!, branchNames(db));
     return { result: item, change: { area: "menu", action: "created", target: slug, summary: `Added "${item.name}" (${item.categoryLabel}, ₹${item.priceInr})` } };
   });
@@ -218,6 +224,7 @@ export function updateMenuItem(db: DB, now: number, slug: string, raw: unknown):
       spiceLevel: patch.spiceLevel === undefined ? before.spiceLevel : patch.spiceLevel,
       branches: branches === undefined ? before.branches : branches,
       status: patch.status ?? before.status,
+      bestseller: patch.bestseller ?? before.bestseller,
     };
     const d = next.dietary;
     if (d.includes("vegan") && (d.includes("contains-dairy") || d.includes("egg"))) throw fieldError("dietary", "A vegan dish can't contain dairy or egg");
@@ -229,8 +236,8 @@ export function updateMenuItem(db: DB, now: number, slug: string, raw: unknown):
     const summary = describeChange(before, after);
     if (summary === "no change") return { result: { item: before, changed: false, summary }, change: null };
     db.prepare(
-      `UPDATE menu_items SET name = ?, category = ?, description = ?, price_inr = ?, dietary = ?, spice_level = ?, branch_slugs = ?, is_available = ?, is_listed = ?, updated_at = ? WHERE slug = ?`,
-    ).run(next.name, next.category, next.description, next.priceInr, JSON.stringify(next.dietary), next.spiceLevel, next.branches ? JSON.stringify(next.branches) : null, next.status === "available" ? 1 : 0, next.status === "removed" ? 0 : 1, now, slug);
+      `UPDATE menu_items SET name = ?, category = ?, description = ?, price_inr = ?, dietary = ?, spice_level = ?, branch_slugs = ?, is_available = ?, is_listed = ?, is_bestseller = ?, updated_at = ? WHERE slug = ?`,
+    ).run(next.name, next.category, next.description, next.priceInr, JSON.stringify(next.dietary), next.spiceLevel, next.branches ? JSON.stringify(next.branches) : null, next.status === "available" ? 1 : 0, next.status === "removed" ? 0 : 1, next.bestseller ? 1 : 0, now, slug);
     const item = toItem(rowBySlug(db, slug)!, names);
     const action = before.status !== after.status && summary === `${before.status} → ${after.status}` ? `marked ${after.status}` : "edited";
     return { result: { item, changed: true, summary }, change: { area: "menu", action, target: slug, summary: `"${item.name}": ${summary}` } };

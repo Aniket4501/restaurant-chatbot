@@ -79,5 +79,22 @@ export function unsupportedBookingStateSentence(text: string, citedTexts: string
 /** Smalltalk prose is shown only with no digits or number words, no claim and no booking-state words (§5.7, D-15). */
 export function smalltalkShowable(text: string): boolean {
   const t = fold(text);
-  return !/\p{Nd}/u.test(t) && !bookingClaim(t) && !hasBookingStateWords(t) && !SMALLTALK_STATE_RE.test(t) && !NUMBER_WORDS.some((w) => numberWordRe(w).test(t)) && !/\bone\b/i.test(t);
+  return !/\p{Nd}/u.test(t) && !bookingClaim(t) && !hasBookingStateWords(t) && !SMALLTALK_STATE_RE.test(t) && !NUMBER_WORDS.some((w) => numberWordRe(w).test(t)) && !/\bone\b/i.test(t) && !hypeClaims(t).length;
 }
+
+/**
+ * Popularity, review and ranking claims (D-20; widened in D-26). The data has no sales figures, ratings or reviews; the
+ * restaurant's own bestseller mark (or a staff FAQ or document that says so) is the only support for any of them.
+ */
+export const HYPE_RE =
+  /\b(?:most popular|popular(?:ity)?|best[- ]?sell(?:er|ers|ing)|top[- ]sell(?:er|ers|ing)|(?:our|the) top (?:seller|pick|choice|dish)|favou?rites?|signature|chef'?s (?:special|choice|pick|recommendation|speciality|specialty)|chef recommends|award[- ]winning|famous|highly (?:rated|recommended)|top[- ]rated|best[- ]rated|well[- ]reviewed|(?:great|good|rave|glowing|excellent|amazing|five[- ]star) reviews?|reviews? (?:say|rave)|must[- ]try|crowd[- ]pleaser|speciality|specialty|house (?:special|classic|favou?rite)|everyone(?:'s)? (?:loves?|favou?rite|orders)|(?:much|well|most)[- ]loved|beloved|loved by|guests (?:love|adore|rave)|people (?:love|order)|customers love|go-to|most ordered|most requested|always a hit|sells out|iconic|(?:our|the) (?:best|top) (?:dish|dishes|seller))\b/gi;
+// "We don't track what's popular", "I can't say which is the bestseller": an honest statement, not a claim.
+const HYPE_NEGATED = /\b(?:not|no|don't|do not|doesn't|does not|can't|cannot|can not|never|without|isn't|aren't|unable to|any|which|whether|if)\b[^.!?]{0,40}$/i;
+
+/** The popularity claims a reply makes (negated mentions left out), in order. */
+export function hypeClaims(text: string): string[] {
+  return [...fold(text).matchAll(HYPE_RE)].filter((m) => !HYPE_NEGATED.test(fold(text).slice(Math.max(0, m.index - 60), m.index).split(/[.!?]/).pop() ?? "")).map((m) => m[0]);
+}
+
+/** True when the claim is about bestsellers ("bestseller", "best-selling"), the one kind a staff mark can support. */
+export const isBestsellerClaim = (claim: string) => /best[- ]?sell/i.test(claim);

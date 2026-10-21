@@ -81,5 +81,58 @@
     "pick": "menu:chana-pindi",
     "alternatives": [],
     "reply": "Try the Chana Pindi at ₹395: a dark, tangy Punjabi chickpea curry."
+  },
+  "Is Hauz Khas open for dinner on 22 October?": {
+    "intent": "faq",
+    "booking": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "ambiguity": null
+    },
+    "prefs": null,
+    "answer": "Hauz Khas is open for dinner on 22 October.",
+    "citedFactIds": [
+      "exception:hauz-khas:2026-10-22",
+      "hours:hauz-khas:thu"
+    ],
+    "answerable": true
+  },
+  "planner:There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?": {
+    "items": [
+      {
+        "id": "dal-ember",
+        "qty": 1
+      },
+      {
+        "id": "yellow-dal-tadka",
+        "qty": 1
+      },
+      {
+        "id": "butter-naan",
+        "qty": 1
+      }
+    ],
+    "note": "Two lentil dishes, one smoky and one bright, with naan to share."
+  },
+  "What are your opening hours?": {
+    "intent": "faq",
+    "booking": {
+      "branch": null,
+      "date": null,
+      "time": null,
+      "timeWindow": null,
+      "partySize": null,
+      "ambiguity": null
+    },
+    "prefs": null,
+    "answer": "We are open for lunch and dinner.",
+    "citedFactIds": [
+      "hours:hauz-khas:fri",
+      "hours:gurugram:fri"
+    ],
+    "answerable": true
   }
 }

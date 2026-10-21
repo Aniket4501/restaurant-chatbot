@@ -1,16 +1,17 @@
 import { RULES } from "@/lib/config";
 import { checkStart, getAvailability, type AvailabilityBundle, type Slot } from "@/lib/booking/availability";
-import type { Fact } from "@/lib/kb/facts";
+import type { Fact, FactSource } from "@/lib/kb/facts";
 import type { Turn } from "@/lib/llm/schema";
 import { addLocalDays, dayKeyOf, dayLabel, dayLabelLong, isoInZone, localDateOf, localTimeOf, minutesOf, timeLabel, timeLabelOf, todayLocal, weekdayOf, type LocalDate } from "@/lib/time/tz";
 import { smalltalkShowable } from "@/lib/chat/claims";
 import { applySetField, bookingInProgress, mergeExtracted, type FieldCtx, type FieldIssue, type MergeResult } from "@/lib/chat/draft";
 import { checkGrounding, dateSpans, type GroundingContext } from "@/lib/chat/grounding";
 import { isHoursOnly, renderHoursAnswer } from "@/lib/chat/hours";
+import { hoursAnswer, readHoursQuestion, type HoursQuestion } from "@/lib/chat/hours-card";
 import { T, type BranchInfo } from "@/lib/chat/templates";
 import { ALLERGY_NOTE, needsAllergyNote, type MenuEntry } from "@/lib/chat/menu";
 import { claimProblems, explicitPrefs } from "@/lib/chat/recommend";
-import type { Action, Block, Chip, Draft, Field, Outcome, Prefs, SlotChip, TraceEntry } from "@/lib/chat/types";
+import type { Action, Block, Chip, Draft, Field, HoursFocus, Outcome, Prefs, SlotChip, TraceEntry } from "@/lib/chat/types";
 
 // Deterministic turn logic (§5.7 step 2 and 5): the booking flow driven by the draft, and routing of a validated
 // model turn by intent. Booking turns only ever show templates; model prose appears only for FAQ answers that pass
@@ -246,7 +247,16 @@ export function handleAction(action: Extract<Action, { type: "set_field" | "sele
 // ---------- model turns ----------
 
 /** The facts sent, plus (D-21) the guest's message, their food preferences in force and the menu, for FAQ claim checks. */
-export type FactCtx = GroundingContext & { staticFacts: Fact[]; guest?: string; foodPrefs?: Prefs | null; menu?: MenuEntry[]; /** The one branch named in the guest's message, if exactly one is (D-24: the model's booking is null outside bookings). */ branchNamed?: string | null };
+export type FactCtx = GroundingContext & {
+  staticFacts: Fact[];
+  guest?: string;
+  foodPrefs?: Prefs | null;
+  menu?: MenuEntry[];
+  /** The one branch named in the guest's message, if exactly one is (D-24: the model's booking is null outside bookings). */
+  branchNamed?: string | null;
+  /** D-27: the hours tables and the last hours answer's focus, for the hours card; `onHours` receives the new focus. */
+  hours?: { src: FactSource; focus: HoursFocus | null; draftBranch: string | null; onHours: (focus: HoursFocus) => void; /** A chip's question, instead of reading the guest's words. */ question?: HoursQuestion };
+};
 
 // An allergen named in the guest's message: the answer gets the allergy note (D-21 audit: FAQ answers had none).
 const ALLERGEN_WORDS = /\ballerg\w*|\banaphyla|\b(?:pea|tree )?nuts?\b|\bcashews?\b|\balmonds?\b|\bpistachios?\b|\bdairy\b|\blactose\b|\beggs?\b|\bgluten\b|\bco?eliac\b|\bsesame\b|\bshellfish\b|\bsoy\b/i;
@@ -320,6 +330,16 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
       }
       const cited = [...new Set(turn.citedFactIds)];
       const unknown = cited.length === 0 ? "no_citation" : cited.some((id) => !facts.factsById.has(id)) ? "unknown_citation" : cited.some((id) => !facts.sentIds.has(id)) ? "not_sent" : null;
+      // D-27: an hours question (the model cites weekly hours or special dates) is answered with the hours card: the
+      // branch and date read from the question, only that branch's exceptions for that date, a short line, no prose times.
+      if (!unknown && isHoursOnly(cited) && facts.hours && cited.some((id) => /^(?:hours|exception):/.test(id))) {
+        const h = facts.hours;
+        const q = h.question ?? readHoursQuestion(facts.guest ?? "", ctx.now, ctx.zone, h.src.branches, { focus: h.focus, draftBranch: h.draftBranch });
+        const a = hoursAnswer(q, h.src, ctx.now, { known: new Set(facts.factsById.keys()) });
+        h.onHours(a.focus);
+        ctx.trace.push({ action: "answer_faq", ids: a.cited, rendered: true });
+        return reply(prose(a.text), "hours_answer", { lead: a.blocks, cited: a.cited });
+      }
       if (!unknown && isHoursOnly(cited)) {
         const mentionedDates = dateSpans(`${facts.guest ?? ""} ${turn.answer ?? ""}`);
         const scope = hoursScope(facts.guest ?? "", ctx.now, ctx.zone);
@@ -350,8 +370,11 @@ export function routeTurn(turn: Turn, draft: Draft, ctx: FlowCtx, facts: FactCtx
         return reply(prose(r.text), "hours_answer", { cited: r.factIds });
       }
       // An allergy in play (stated now or earlier, or an allergen named): the fixed note goes with the answer.
+      // D-28: only when this question is about allergens or safety (an allergen named, an allergy stated, or a stored
+      // allergy with a question about safety or ingredients), not under every answer once an allergy is known.
+      const guestText = facts.guest ?? "";
       const allergyLead: Block[] =
-        (facts.guest !== undefined && ALLERGEN_WORDS.test(facts.guest)) || (facts.foodPrefs && needsAllergyNote(facts.foodPrefs)) || (facts.guest !== undefined && explicitPrefs(facts.guest).allergy) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
+        ALLERGEN_WORDS.test(guestText) || explicitPrefs(guestText).allergy || (facts.foodPrefs && needsAllergyNote(facts.foodPrefs) && /\b(?:safe|allerg\w*|contain\w*|ingredients?|traces?|made with|cooked with)\b/i.test(guestText)) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
       const g = unknown ? ({ ok: false, reason: unknown, detail: "" } as const) : checkGrounding(turn.answer ?? "", cited, facts);
       if (!g.ok || !turn.answer?.trim()) {
         ctx.trace.push({ action: "fallback_unknown", reason: g.ok ? "empty_answer" : g.reason });

@@ -76,6 +76,8 @@ export const SeedSchema = z
         spiceLevel: z.number().int().min(0).max(3).nullable(),
         branches: z.array(slug).min(1).nullable(),
         isAvailable: z.boolean(),
+        /** D-26: the restaurant's own bestseller mark; absent means not marked (no seed dish is). */
+        bestseller: z.boolean().optional(),
       }),
     ),
     faq: z.array(z.strictObject({ slug, branch: slug.nullable(), category: z.enum(FAQ_CATEGORIES).optional(), question: z.string().min(1), answer: z.string().min(1) })),

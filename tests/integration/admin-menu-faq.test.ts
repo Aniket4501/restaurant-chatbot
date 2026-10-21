@@ -7,7 +7,8 @@ import { fakeEmbedder } from "@/lib/kb/embedder";
 import { loadFactSource, renderKbFacts } from "@/lib/kb/facts";
 import { embeddingCoverage, lexicalCurrent } from "@/lib/kb/index";
 import { lexicalSearch, retrieveFacts } from "@/lib/kb/retrieve";
-import { fakeModel } from "@/lib/llm/fake";
+import { fakeModel, nullBooking, sequenceModel } from "@/lib/llm/fake";
+import type { Turn } from "@/lib/llm/schema";
 import type { Block } from "@/lib/chat/types";
 import { call, E2E_SCRIPT, SEED, seeded } from "./helpers/admin";
 
@@ -135,6 +136,27 @@ describe("menu (D-25)", () => {
   it("404s an unknown dish and keeps slugs fixed", async () => {
     expect((await call(item().GET, "GET", "/api/admin/menu/nope", undefined, { slug: "nope" })).status).toBe(404);
     expect((await call(item().PATCH, "PATCH", "/api/admin/menu/dal-ember", { slug: "dal" }, { slug: "dal-ember" })).status).toBe(400);
+  });
+});
+
+describe("the bestseller mark (D-26)", () => {
+  it("is set by staff, changes the dish's fact, is logged, and is what the chatbot cites for 'best seller?'", async () => {
+    const ask = async () => {
+      const turn: Turn = { intent: "recommend", booking: nullBooking(), prefs: { diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false, relation: null }, answer: null, citedFactIds: [], answerable: true };
+      return runTurn({ now: NOW, sessionId: "00000000-0000-4000-8000-000000000002", messages: [{ role: "guest", content: "What is your best seller?" }], draft: null, context: { lastCitedIds: [], asked: ["diet"] } }, { db: db(), model: sequenceModel([turn]), embedder: fakeEmbedder(), limiter: noTurnLimit });
+    };
+    expect((await ask()).reply.text).toBe("We don't keep sales or popularity figures, so I can't say which dish sells best. I can suggest a dish that suits you instead.");
+    const r = await call(item().PATCH, "PATCH", "/api/admin/menu/dal-ember", { bestseller: true }, { slug: "dal-ember" });
+    expect(r.status).toBe(200);
+    expect(r.json.item.bestseller).toBe(true);
+    expect(factText("menu:dal-ember")).toMatch(/ Marked as a bestseller by the restaurant\.$/);
+    expect(lexicalCurrent(db(), facts())).toBe(true);
+    expect(db().prepare("SELECT summary FROM admin_changes WHERE area = 'menu' ORDER BY id DESC LIMIT 1").get()).toMatchObject({ summary: expect.stringContaining("marked as a bestseller") });
+    const after = await ask();
+    expect(after.reply.text).toBe("The restaurant marks the Dal Ember as a bestseller.");
+    expect(after.reply.blocks[0]).toMatchObject({ type: "recommendation", items: [{ id: "menu:dal-ember" }] });
+    // A new dish isn't marked unless staff tick it.
+    expect((await call(menu().POST, "POST", "/api/admin/menu", NEW_DISH)).json.item.bestseller).toBe(false);
   });
 });
 

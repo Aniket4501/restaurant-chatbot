@@ -38,7 +38,7 @@ export const UNLISTED = ["shellfish", "fish", "seafood", "soy", "sesame", "musta
  * question with no model call, and the others go straight to the dish chooser, which still validates every pick.
  * Typed text always takes the model path.
  */
-export const RECOMMEND_CHIP_TEXTS = ["Help me find a dish", "Recommend something vegetarian", "Anything cheaper?", "Show me another option", "Something light", "Something filling", "Something vegetarian", "Surprise me", "Any price is fine", "Forget the vegan", "Forget the vegetarian", "Spicy is fine"] as const;
+export const RECOMMEND_CHIP_TEXTS = ["Help me find a dish", "Recommend something vegetarian", "Anything cheaper?", "Show me another option", "Something light", "Something filling", "Something vegetarian", "Surprise me", "Any price is fine", "Forget the vegan", "Forget the vegetarian", "Spicy is fine", "Something vegan", "I eat everything", "A light snack", "A light main course", "A light dessert", "A filling main course", "A filling snack"] as const;
 export const HELP_CHIP_TEXT = "Help me find a dish";
 /** The label each food chip shows (and the guest's bubble says) when it differs from its text. */
 export const RECOMMEND_CHIP_LABEL: Partial<Record<(typeof RECOMMEND_CHIP_TEXTS)[number], string>> = { "Anything cheaper?": "Something cheaper", "Show me another option": "Another option", "Any price is fine": "Any price", "Forget the vegan": "Not only vegan", "Forget the vegetarian": "Not only vegetarian" };
@@ -50,8 +50,11 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("menu"), course: z.enum(COURSES).nullable() }),
   /** A food chip with a fixed meaning (D-24). */
   z.strictObject({ type: z.literal("recommend"), text: z.enum(RECOMMEND_CHIP_TEXTS) }),
-  /** The "Opening hours" chip (D-24): every branch's week from the facts, no model call. */
-  z.strictObject({ type: z.literal("hours") }),
+  /**
+   * The "Opening hours" chip (D-24), and D-27's branch chips: a branch ("all" for every branch) and a date keep what an
+   * hours question asked about. No model call.
+   */
+  z.strictObject({ type: z.literal("hours"), branch: z.union([slug, z.literal("all")]).optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
 ]);
 
 /**
@@ -66,9 +69,13 @@ export const PrefsSchema = z.strictObject({
   mild: z.boolean(),
   allergy: z.boolean(),
   unlisted: z.array(z.enum(UNLISTED)).max(UNLISTED.length).default([]),
+  /** D-26: the guest likes it spicy (medium or hot). Never set together with mild. */
+  spicy: z.boolean().default(false),
+  /** D-26: ingredients the guest doesn't want ("not paneer"), only words found in the menu's names or descriptions. */
+  exclude: z.array(z.string().min(3).max(24)).max(5).default([]),
 });
 export type Prefs = z.infer<typeof PrefsSchema>;
-export const noPrefs = (): Prefs => ({ diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false, unlisted: [] });
+export const noPrefs = (): Prefs => ({ diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false, unlisted: [], spicy: false, exclude: [] });
 
 /** Bounded conversation memory the client sends back (D-13, D-20). Item IDs are re-checked against the menu. */
 export const ContextSchema = z.strictObject({
@@ -76,7 +83,26 @@ export const ContextSchema = z.strictObject({
   prefs: PrefsSchema.nullable().optional(),
   /** Dishes suggested so far in this conversation, most recent first ("another", "cheaper"). */
   recommended: z.array(z.string().max(100)).max(6).optional(),
+  /** D-26: clarifying questions already asked in this conversation, so none is asked twice. */
+  asked: z.array(z.enum(["diet", "course", "plan_diet"])).max(4).optional(),
+  /** D-28: the allergy note has been shown for the allergies now in force (shown again only when they change). */
+  allergyNoted: z.boolean().optional(),
+  /** D-28: the meal being planned for a group: party, total budget, what they eat, and the last plan's total and dishes. */
+  plan: z
+    .strictObject({
+      party: z.number().int().min(1).max(12),
+      budget: z.number().int().min(1).max(200_000),
+      basis: z.enum(["total", "per_person"]),
+      diet: z.enum(["vegetarian", "vegan", "any", "mixed"]).nullable(),
+      subtotal: z.number().int().min(0).nullable(),
+      items: z.array(z.string().max(100)).max(10),
+    })
+    .optional(),
+  /** D-27: what the last hours answer was about, for a follow-up ("what about Golf Course Road?"). */
+  hours: z.strictObject({ branches: z.array(slug).max(8), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable() }).optional(),
 });
+export type HoursFocus = NonNullable<z.infer<typeof ContextSchema>["hours"]>;
+export type PlanFocus = NonNullable<z.infer<typeof ContextSchema>["plan"]>;
 export type TurnContext = z.infer<typeof ContextSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 
@@ -122,6 +148,9 @@ export type SlotChip = {
   action: Action;
 };
 
+/** One branch in an hours card (D-27): a row per service; a note only where the hours differ from the usual ones. */
+export type HoursSection = { branch: string; subtitle: string; special: string | null; rows: { label: string; value: string; closed: boolean; note: string | null }[]; /** "On Saturdays": a coming Saturday with special hours. */ note: string | null };
+
 export type Block =
   | { type: "quick_replies"; chips: Chip[] }
   | { type: "field_request"; field: Field; prompt: string; chips: Chip[] }
@@ -156,6 +185,10 @@ export type Block =
   /** A menu section, or dishes matching the guest's preferences, grouped by course (D-20). */
   | { type: "menu_list"; groups: { course: Course; label: string; items: MenuItemView[] }[] }
   | { type: "notice"; tone: "info" | "warning"; text: string }
+  /** D-28: a meal for a group within a budget: dishes from the menu table, quantities, and the total code worked out. */
+  | { type: "meal_plan"; party: number; budget: number; budgetBasis: "total" | "per_person"; items: (MenuItemView & { qty: number })[]; subtotal: number; caveats: string[] }
+  /** D-27: opening hours for a branch and a date (or its regular week), from the hours tables; no prose times. */
+  | { type: "hours"; sections: HoursSection[] }
   /** Added by the client, and only from a 201/200 reservation response (BR-12, §5.7). Never sent by /api/chat. */
   | {
       type: "confirmation";
@@ -216,7 +249,7 @@ export type TraceEntry =
   /** A model value replaced by a deterministic reading of the guest's message (D-17). */
   | { action: "correct_field"; field: Field; reason: "weekday" | "day_of_month" | "large_party" | "stated" }
   /** Food preferences in force after this turn (D-20); `added` lists what code read from the guest's own words. */
-  | { action: "prefs"; prefs: Prefs; added: string[] }
+  | { action: "prefs"; prefs: Prefs; added: string[]; /** D-28: what the model proposed that the guest didn't state (not applied). */ inferred?: string[] }
   /** The menu filtered by the preferences (D-20): how many dishes fit, and why none did. */
   | { action: "eligible"; count: number; none: string | null }
   /** One chooser call: the dish ids it proposed, and why code rejected the proposal (empty when valid). */
@@ -228,6 +261,13 @@ export type TraceEntry =
   | { action: "redirect"; kind: "off_topic" | "manage_booking" | "large_party" }
   | { action: "smalltalk"; shown: boolean }
   | { action: "clarify" }
+  /** D-26: one clarifying question about the guest's preferences, asked by code. */
+  | { action: "ask_pref"; args: { field: "diet" | "course" | "plan_diet" } }
+  /** D-28: a planning request read in code, and each planner attempt with what code found wrong. */
+  | { action: "plan_scope"; party: number; budget: number; diet: string; dishes: number; least: number | null }
+  | { action: "plan"; attempt: 1 | 2; result: string; items: string[]; subtotal: number | null; rejected: string[] }
+  /** D-26: a popularity, review or evidence question, answered from the data the restaurant has (bestseller marks). */
+  | { action: "evidence"; args: { kind: "sales" | "reviews" | "evidence"; bestsellers: number } }
   | { action: "pending_confirm" }
   | { action: "degraded"; code: string }
   | { action: "rate_limited" }

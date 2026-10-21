@@ -10,17 +10,17 @@ import { COURSES, courseLabel, guestLabels, MENU_STATUS, SPICE, shortBranch } fr
 // One dish (D-25): the editable fields the menu table has, a preview of the dish card guests see in the chat, the
 // exact fact the chatbot reads, and whether the keyword index and the semantic vectors are current for it.
 
-type Item = { slug: string; name: string; category: string; description: string; priceInr: number; dietary: string[]; spiceLevel: number | null; branches: string[] | null; scopeLabel: string | null; status: "available" | "unavailable" | "removed"; createdBy: "seed" | "staff"; updatedAt: number | null };
+type Item = { slug: string; name: string; category: string; description: string; priceInr: number; dietary: string[]; spiceLevel: number | null; branches: string[] | null; scopeLabel: string | null; status: "available" | "unavailable" | "removed"; bestseller: boolean; createdBy: "seed" | "staff"; updatedAt: number | null };
 type Detail = { item: Item; fact: { id: string; text: string } | null; listedIn: string[]; index: { keyword: string; vector: string }; changes: { id: number; at: number; action: string; summary: string }[] };
 type Branches = { branches: { slug: string; name: string; isActive: boolean }[] };
 
-type Form = { name: string; description: string; category: string; price: string; diet: "none" | "vegetarian" | "vegan"; glutenFree: boolean; jain: boolean; dairy: boolean; nuts: boolean; egg: boolean; spice: string; scope: "all" | "some"; branches: string[]; status: Item["status"] };
+type Form = { name: string; description: string; category: string; price: string; diet: "none" | "vegetarian" | "vegan"; glutenFree: boolean; jain: boolean; dairy: boolean; nuts: boolean; egg: boolean; spice: string; scope: "all" | "some"; branches: string[]; status: Item["status"]; bestseller: boolean };
 
-const blank: Form = { name: "", description: "", category: "", price: "", diet: "none", glutenFree: false, jain: false, dairy: false, nuts: false, egg: false, spice: "", scope: "all", branches: [], status: "available" };
+const blank: Form = { name: "", description: "", category: "", price: "", diet: "none", glutenFree: false, jain: false, dairy: false, nuts: false, egg: false, spice: "", scope: "all", branches: [], status: "available", bestseller: false };
 
 function toForm(i: Item): Form {
   const d = i.dietary;
-  return { name: i.name, description: i.description, category: i.category, price: String(i.priceInr), diet: d.includes("vegan") ? "vegan" : d.includes("vegetarian") ? "vegetarian" : "none", glutenFree: d.includes("gluten-free"), jain: d.includes("jain-available"), dairy: d.includes("contains-dairy"), nuts: d.includes("contains-nuts"), egg: d.includes("egg"), spice: i.spiceLevel === null ? "" : String(i.spiceLevel), scope: i.branches ? "some" : "all", branches: i.branches ?? [], status: i.status };
+  return { name: i.name, description: i.description, category: i.category, price: String(i.priceInr), diet: d.includes("vegan") ? "vegan" : d.includes("vegetarian") ? "vegetarian" : "none", glutenFree: d.includes("gluten-free"), jain: d.includes("jain-available"), dairy: d.includes("contains-dairy"), nuts: d.includes("contains-nuts"), egg: d.includes("egg"), spice: i.spiceLevel === null ? "" : String(i.spiceLevel), scope: i.branches ? "some" : "all", branches: i.branches ?? [], status: i.status, bestseller: i.bestseller };
 }
 
 function dietaryOf(f: Form): string[] {
@@ -61,7 +61,7 @@ export function MenuItemPage({ slug, justCreated = false }: { slug: string | nul
     if (f.scope === "some" && !f.branches.length) local.branches = "Choose at least one branch, or all branches";
     setFields(local);
     if (Object.keys(local).length) return;
-    const body = { name: f.name, description: f.description, category: f.category, priceInr: Number(f.price), dietary: dietaryOf(f), spiceLevel: f.spice === "" ? null : Number(f.spice), branches: f.scope === "all" ? null : f.branches, status: slug ? f.status : f.status === "removed" ? "available" : f.status };
+    const body = { name: f.name, description: f.description, category: f.category, priceInr: Number(f.price), dietary: dietaryOf(f), spiceLevel: f.spice === "" ? null : Number(f.spice), branches: f.scope === "all" ? null : f.branches, status: slug ? f.status : f.status === "removed" ? "available" : f.status, bestseller: f.bestseller };
     setSaving(true);
     const r = slug ? await api<{ changed: boolean; summary: string }>(`/api/admin/menu/${slug}`, { method: "PATCH", body }) : await api<{ item: Item }>("/api/admin/menu", { body });
     setSaving(false);
@@ -183,6 +183,15 @@ export function MenuItemPage({ slug, justCreated = false }: { slug: string | nul
                 {slug && <option value="removed">Removed from the menu</option>}
               </select>
             </Field>
+          </div>
+          <div className="space-y-1">
+            <label className="flex min-h-11 items-center gap-2 text-[15px]">
+              <input type="checkbox" checked={f.bestseller} aria-describedby="m-bestseller-hint" onChange={(e) => set({ bestseller: e.target.checked })} />
+              Bestseller
+            </label>
+            <p id="m-bestseller-hint" className="text-[13px] text-muted">
+              Tick only if your sales show it. When guests ask what sells best, the chatbot names the dishes ticked here; with none ticked, it says it has no sales data.
+            </p>
           </div>
           <fieldset className="space-y-2">
             <legend className="text-[14px] font-medium">Branches</legend>

@@ -98,6 +98,15 @@ const COUNT = `\\d{1,3}|a dozen|${Object.keys(COUNT_WORDS).filter((k) => k !== "
 const PARTY_RE = new RegExp(`\\b(?:party|group|table)\\s+(?:of|for)\\s+(${COUNT})\\b|\\b(${COUNT})\\s*(?:people|persons|guests|pax|adults|of us)\\b|\\b(${COUNT})\\s+(?:colleagues|friends|coworkers|co-workers|family members|relatives|teammates)\\b(\\s+and\\s+(?:i|me|myself)\\b)?`, "gi");
 const BOOKING_CUE_RE = /\b(?:book\w*|reserv\w*|table|seat\w*|come|coming|visit)\b/i;
 
+/** The party size stated with a people word ("2 people", "two of us", "a group of 5"), the last one stated, or null. */
+export function partyStated(raw: string): number | null {
+  const t = foldDigits(raw).toLowerCase();
+  const m = [...t.matchAll(PARTY_RE)].at(-1);
+  const word = m ? (m[1] ?? m[2] ?? m[3]) : null;
+  const n = (word === null ? NaN : /^\d/.test(word) ? Number(word) : (COUNT_WORDS[word] ?? NaN)) + (m?.[4] ? 1 : 0);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /**
  * A party above the online limit stated in a booking message (BR-07: 9+ gets the branch phone), or null. The model
  * sometimes answers "can I book for 20 people?" as an FAQ, or drops the 20 (live walkthrough, 2026-10-20).

@@ -38,6 +38,8 @@ export type FactSource = {
     spiceLevel: number | null;
     branches: string[] | null;
     isAvailable: boolean;
+    /** D-26: staff marked it a bestseller. Optional so hand-built sources in tests stay valid. */
+    isBestseller?: boolean;
   }[];
   faq: { slug: string; question: string; answer: string; branchId: number | null }[];
   /**
@@ -71,7 +73,7 @@ export function loadFactSource(db: DB): FactSource {
     }[]
   ).map((r) => ({ branchId: r.branch_id, date: r.date, service: r.service, isClosed: r.is_closed === 1, opens: r.opens, closes: r.closes, note: r.note }));
   const menu = (
-    db.prepare("SELECT slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available FROM menu_items WHERE is_listed = 1 ORDER BY id").all() as {
+    db.prepare("SELECT slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available, is_bestseller FROM menu_items WHERE is_listed = 1 ORDER BY id").all() as {
       slug: string;
       category: string;
       name: string;
@@ -81,6 +83,7 @@ export function loadFactSource(db: DB): FactSource {
       spice_level: number | null;
       branch_slugs: string | null;
       is_available: number;
+      is_bestseller: number;
     }[]
   ).map((r) => ({
     slug: r.slug,
@@ -92,6 +95,7 @@ export function loadFactSource(db: DB): FactSource {
     spiceLevel: r.spice_level,
     branches: r.branch_slugs ? (JSON.parse(r.branch_slugs) as string[]) : null,
     isAvailable: r.is_available === 1,
+    isBestseller: r.is_bestseller === 1,
   }));
   const faq = (db.prepare("SELECT slug, question, answer, branch_id FROM faq_entries WHERE is_active = 1 ORDER BY id").all() as { slug: string; question: string; answer: string; branch_id: number | null }[]).map((r) => ({
     slug: r.slug,
@@ -233,7 +237,8 @@ export function renderKbFacts(src: FactSource): Fact[] {
 
   for (const m of menu) {
     const where = m.scope ? ` ${scopeText(m.scope)}.` : "";
-    const avail = m.isAvailable ? "" : " Currently unavailable.";
+    // D-26: the restaurant's own bestseller mark is the only popularity fact; the sentence appears only when it is set.
+    const avail = `${m.isAvailable ? "" : " Currently unavailable."}${m.isBestseller ? " Marked as a bestseller by the restaurant." : ""}`;
     // A spice level the menu doesn't give is "not listed", never "not spicy" (D-25: staff can leave it blank; the seed always sets it).
     const itemText = (alsoVegetarian: boolean) => `${m.name} (${categoryLabel(m.category)}), ₹${m.priceInr}. ${m.description}. ${dietText(m.dietary, alsoVegetarian)} Spice: ${m.spiceLevel === null ? "not listed" : SPICE[m.spiceLevel]}.${where}${avail}`;
     facts.push({

@@ -108,11 +108,11 @@ export function applySeed(db: DB, seed: SeedData, opts: { now: number; acceptCon
       }
     }
 
-    const upsertMenu = db.prepare(`INSERT INTO menu_items (slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available)
-      VALUES (@slug, @category, @name, @description, @priceInr, @dietary, @spiceLevel, @branches, @available)
+    const upsertMenu = db.prepare(`INSERT INTO menu_items (slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available, is_bestseller)
+      VALUES (@slug, @category, @name, @description, @priceInr, @dietary, @spiceLevel, @branches, @available, @bestseller)
       ON CONFLICT(slug) DO UPDATE SET category = excluded.category, name = excluded.name, description = excluded.description, price_inr = excluded.price_inr,
-        dietary = excluded.dietary, spice_level = excluded.spice_level, branch_slugs = excluded.branch_slugs, is_available = excluded.is_available`);
-    for (const m of seed.menu) upsertMenu.run({ ...m, dietary: JSON.stringify(m.dietary), branches: m.branches ? JSON.stringify(m.branches) : null, available: m.isAvailable ? 1 : 0 });
+        dietary = excluded.dietary, spice_level = excluded.spice_level, branch_slugs = excluded.branch_slugs, is_available = excluded.is_available, is_bestseller = excluded.is_bestseller`);
+    for (const m of seed.menu) upsertMenu.run({ ...m, dietary: JSON.stringify(m.dietary), branches: m.branches ? JSON.stringify(m.branches) : null, available: m.isAvailable ? 1 : 0, bestseller: m.bestseller ? 1 : 0 });
     const menuSlugs = seed.menu.map((m) => m.slug);
     db.prepare(`DELETE FROM menu_items WHERE slug NOT IN (${menuSlugs.map(() => "?").join(",") || "''"})`).run(...menuSlugs);
 

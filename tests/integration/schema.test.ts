@@ -55,7 +55,7 @@ describe("connection settings (D-08)", () => {
 
 describe("migrations", () => {
   it("records each migration once and is idempotent", () => {
-    expect((db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as { version: string }[]).map((r) => r.version)).toEqual(["001_init", "002_chat_turns_food", "003_staff_workspace"]);
+    expect((db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as { version: string }[]).map((r) => r.version)).toEqual(["001_init", "002_chat_turns_food", "003_staff_workspace", "004_bestseller"]);
     expect(migrate(db, 1)).toEqual([]);
   });
   it("002 keeps existing chat_turns rows and accepts the menu and recommend intents (D-20)", () => {
@@ -65,7 +65,7 @@ describe("migrations", () => {
     migrate(old, 1, dir);
     old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('a', 's', 'faq', 'faq_answer', 1)").run();
     expect(() => old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('b', 's', 'recommend', 'recommend', 2)").run()).toThrow(/CHECK/);
-    expect(migrate(old, 2)).toEqual(["002_chat_turns_food", "003_staff_workspace"]);
+    expect(migrate(old, 2)).toEqual(["002_chat_turns_food", "003_staff_workspace", "004_bestseller"]);
     old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('b', 's', 'recommend', 'recommend', 2)").run();
     old.prepare("INSERT INTO chat_turns (id, session_id, intent, outcome, created_at) VALUES ('c', 's', 'menu', 'menu', 3)").run();
     expect(old.prepare("SELECT id, intent FROM chat_turns ORDER BY created_at").all()).toEqual([{ id: "a", intent: "faq" }, { id: "b", intent: "recommend" }, { id: "c", intent: "menu" }]);
@@ -87,8 +87,8 @@ describe("migrations", () => {
     for (const b of seed.branches) old.prepare("INSERT INTO branches (slug, name, address, phone, timezone, is_active) VALUES (?, ?, ?, ?, ?, 1)").run(b.slug, b.name, b.address, b.phone, b.timezone);
     for (const m of seed.menu) old.prepare("INSERT INTO menu_items (slug, category, name, description, price_inr, dietary, spice_level, branch_slugs, is_available) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(m.slug, m.category, m.name, m.description, m.priceInr, JSON.stringify(m.dietary), m.spiceLevel, m.branches ? JSON.stringify(m.branches) : null, m.isAvailable ? 1 : 0);
     for (const f of seed.faq) old.prepare("INSERT INTO faq_entries (slug, question, answer, branch_id) VALUES (?, ?, ?, ?)").run(f.slug, f.question, f.answer, f.branch ? id(f.branch) : null);
-    expect(migrate(old, 2)).toEqual(["003_staff_workspace"]);
-    // The same retrievable facts as a database built fresh from the same seed: 003 changes no fact text.
+    expect(migrate(old, 2)).toEqual(["003_staff_workspace", "004_bestseller"]);
+    // The same retrievable facts as a database built fresh from the same seed: 003 and 004 change no fact text.
     const fresh = openDb(":memory:");
     migrate(fresh, 2);
     applySeed(fresh, seed, { now: Date.parse("2026-10-16T14:00:00+05:30") });
@@ -96,6 +96,12 @@ describe("migrations", () => {
     fresh.close();
     expect(old.prepare("SELECT count(*) AS n FROM menu_items WHERE is_listed = 1 AND created_by = 'seed' AND updated_at IS NULL").get()).toEqual({ n: 48 });
     expect(old.prepare("SELECT count(*) AS n FROM faq_entries WHERE category = 'general'").get()).toEqual({ n: 0 });
+    // 004 (D-26): nothing is marked a bestseller until staff mark it, and only a marked dish's fact says so.
+    expect(old.prepare("SELECT count(*) AS n FROM menu_items WHERE is_bestseller = 0").get()).toEqual({ n: 48 });
+    expect(renderKbFacts(loadFactSource(old)).some((f) => /bestseller/i.test(f.text))).toBe(false);
+    old.prepare("UPDATE menu_items SET is_bestseller = 1 WHERE slug = 'dal-ember'").run();
+    expect(renderKbFacts(loadFactSource(old)).filter((f) => /bestseller/i.test(f.text)).map((f) => f.id)).toEqual(["menu:dal-ember"]);
+    expect(() => old.prepare("UPDATE menu_items SET is_bestseller = 2 WHERE slug = 'dal-ember'").run()).toThrow(/CHECK/);
     old.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });

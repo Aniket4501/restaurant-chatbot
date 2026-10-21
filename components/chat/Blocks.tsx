@@ -337,6 +337,97 @@ function MenuList({ block }: { block: Extract<Block, { type: "menu_list" }> }) {
   );
 }
 
+/**
+ * A meal for a group within a budget (D-28). Every dish, price and quantity comes from the menu table; the total and
+ * what's left are worked out in code. Line totals line up on the right; the caveats (taxes, service charge) are small.
+ */
+function MealPlan({ block }: { block: Extract<Block, { type: "meal_plan" }> }) {
+  const titleId = useId();
+  const left = block.budget - block.subtotal;
+  return (
+    <section aria-labelledby={titleId} className="rounded-2xl border border-line bg-paper px-4 pt-3 pb-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <h3 id={titleId} className="flex items-center gap-2 font-display text-[18px] leading-tight text-ink">
+          <DishIcon className="h-5 w-5 shrink-0 text-neem" />
+          Meal for {block.party}
+        </h3>
+        <p className="text-[13px] text-muted">
+          Budget {price(block.budget)}
+          {block.budgetBasis === "per_person" && ` (${price(Math.round(block.budget / block.party))} each)`}
+        </p>
+      </div>
+      <ul className="mt-1 divide-y divide-line">
+        {block.items.map((i) => (
+          <li key={i.id} className="py-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[15px] font-medium text-ink">
+                {i.qty > 1 && <span className="tabular-nums">{i.qty} × </span>}
+                {i.name}
+              </span>
+              <span className="shrink-0 text-[15px] text-ink tabular-nums">{price(i.price * i.qty)}</span>
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[13px] text-muted">
+                {i.courseLabel}
+                {i.qty > 1 && ` · ${price(i.price)} each`}
+              </span>
+              <Labels item={i} />
+              {i.contains.length > 0 && <span className="text-[12px] text-muted">Contains {i.contains.join(", ")}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-baseline justify-between gap-3 border-t border-line pt-2">
+        <span className="text-[15px] font-medium text-ink">Total</span>
+        <span className="text-[17px] font-medium text-neem tabular-nums">{price(block.subtotal)}</span>
+      </div>
+      <p className="mt-0.5 text-[13px] text-neem-dark">{left > 0 ? `Within your budget, ${price(left)} to spare` : "Exactly your budget"}</p>
+      {block.caveats.map((c) => (
+        <p key={c} className="mt-1.5 text-[12px] leading-snug text-muted">
+          {c}
+        </p>
+      ))}
+    </section>
+  );
+}
+
+/**
+ * Opening hours (D-27): one card per branch with a row per service. Times line up in their own column; a closed
+ * service reads "Closed" in muted text; a note shows only under a row whose hours differ from the usual ones, and a
+ * day with special hours gets a small marker beside the date.
+ */
+function Hours({ block }: { block: Extract<Block, { type: "hours" }> }) {
+  const baseId = useId();
+  return (
+    <div className="space-y-2">
+      {block.sections.map((s, i) => (
+        <section key={`${s.branch}-${i}`} aria-labelledby={`${baseId}-${i}`} className="rounded-2xl border border-line bg-paper px-4 pt-3 pb-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+            <h3 id={`${baseId}-${i}`} className="flex items-center gap-2 font-display text-[18px] leading-tight text-ink">
+              <ClockIcon className="h-5 w-5 shrink-0 text-neem" />
+              {s.branch}
+            </h3>
+            <p className="text-[13px] text-muted">
+              {s.subtitle}
+              {s.special && <span className="ml-2 rounded-full bg-warn-tint px-2 py-0.5 text-[12px] text-warn">{s.special}</span>}
+            </p>
+          </div>
+          <dl className="mt-1.5 divide-y divide-line">
+            {s.rows.map((r) => (
+              <div key={r.label} className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 py-2">
+                <dt className="text-[15px] text-ink">{r.label}</dt>
+                <dd className={`text-right text-[15px] tabular-nums ${r.closed ? "text-muted" : "font-medium text-ink"}`}>{r.value}</dd>
+                {r.note && <dd className="col-span-2 mt-0.5 text-[13px] text-muted">{r.note}</dd>}
+              </div>
+            ))}
+          </dl>
+          {s.note && <p className="border-t border-line pt-2 pb-1 text-[13px] text-muted">{s.note}</p>}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function BlockView({ block, h }: { block: Block; h: BlockHandlers }) {
   switch (block.type) {
     case "quick_replies":
@@ -365,6 +456,10 @@ export function BlockView({ block, h }: { block: Block; h: BlockHandlers }) {
       return <Recommendation block={block} />;
     case "menu_list":
       return <MenuList block={block} />;
+    case "hours":
+      return <Hours block={block} />;
+    case "meal_plan":
+      return <MealPlan block={block} />;
     case "confirm":
       return null; // rendered by ChatPanel, which owns the submit state
   }

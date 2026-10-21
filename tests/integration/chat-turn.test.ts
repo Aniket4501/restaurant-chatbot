@@ -61,20 +61,37 @@ describe("chips with a fixed meaning skip the intent call (D-24)", () => {
     return { calls, model };
   };
   const chipTurn = (action: TurnInput["action"], label: string, context?: TurnInput["context"]): TurnInput => ({ now: NOW, sessionId: SID, messages: [{ role: "guest", content: label }], draft: null, action, context });
-  it("'Opening hours' answers every branch's week from the facts, with no model call", async () => {
+  it("'Opening hours' asks which branch (their weeks differ), and a branch chip shows its card, with no model call", async () => {
     const { calls, model } = counting({});
     const r = await runTurn(chipTurn({ type: "hours" }, "Opening hours"), deps({ model }));
     expect(calls).toEqual([]);
     expect(r.meta.outcome).toBe("hours_answer");
-    expect(r.reply.text).toMatch(/^Hauz Khas, every day: .*Golf Course Road, Tuesday to Sunday: /);
+    expect(r.reply.text).toBe("Which branch? Hauz Khas and Golf Course Road keep different hours.");
+    expect(block(r, "quick_replies")!.chips.map((c) => ("action" in c ? c.action : null))).toEqual([{ type: "hours", branch: "hauz-khas" }, { type: "hours", branch: "gurugram" }, { type: "hours", branch: "all" }]);
     expect(r.meta.timing.calls).toBe(0);
+    // D-27: the chip's branch gives that branch's regular week as a card; the reply line repeats no times.
+    const g = await runTurn(chipTurn({ type: "hours", branch: "gurugram" }, "Golf Course Road"), deps({ model }));
+    expect(calls).toEqual([]);
+    expect(block(g, "hours")!.sections).toMatchObject([{ branch: "Golf Course Road", rows: [{ label: "Lunch", note: "Mondays: closed" }, { label: "Dinner", value: "7:00 PM – 11:00 PM" }] }]);
+    expect(g.reply.text).toBe("Here are the regular opening hours at Golf Course Road.");
+    expect(g.context.hours).toEqual({ branches: ["gurugram"], date: null });
+    // A booking's branch is known: no question.
+    const d = await runTurn({ ...chipTurn({ type: "hours" }, "Opening hours"), draft: { ...emptyDraft(), branch: "hauz-khas" } }, deps({ model }));
+    expect(block(d, "hours")!.sections.map((s) => s.branch)).toEqual(["Hauz Khas"]);
   });
   it("'Help me find a dish' asks its question with answer chips, with no model call", async () => {
     const { calls, model } = counting({});
+    // D-26: with nothing known about the guest, the one question is about diet, asked once (remembered in the context).
     const r = await runTurn(chipTurn({ type: "recommend", text: "Help me find a dish" }, "Help me find a dish"), deps({ model }));
     expect(calls).toEqual([]);
-    expect(r.reply.text).toBe("Happy to help. What are you in the mood for?");
-    expect(r.reply.blocks[0]).toMatchObject({ type: "quick_replies", chips: [{ label: "Something light", action: { type: "recommend", text: "Something light" } }, {}, {}, {}, { label: "Show me the menu" }] });
+    expect(r.reply.text).toBe("Happy to help. Any preference: vegetarian, vegan, or do you eat everything?");
+    expect(r.reply.blocks[0]).toMatchObject({ type: "quick_replies", chips: [{ label: "Vegetarian", action: { type: "recommend", text: "Something vegetarian" } }, { label: "Vegan" }, { label: "I eat everything" }, { label: "Surprise me" }] });
+    expect(r.context.asked).toEqual(["diet"]);
+    // With the diet known, it asks what they are in the mood for; the chips name a meal type (D-28).
+    const known = await runTurn(chipTurn({ type: "recommend", text: "Help me find a dish" }, "Help me find a dish", { prefs: { ...noPrefs(), diet: ["vegetarian"] }, lastCitedIds: [] }), deps({ model }));
+    expect(calls).toEqual([]);
+    expect(known.reply.text).toBe("Happy to help. What are you in the mood for?");
+    expect(known.reply.blocks[0]).toMatchObject({ type: "quick_replies", chips: [{ label: "A light snack", action: { type: "recommend", text: "A light snack" } }, {}, {}, {}, { label: "Show me the menu" }] });
   });
   it("'Something cheaper' goes straight to the chooser (one model call), keeping the preferences and comparing with the last dish", async () => {
     const { calls, model } = counting({ pick: "chana-pindi", alternatives: [], reply: "The Chana Pindi at ₹395 is a dark, tangy chickpea curry." });
@@ -94,7 +111,8 @@ describe("chips with a fixed meaning skip the intent call (D-24)", () => {
     expect(r.meta.outcome).toBe("hours_answer");
     let listed = "";
     const chooser: ModelClient = { provider: "fake", model: "c", chat: async (req) => ((listed = req.messages[1]?.content ?? ""), { status: 200, error: null, content: JSON.stringify({ pick: "dal-ember", alternatives: [], reply: "The Dal Ember at ₹445 is black lentils slow-cooked overnight." }), done_reason: "stop", thinking: null, prompt_eval_count: 1, prompt_eval_cached_count: 0, eval_count: 1, total_ms: 1 }) };
-    const f = await runTurn(chipTurn({ type: "recommend", text: "Something filling" }, "Something filling", { prefs: { ...noPrefs(), course: "desserts" }, lastCitedIds: [] }), deps({ model: chooser }));
+    // ("Something filling" with no meal type now asks for one first (D-28), so "Surprise me" is the fresh chip here.)
+    const f = await runTurn(chipTurn({ type: "recommend", text: "Surprise me" }, "Surprise me", { prefs: { ...noPrefs(), course: "desserts" }, lastCitedIds: [] }), deps({ model: chooser }));
     expect(listed).toContain("Dal Ember"); // a main, not only desserts
     expect(f.context.prefs?.course).toBeNull();
   });
@@ -314,55 +332,73 @@ describe("FAQ routing (J1, J2, J8, J12; D-10, D-15)", () => {
   describe("hours answers cover what was asked, whatever the model cited (D-24 audit)", () => {
     const hoursModel = (cited: string[]): ModelClient => ({ provider: "fake", model: "h", chat: async () => ({ status: 200, error: null, content: JSON.stringify({ intent: "faq", booking: null, prefs: null, answer: "x", citedFactIds: cited, answerable: true }), done_reason: "stop", thinking: null, prompt_eval_count: 1, prompt_eval_cached_count: 0, eval_count: 1, total_ms: 1 }) });
     const ask = (q: string, cited: string[], now = NOW) => runTurn({ ...say(q), now }, deps({ model: hoursModel(cited) }));
-    it("a general question gets every branch's whole week, and its special days", async () => {
+    // D-27: hours answers are a card built from the hours tables for the branch and date asked about; the reply line
+    // answers in words and repeats no times. These keep the D-24 audit's intent on top of that.
+    const sections = (r: Awaited<ReturnType<typeof ask>>) => block(r, "hours")?.sections ?? [];
+    const rowOf = (r: Awaited<ReturnType<typeof ask>>, label: string, i = 0) => sections(r)[i]?.rows.find((x) => x.label === label);
+    it("a general question asks which branch when their weeks differ, and lists no special days", async () => {
       const r = await ask("What are your opening hours?", ["hours:hauz-khas:fri", "hours:gurugram:mon"]);
       expect(r.meta.outcome).toBe("hours_answer");
-      expect(r.reply.text).toContain("Hauz Khas, every day: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM.");
-      expect(r.reply.text).toContain("Golf Course Road, Tuesday to Sunday: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM; Monday: closed for lunch; dinner 7:00 PM–11:00 PM.");
-      expect(r.reply.text).toContain("Tue 27 Oct 2026: closed all day");
-      expect(r.reply.text.length).toBeLessThanOrEqual(600);
+      expect(r.reply.text).toMatch(/^Which branch\?/);
+      expect(r.reply.text).not.toMatch(/Oct/);
+      expect(r.context.hours).toEqual({ branches: [], date: null });
     });
-    it("a general question about one branch gets that branch's week before its exception", async () => {
+    it("a general question about one branch gets that branch's week only (D-27: no special dates for regular hours)", async () => {
       const r = await ask("What are your hours at Golf Course Road?", ["exception:gurugram:2026-10-27"]);
-      expect(r.reply.text).toMatch(/^Golf Course Road, Tuesday to Sunday: .* Special hours at Golf Course Road on Tue 27 Oct 2026: closed all day/);
-      expect(r.reply.text).not.toContain("Hauz Khas");
+      expect(sections(r)).toMatchObject([{ branch: "Golf Course Road", subtitle: "Regular weekly hours", note: null }]);
+      expect(rowOf(r, "Lunch")).toMatchObject({ value: "12:00 PM – 3:30 PM", note: "Mondays: closed" });
+      expect(JSON.stringify(r.reply)).not.toMatch(/Hauz Khas|27 Oct|maintenance/);
     });
-    it("'tonight' on a special day leads with that day's hours, not the usual ones", async () => {
+    it("'tonight' on a special day shows that day's hours, not the usual ones", async () => {
       const r = await ask("Are you open for dinner tonight at Hauz Khas?", ["hours:hauz-khas:thu"], Date.parse("2026-10-22T14:00:00+05:30"));
-      expect(r.reply.text).toBe("Special hours at Hauz Khas on Thu 22 Oct 2026: lunch 12:00 PM–3:30 PM; closed for dinner (Regular lunch; Closed for a private event).");
+      expect(r.reply.text).toBe("Hauz Khas is closed for dinner tonight.");
+      expect(sections(r)[0]).toMatchObject({ subtitle: "Today, Thu 22 Oct", special: expect.any(String) });
+      expect(rowOf(r, "Dinner")).toMatchObject({ value: "Closed", closed: true, note: "Closed for a private event" });
+      expect(rowOf(r, "Lunch")).toMatchObject({ value: "12:00 PM – 3:30 PM", note: null });
+      expect(r.meta.citedFactIds).toContain("exception:hauz-khas:2026-10-22");
     });
-    it("review of D-24: an address answer stays an address; a weekday asked with 'tomorrow' keeps its closure; 'sat' and 'currently' aren't days", async () => {
+    it("review of D-24: an address answer stays an address; 'tomorrow and on Tuesday' answers both days; 'sat' and 'currently' aren't days", async () => {
       const address = await ask("What's the address of the Gurugram branch?", ["branch:gurugram"]);
       expect(address.reply.text).toMatch(/^Neem & Ember, Golf Course Road\. Address: /);
       expect(address.reply.text).not.toMatch(/lunch|dinner/);
+      expect(block(address, "hours")).toBeUndefined();
+      // "On Tuesday" is the coming Tuesday (20 Oct); the 27 Oct closure is another Tuesday.
       const both = await ask("Is Golf Course Road open tomorrow and on Tuesday?", ["hours:gurugram:sat", "hours:gurugram:tue"]);
-      expect(both.reply.text).toContain("Tue 27 Oct 2026: closed all day");
+      expect(sections(both).map((x) => x.subtitle)).toEqual(["Tomorrow, Sat 17 Oct", "Tue 20 Oct"]);
       for (const q of ["We sat on the terrace last time, what are your hours?", "What are your opening hours currently?"]) {
         const r = await ask(q, ["hours:gurugram:mon"]);
-        expect(r.reply.text, q).toContain("Hauz Khas, every day");
-        expect(r.reply.text, q).toContain("Golf Course Road, Tuesday to Sunday");
+        expect(r.reply.text, q).toMatch(/^Which branch\?/); // the regular week, not a day: the branches differ
+        expect(r.context.hours?.date, q).toBeNull();
       }
     });
-    it("'right now' and 'tomorrow' show that date's weekday even when the model cited another (D-24 final run LV-INT-010)", async () => {
-      const now = await ask("Are you open right now at Hauz Khas?", ["hours:hauz-khas:mon"]); // NOW is a Friday
-      expect(now.reply.text).toBe("Hauz Khas on Fridays: lunch 12:00 PM–3:30 PM; dinner 7:00 PM–11:00 PM.");
+    it("'right now' and 'tomorrow' show that date even when the model cited another weekday (D-24 final run LV-INT-010)", async () => {
+      const now = await ask("Are you open right now at Hauz Khas?", ["hours:hauz-khas:mon"]); // NOW is a Friday, 2 PM
+      expect(now.reply.text).toBe("Yes, Hauz Khas is open right now.");
+      expect(sections(now)[0].subtitle).toBe("Today, Fri 16 Oct");
+      expect(now.meta.citedFactIds).toEqual(["hours:hauz-khas:fri"]);
       const tomorrow = await ask("What time does Golf Course Road open tomorrow?", ["hours:gurugram:tue"]);
-      expect(tomorrow.reply.text).toMatch(/^Golf Course Road on Saturdays: /);
+      expect(sections(tomorrow)[0]).toMatchObject({ branch: "Golf Course Road", subtitle: "Tomorrow, Sat 17 Oct" });
     });
-    it("'tomorrow' gets tomorrow's hours without another date's exception; a weekday in general keeps them", async () => {
+    it("'tomorrow' gets tomorrow's hours without another date's exception; 'on Saturdays' notes the coming special Saturday", async () => {
       const tomorrow = await ask("What time do you open tomorrow?", ["hours:hauz-khas:sat", "hours:gurugram:sat"]);
-      expect(tomorrow.reply.text).not.toContain("31 Oct");
+      expect(JSON.stringify(tomorrow.reply)).not.toContain("31 Oct");
       const saturdays = await ask("What are your hours on Saturdays at Hauz Khas?", ["hours:hauz-khas:sat"]);
-      expect(saturdays.reply.text).toContain("Special hours at Hauz Khas on Sat 31 Oct 2026");
+      expect(sections(saturdays)[0].note).toBe("Special hours on Sat 31 Oct: dinner 7:00 PM – 11:30 PM (Extended dinner hours).");
+    });
+    it("a follow-up keeps the date for a new branch (D-27)", async () => {
+      const hk = await ask("What are your timings tomorrow at Hauz Khas?", ["hours:hauz-khas:sat"]);
+      const gcr = await runTurn({ ...say("What about Golf Course Road?"), context: hk.context }, deps({ model: hoursModel(["hours:gurugram:sat"]) }));
+      expect(sections(gcr).map((x) => [x.branch, x.subtitle])).toEqual([["Golf Course Road", "Tomorrow, Sat 17 Oct"]]);
     });
   });
 
-  it("renders hours-only answers from facts (HF4 replay)", async () => {
+  it("renders hours-only answers from the hours tables, never the model's prose (HF4 replay)", async () => {
     const q = "Is Hauz Khas open for dinner on Thursday 22 October?";
     const script = { [q]: faq("Hauz Khas is open for dinner on Thursday 22 October from 7:00 PM to 11:00 PM.", ["exception:hauz-khas:2026-10-22", "hours:hauz-khas:thu"]) };
     const r = await runTurn(say(q), deps({ script }));
     expect(r.meta.outcome).toBe("hours_answer");
-    expect(r.reply.text).toBe("Special hours at Hauz Khas on Thu 22 Oct 2026: lunch 12:00 PM–3:30 PM; closed for dinner (Regular lunch; Closed for a private event).");
+    expect(r.reply.text).toBe("Hauz Khas is closed for dinner on Thursday."); // six days ahead: the weekday names it
+    expect(JSON.stringify(r.reply)).not.toMatch(/7:00 PM|11:00 PM/);
   });
 
   it("keeps a booking in progress and repeats its pending question after an answer", async () => {
@@ -633,5 +669,29 @@ describe("chat_turns accepts the D-20 intents and outcomes (migration 002)", () 
     for (const r of [r1, r2]) expect(r.trace.some((t) => t.action === "metrics_write_failed")).toBe(false);
     const rows = t.db.prepare("SELECT intent, outcome FROM chat_turns ORDER BY rowid").all();
     expect(rows).toEqual([{ intent: null, outcome: "menu" }, { intent: "recommend", outcome: "recommend" }]);
+  });
+});
+
+describe("popularity questions are answered from the restaurant's own mark (D-26)", () => {
+  const rec = (intent: Turn["intent"], prefs: Partial<NonNullable<Turn["prefs"]>> = {}): Turn => ({ intent, booking: nullBooking(), prefs: { diet: [], avoid: [], maxPrice: null, course: null, mild: false, allergy: false, relation: null, ...prefs }, answer: null, citedFactIds: [], answerable: true });
+  it("names the marked dishes that fit, says plainly when none fit, and never calls the chooser", async () => {
+    t.db.prepare("UPDATE menu_items SET is_bestseller = 1 WHERE slug IN ('dal-ember', 'old-delhi-butter-chicken')").run();
+    const veg = await runTurn(say("What is your best vegetarian seller?"), deps({ model: sequenceModel([rec("recommend", { diet: ["vegetarian"] })]) }));
+    expect(veg.reply.text).toBe("Of the vegetarian dishes, the restaurant marks the Dal Ember as a bestseller.");
+    expect(veg.reply.blocks[0]).toMatchObject({ type: "recommendation", lead: false, items: [{ id: "menu:dal-ember" }] });
+    expect(veg.meta.timing.calls).toBe(1);
+    // The model read a dessert question as a menu request: still answered from the mark, with an offer instead.
+    const dessert = await runTurn(say("What's your most popular dessert?"), deps({ model: sequenceModel([rec("menu", { course: "desserts" })]) }));
+    expect(dessert.reply.text).toBe("None of the dishes the restaurant marks as bestsellers is a dessert. I can suggest a dessert that suits you instead.");
+    expect(dessert.reply.blocks.some((b) => b.type === "recommendation" || b.type === "menu_list")).toBe(false);
+    // The mark is in the dish's fact, so a grounded answer can cite it; an unmarked dish's fact says nothing about it.
+    const facts = renderKbFacts(loadFactSource(t.db));
+    expect(facts.find((f) => f.id === "menu:dal-ember")?.text).toMatch(/Marked as a bestseller by the restaurant\.$/);
+    expect(facts.find((f) => f.id === "menu:chana-pindi")?.text).not.toMatch(/bestseller/i);
+  });
+  it("with nothing marked, says there is no such data and asks the one diet question", async () => {
+    const r = await runTurn(say("What is your best seller?"), deps({ model: sequenceModel([rec("recommend")]) }));
+    expect(r.reply.text).toBe("We don't keep sales or popularity figures, so I can't say which dish sells best. I can suggest something that suits you instead. Any preference: vegetarian, vegan, or do you eat everything?");
+    expect(r.context.asked).toEqual(["diet"]);
   });
 });

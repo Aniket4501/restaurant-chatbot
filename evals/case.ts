@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { ActionSchema, AVOIDS, COURSES, DIETS, DraftSchema, MessageSchema } from "@/lib/chat/types";
 import { ChooserSchema } from "@/lib/llm/chooser";
+import { PlannerSchema } from "@/lib/llm/planner";
 import { TurnSchema } from "@/lib/llm/schema";
 
 // Eval case format (MASTER_PROMPT §6.3, D-12). One JSON object per line in evals/cases/*.jsonl. Unknown categories,
@@ -55,7 +56,7 @@ const SetupOp = z.discriminatedUnion("op", [
 /** A scripted model reply: a turn, an envelope, a fake directive, or the §6.3 tokens. */
 /** A scripted turn; cases written before D-20 may leave out prefs (null). */
 const ScriptTurn = z.strictObject({ ...TurnSchema.shape, prefs: TurnSchema.shape.prefs.default(null) });
-const ScriptReply = z.union([ScriptTurn, ChooserSchema, z.strictObject({ raw: z.record(z.string(), z.unknown()) }), z.enum(["<<INVALID_JSON>>", "<<TIMEOUT>>", "<<DOWN>>"]), z.string().regex(/^#fake:[a-z_]+$/)]);
+const ScriptReply = z.union([ScriptTurn, ChooserSchema, PlannerSchema, z.strictObject({ raw: z.record(z.string(), z.unknown()) }), z.enum(["<<INVALID_JSON>>", "<<TIMEOUT>>", "<<DOWN>>"]), z.string().regex(/^#fake:[a-z_]+$/)]);
 
 const Expect = z.strictObject({
   /** One intent, or a list of acceptable ones (e.g. an injection may be off_topic or unclear). */

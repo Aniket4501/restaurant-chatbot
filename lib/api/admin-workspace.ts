@@ -37,7 +37,11 @@ function handle<P = Record<string, never>>(fn: (req: Request, params: P) => Prom
       return okResponse(r.status ?? 200, r.body);
     } catch (e) {
       if (e instanceof AdminError) return errorResponse(e.status, e.code, e.message, e.extra);
-      console.error(JSON.stringify({ event: "admin_error", path: new URL(req.url).pathname, method: req.method, error: e instanceof Error ? e.name : "unknown" }));
+      // A database behind the code (a migration not applied yet): say how to fix it, not "something went wrong" (the
+      // knowledge page failed this way on a local copy whose database lacked a new column). Nothing was written.
+      const behind = e instanceof Error && e.name === "SqliteError" && /no such (?:column|table)/.test(e.message);
+      console.error(JSON.stringify({ event: "admin_error", path: new URL(req.url).pathname, method: req.method, error: behind ? "schema_behind" : e instanceof Error ? e.name : "unknown" }));
+      if (behind) return errorResponse(503, "UNAVAILABLE", "The database needs updating for this version of the app. Run npm run db:migrate, then reload. Nothing was saved.");
       return errorResponse(500, "INTERNAL", "Something went wrong. Reload the page to see what was saved.");
     }
   };

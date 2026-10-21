@@ -250,13 +250,13 @@ test("a recommendation is a card built from the menu table, with follow-ups @cat
   await axe(page, "recommendation");
 });
 
-test("'Help me find a dish' asks what the guest is in the mood for, and an answer chip goes to the chooser (D-24) @cat:recommendation", async ({ page }) => {
+test("'Help me find a dish' asks one diet question, and an answer chip goes to the chooser (D-24, D-26) @cat:recommendation", async ({ page }) => {
   const bodies: { action?: unknown }[] = [];
   page.on("request", (r) => r.url().endsWith("/api/chat") && bodies.push(r.postDataJSON()));
   await page.goto("/");
   await page.getByRole("button", { name: "Help me find a dish" }).click();
-  await expect(page.getByText("Happy to help. What are you in the mood for?")).toBeVisible();
-  for (const name of ["Something light", "Something filling", "Something vegetarian", "Surprise me"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(page.getByText("Happy to help. Any preference: vegetarian, vegan, or do you eat everything?")).toBeVisible();
+  for (const name of ["Vegetarian", "Vegan", "I eat everything", "Surprise me"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   await axe(page, "help question");
   await page.getByRole("button", { name: "Surprise me", exact: true }).click();
   await expect(page.getByRole("article", { name: "Chana Pindi, ₹395" })).toBeVisible();
@@ -411,5 +411,45 @@ test("the name and mobile typed into the confirm card survive a question and a r
   await again.getByRole("button", { name: "Confirm" }).click();
   await expect(page.locator("[data-confirmation-ref]")).toBeVisible();
   expect(rows(server.db)).toHaveLength(1);
+});
+
+// D-27 and D-28 cards on a phone: structured rows, no sideways scrolling, no raw data, accessible.
+const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+test("opening hours: a general question asks which branch, a branch chip shows its card; a special date shows that day only (D-27) @cat:hours", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/");
+  await say(page, "What are your opening hours?");
+  await expect(page.getByText("Which branch? Hauz Khas and Golf Course Road keep different hours.")).toBeVisible();
+  await page.getByRole("button", { name: "Golf Course Road", exact: true }).last().click();
+  const week = page.getByRole("region", { name: "Golf Course Road" }).last();
+  await expect(week.getByText("12:00 PM – 3:30 PM")).toBeVisible();
+  await expect(week.getByText("Mondays: closed")).toBeVisible();
+  await expect(week).not.toContainText("27 Oct");
+  await noOverflow(page);
+  await axe(page, "hours card");
+  await say(page, "Is Hauz Khas open for dinner on 22 October?");
+  await expect(page.getByText("Hauz Khas is closed for dinner on Thursday.")).toBeVisible();
+  const day = page.getByRole("region", { name: "Hauz Khas" }).last();
+  await expect(day.getByText("Thu 22 Oct")).toBeVisible();
+  await expect(day.getByText("Closed for a private event")).toBeVisible();
+  await expect(day).not.toContainText("7:00 PM");
+  await expect(page.locator("body")).not.toContainText(/exception:|hours:hauz|\{"/);
+  await noOverflow(page);
+});
+
+test("a meal for two within a budget: the plan card with quantities and the total from code (D-28) @cat:recommendation", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/");
+  await say(page, "There are two of us, both vegetarian, and our budget is ₹1000 in total. What should we order?");
+  await expect(page.getByText(/^Here's a vegetarian meal for two people that comes to ₹930, within your ₹1,000\./)).toBeVisible();
+  const plan = page.getByRole("region", { name: "Meal for 2" });
+  for (const dish of ["Dal Ember", "Yellow Dal Tadka", "Butter Naan"]) await expect(plan.getByText(dish, { exact: true })).toBeVisible();
+  await expect(plan.getByText("₹930", { exact: true })).toBeVisible();
+  await expect(plan.getByText("Within your budget, ₹70 to spare")).toBeVisible();
+  await expect(plan.getByText("No service charge is added to the bill. Tipping is optional.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Make it cheaper" })).toBeEnabled();
+  await noOverflow(page);
+  await axe(page, "meal plan");
 });
 

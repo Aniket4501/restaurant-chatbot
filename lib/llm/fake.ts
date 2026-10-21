@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { MODEL } from "@/lib/config";
 import { ModelError, type ModelClient, type ModelRequest, type RawEnvelope } from "@/lib/llm/client";
 import type { Choice } from "@/lib/llm/chooser";
+import type { Plan } from "@/lib/llm/planner";
 import type { Turn } from "@/lib/llm/schema";
 
 // Scripted chat model for tests, evals and the "scripted model" UI mode (§5.8, D-12). It returns the same raw
@@ -13,7 +14,8 @@ import type { Turn } from "@/lib/llm/schema";
 //   - { raw: Partial<RawEnvelope> }     → that envelope (e.g. a 500, or malformed content)
 //   - a directive string ("#fake:…")    → as below
 //   - an array of the above             → one per attempt (the corrective retry gets the second)
-// The recommendation chooser's call (D-20) is looked up under "chooser:<guest text>".
+// The recommendation chooser's call (D-20) is looked up under "chooser:<guest text>", the meal planner's (D-28)
+// under "planner:<guest text>".
 // Directives may also appear inside the guest text itself:
 //   #fake:down or <<DOWN>>  connection refused (MODEL_UNAVAILABLE)    #fake:timeout    MODEL_TIMEOUT
 //   #fake:not_pulled        HTTP 404                                   #fake:length     done_reason "length"
@@ -23,7 +25,7 @@ import type { Turn } from "@/lib/llm/schema";
 // Anything else gets an "unclear" turn.
 
 /** A Turn, a chooser reply (D-20), a raw envelope, or a directive. */
-export type FakeReply = Turn | Choice | { raw: Partial<RawEnvelope> } | string;
+export type FakeReply = Turn | Choice | Plan | { raw: Partial<RawEnvelope> } | string;
 export type FakeScript = Record<string, FakeReply | FakeReply[]>;
 
 const DIRECTIVES = ["#fake:down", "#fake:timeout", "#fake:not_pulled", "#fake:length", "#fake:thinking", "#fake:empty", "#fake:context", "#fake:invalid_once", "#fake:invalid", "#fake:claim"] as const;
@@ -82,7 +84,7 @@ export function fakeModel(opts: { script?: FakeScript; model?: string } = {}): M
         total_ms: 0,
         ...over,
       });
-      const ofTurn = (t: Turn | Choice) => {
+      const ofTurn = (t: Turn | Choice | Plan) => {
         // Scripts written before D-20 have no prefs; the real model must always send it, so the double fills in null.
         const content = JSON.stringify("intent" in t && !("prefs" in t) ? { ...(t as object), prefs: null } : t);
         return envelope({ content, eval_count: Math.ceil(content.length / 3) });
@@ -123,8 +125,11 @@ export function fakeModel(opts: { script?: FakeScript; model?: string } = {}): M
       const inline = DIRECTIVES.find((d) => guest.includes(d));
       if (inline) return directive(inline);
       // The recommendation chooser (D-20) repeats the guest's message, so its replies live under "chooser:<text>".
-      const chooserCall = (req.messages[0]?.content ?? "").startsWith("You help guests of");
-      const scripted = script[chooserCall ? `chooser:${guest}` : guest];
+      const system = req.messages[0]?.content ?? "";
+      const chooserCall = system.startsWith("You help guests of");
+      // The meal planner (D-28) likewise: "planner:<text>".
+      const plannerCall = system.startsWith("You plan a shared meal at");
+      const scripted = script[chooserCall ? `chooser:${guest}` : plannerCall ? `planner:${guest}` : guest];
       if (scripted !== undefined) return reply(Array.isArray(scripted) ? (scripted[req.attempt - 1] ?? scripted.at(-1)!) : scripted);
       return ofTurn(unclearTurn());
     },

@@ -13,7 +13,7 @@ export const COURSE_LABEL: Record<Course, string> = { "small-plates": "Small pla
 const COURSE_NOUN: Record<Course, string> = { "small-plates": "small plates", tandoor: "tandoor dishes", mains: "main courses", "breads-rice": "breads or rice dishes", desserts: "desserts", drinks: "drinks" };
 
 /** A menu row with the verified data the filters need; `view` strips it to what the guest sees. */
-export type MenuEntry = MenuItemView & { available: boolean; dietary: string[]; branches: string[] | null };
+export type MenuEntry = MenuItemView & { available: boolean; dietary: string[]; branches: string[] | null; /** D-26: staff marked it a bestseller (the only popularity evidence there is). */ bestseller: boolean };
 export const view = (e: MenuEntry): MenuItemView => ({ id: e.id, name: e.name, course: e.course, courseLabel: e.courseLabel, price: e.price, description: e.description, labels: e.labels, contains: e.contains, spice: e.spice, scope: e.scope });
 
 /** Every dish served at an active branch, available or not, in menu order. */
@@ -39,6 +39,7 @@ export function menuEntries(src: FactSource): MenuEntry[] {
       available: m.isAvailable,
       dietary: d,
       branches: scope, // null: every branch
+      bestseller: m.isBestseller === true,
     });
   }
   return out;
@@ -59,8 +60,17 @@ export function unmet(item: MenuEntry, prefs: Prefs): string | null {
   if (prefs.course !== null && item.course !== prefs.course) return `not one of the ${COURSE_NOUN[prefs.course]}`;
   if (prefs.mild && item.spice === null) return "spice level not listed";
   if (prefs.mild && (item.spice ?? 0) > 1) return "too spicy";
+  // D-26: "I like it spicy" means medium or hot; an unlisted spice level is unknown, so it doesn't count.
+  if (prefs.spicy && item.spice === null) return "spice level not listed";
+  if (prefs.spicy && (item.spice ?? 0) < 2) return "not spicy";
+  // D-26: an ingredient the guest doesn't want ("not paneer"), found in the dish's name or description.
+  const text = `${item.name} ${item.description}`.toLowerCase();
+  for (const w of prefs.exclude ?? []) if (new RegExp(`\\b${stemOf(w)}`).test(text)) return `has ${w}`;
   return null;
 }
+
+/** "prawns" → "prawn", "tomatoes" → "tomato": the stem an ingredient search matches on. */
+export const stemOf = (w: string) => w.toLowerCase().replace(/(?:es|s)$/, "");
 
 /** Served at this branch (a dish with no branch list is served at both). */
 export const servedAt = (i: MenuEntry, branch: string | null | undefined) => !branch || !i.branches || i.branches.includes(branch);
@@ -98,14 +108,15 @@ export function foodWords(text: string, items: MenuEntry[]): string[] {
 /** "mild vegan main courses without nuts, up to ₹200": the honest no-match reply and the prompt's preference line. */
 export function describePrefs(prefs: Prefs, opts: { cheaperThan?: number | null } = {}): string {
   const diet = prefs.diet.map((d) => (d === "jain" ? "Jain-friendly" : d)).join(", ");
-  const parts = [`${prefs.mild ? "mild " : ""}${diet ? `${diet} ` : ""}${prefs.course ? COURSE_NOUN[prefs.course] : "dishes"}`];
-  if (prefs.avoid.length) parts.push(`without ${prefs.avoid.join(" or ")}`);
+  const parts = [`${prefs.mild ? "mild " : prefs.spicy ? "spicy " : ""}${diet ? `${diet} ` : ""}${prefs.course ? COURSE_NOUN[prefs.course] : "dishes"}`];
+  const without = [...prefs.avoid, ...(prefs.exclude ?? [])];
+  if (without.length) parts.push(`without ${without.join(" or ")}`);
   if (prefs.maxPrice !== null) parts.push(`up to ₹${prefs.maxPrice}`);
   if (opts.cheaperThan != null) parts.push(`under ₹${opts.cheaperThan}`);
   return parts.join(", ");
 }
 
-export const hasPrefs = (p: Prefs) => p.diet.length > 0 || p.avoid.length > 0 || p.maxPrice !== null || p.course !== null || p.mild;
+export const hasPrefs = (p: Prefs) => p.diet.length > 0 || p.avoid.length > 0 || p.maxPrice !== null || p.course !== null || p.mild || !!p.spicy || (p.exclude ?? []).length > 0;
 /** The allergy note applies: an allergen to avoid, an allergy, or a medical gluten-free need (the kitchen handles gluten). */
 export const needsAllergyNote = (p: Prefs) => p.avoid.length > 0 || p.allergy;
 
@@ -116,7 +127,7 @@ export const ALLERGY_NOTE = "Menu labels only list the main allergens, and our k
  * Menu browsing (D-20), no model involved: with no section and no preferences, the list of sections; otherwise the
  * matching dishes grouped by course. Unavailable dishes are left out of lists.
  */
-export function menuStep(items: MenuEntry[], prefs: Prefs, course: Course | null, opts: { branch?: string | null; words?: string[] } = {}): { text: string; blocks: Block[]; shown: number; cited: string[] } {
+export function menuStep(items: MenuEntry[], prefs: Prefs, course: Course | null, opts: { branch?: string | null; words?: string[]; /** D-28: show the allergy note (default: whenever an allergen is avoided). */ allergyNote?: boolean } = {}): { text: string; blocks: Block[]; shown: number; cited: string[] } {
   const p: Prefs = { ...prefs, course: course ?? prefs.course };
   const sections: Block = { type: "quick_replies", chips: COURSES.filter((c) => items.some((i) => i.course === c)).map((c) => ({ label: COURSE_LABEL[c], action: { type: "menu" as const, course: c } })) };
   const referral = unlistedReferral(p);
@@ -126,14 +137,14 @@ export function menuStep(items: MenuEntry[], prefs: Prefs, course: Course | null
   if (words.length && p.course === null) {
     const stem = (w: string) => w.replace(/(?:es|s)$/, "");
     const found = eligible(items, { ...p, course: null }, { branch: opts.branch }).filter((i) => words.some((w) => new RegExp(`\\b${stem(w)}`).test(`${i.name} ${i.description}`.toLowerCase())));
-    const note: Block[] = p.avoid.length || p.allergy ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
+    const note: Block[] = (opts.allergyNote ?? (p.avoid.length > 0 || p.allergy)) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
     if (!found.length) return { text: `We don't have any ${hasPrefs(p) ? `${describePrefs(p)} ` : "dishes "}with ${words.join(" or ")} on the menu right now.`, blocks: [...note, sections], shown: 0, cited: [] };
     const groups = COURSES.map((c) => ({ course: c, label: COURSE_LABEL[c], items: found.filter((i) => i.course === c).map(view) })).filter((g) => g.items.length);
     return { text: `Here's what we have with ${words.join(" or ")}.`, blocks: [{ type: "menu_list", groups }, ...note], shown: found.length, cited: found.slice(0, 8).map((d) => d.id) };
   }
   if (!hasPrefs(p)) return { text: "Which part of the menu would you like to see?", blocks: [sections], shown: 0, cited: [] };
   const fit = eligible(items, p, { branch: opts.branch });
-  const note: Block[] = needsAllergyNote(p) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
+  const note: Block[] = (opts.allergyNote ?? needsAllergyNote(p)) ? [{ type: "notice", tone: "info", text: ALLERGY_NOTE }] : [];
   // Nothing fits: the sections are offered, so the guest is never left without a way on.
   if (!fit.length) return { text: `We don't have any ${describePrefs(p)} on the menu right now.`, blocks: [...note, sections], shown: 0, cited: [] };
   const groups = COURSES.map((c) => ({ course: c, label: COURSE_LABEL[c], items: fit.filter((i) => i.course === c).map(view) })).filter((g) => g.items.length);

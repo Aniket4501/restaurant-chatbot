@@ -222,3 +222,16 @@ describe("knowledge documents (D-25)", () => {
     expect(p.hits.every((h: { kind: string }) => ["menu", "faq", "menu-cat", "menu-diet", "doc"].includes(h.kind))).toBe(true);
   });
 });
+
+describe("a database behind the code", () => {
+  it("says to run the migration instead of 'something went wrong' (local copy: a new menu column was missing)", async () => {
+    s = await seeded("kb-behind", NOW);
+    db().exec("ALTER TABLE menu_items DROP COLUMN is_bestseller");
+    const r = await call(kb().GET, "GET", "/api/admin/knowledge");
+    expect(r.status).toBe(503);
+    expect(r.json.error).toMatchObject({ code: "UNAVAILABLE", message: expect.stringContaining("npm run db:migrate") });
+    const w = await article();
+    expect(w.status).toBe(503);
+    expect(db().prepare("SELECT COUNT(*) AS n FROM kb_documents").get()).toEqual({ n: 0 });
+  });
+});

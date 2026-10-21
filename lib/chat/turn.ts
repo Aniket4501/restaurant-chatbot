@@ -15,12 +15,15 @@ import { nullBooking, TURN_JSON_SCHEMA, type Intent, type Turn } from "@/lib/llm
 import type { LocalDate } from "@/lib/time/tz";
 import { checkGrounding } from "@/lib/chat/grounding";
 import { guardExtraction, largePartyStated } from "@/lib/chat/guards";
-import { foodWords, menuEntries, menuStep } from "@/lib/chat/menu";
-import { ANSWER_CHIPS, claimProblems, explicitPrefs, HELP_QUESTION, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
+import { ALLERGY_NOTE, foodWords, menuEntries, menuStep } from "@/lib/chat/menu";
+import { ANSWER_CHIPS, claimProblems, DIET_CHIPS, DIET_QUESTION, explicitPrefs, HELP_QUESTION, liftedPrefs, recommendTurn, resolvePrefs, type ChooserCall, type RecommendResult } from "@/lib/chat/recommend";
+import { evidenceQuestion, evidenceStep } from "@/lib/chat/evidence";
+import { planTurn, readPlanRequest, type PlanCall, type PlanResult } from "@/lib/chat/plan";
+import { PLANNER_JSON_SCHEMA, PlannerSchema } from "@/lib/llm/planner";
 import { GateFullError, openGate, type ModelGate, type TurnLimiter } from "@/lib/chat/ratelimit";
 import { blankStep, degradedStep, handleAction, routeTurn, type FlowCtx, type Prepared, type Step } from "@/lib/chat/router";
 import { branchInfo } from "@/lib/chat/templates";
-import { emptyDraft, HELP_CHIP_TEXT, noPrefs, type Action, type ChatMessage, type Draft, type Prefs, type TraceEntry, type TurnContext, type TurnReply, type TurnTiming } from "@/lib/chat/types";
+import { emptyDraft, HELP_CHIP_TEXT, noPrefs, type Action, type ChatMessage, type Draft, type HoursFocus, type PlanFocus, type Prefs, type TraceEntry, type TurnContext, type TurnReply, type TurnTiming } from "@/lib/chat/types";
 
 // runTurn (§5.7, ARCHITECTURE "Chat turn pipeline"): the single entry point for POST /api/chat and the eval runner.
 // The body is validated by the caller (ChatBodySchema). Nothing here reads the clock: `now` is an input, and
@@ -74,6 +77,15 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   // Memory out (D-20): unchanged unless this turn is about food choices.
   let prefsOut: Prefs | null = input.context?.prefs ?? null;
   let recommendedOut: string[] = input.context?.recommended ?? [];
+  // D-27: what this turn's hours answer was about (kept for one follow-up), set by the router through `onHours`.
+  let hoursOut: HoursFocus | null = null;
+  // D-28: the meal being planned (kept for one follow-up: "make it cheaper", "vegetarian").
+  let planOut: PlanFocus | null = null;
+  // Clarifying questions asked so far in this conversation (D-26): each kind is asked once.
+  let askedOut: ("diet" | "course" | "plan_diet")[] = [...(input.context?.asked ?? [])];
+  const ask = (q: "diet" | "course" | "plan_diet" | undefined) => {
+    if (q && !askedOut.includes(q)) askedOut = [...askedOut, q];
+  };
   const metrics = { retrievalMode: "none" as "hybrid" | "lexical" | "none", retrievalReason: null as string | null, modelMs: null as number | null, retrievalMs: null as number | null, promptTokens: null as number | null, cachedTokens: null as number | null, outputTokens: null as number | null, promptVersion: null as string | null };
   // Stage timings (D-24): measurement only.
   const t = { setupMs: 0, promptMs: null as number | null, queueMs: null as number | null, statusMs: null as number | null, turnModelMs: null as number | null, chooserMs: null as number | null, calls: 0, loadMs: null as number | null, promptEvalMs: null as number | null, evalMs: null as number | null, evalTokens: null as number | null, uncachedPromptTokens: null as number | null };
@@ -93,6 +105,17 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     return { setupMs: Math.round(t.setupMs), retrievalMs: round(metrics.retrievalMs), promptMs: round(t.promptMs), queueMs: round(t.queueMs), statusMs: round(t.statusMs), turnModelMs: round(t.turnModelMs), chooserMs: round(t.chooserMs), otherMs: Math.max(0, Math.round(latencyMs - known)), calls: t.calls, loadMs: round(t.loadMs), promptEvalMs: round(t.promptEvalMs), evalMs: round(t.evalMs), evalTokens: t.evalTokens, uncachedPromptTokens: t.uncachedPromptTokens };
   };
 
+  // D-28: the allergy note is shown once for the allergies in force, and again when they change (a new allergen or
+  // allergy) or the guest asks about safety; it isn't repeated under every later suggestion. A booking turn that
+  // learns of an allergy doesn't show it, so the next food answer does.
+  const noted = (step: Step) => {
+    const p = prefsOut;
+    if (!p || !(p.avoid.length || p.allergy)) return false;
+    if (step.blocks.some((b) => b.type === "notice" && b.text === ALLERGY_NOTE)) return true;
+    const before = input.context?.prefs;
+    const changed = !before || (p.allergy && !before.allergy) || p.avoid.some((a) => !before.avoid.includes(a));
+    return !!input.context?.allergyNoted && !changed;
+  };
   const finish = (step: Step, intent: Intent | null, status: TurnReply["status"] = "ok", retryAfterMs?: number): TurnReply => {
     const latencyMs = elapsed() - started;
     const reply: TurnReply = {
@@ -102,7 +125,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       draft: step.draft,
       intent,
       // A turn the model couldn't answer keeps what the conversation was about (D-21 audit: a timeout erased it).
-      context: { lastCitedIds: (step.outcome === "degraded" || step.outcome === "rate_limited" ? (input.context?.lastCitedIds ?? []) : (step.citedFactIds ?? [])).slice(0, 8), prefs: prefsOut, recommended: recommendedOut.slice(0, 6) },
+      context: { lastCitedIds: (step.outcome === "degraded" || step.outcome === "rate_limited" ? (input.context?.lastCitedIds ?? []) : (step.citedFactIds ?? [])).slice(0, 8), prefs: prefsOut, recommended: recommendedOut.slice(0, 6), ...(askedOut.length ? { asked: askedOut } : {}), ...(noted(step) ? { allergyNoted: true } : {}), ...(hoursOut ? { hours: hoursOut } : {}), ...(planOut ? { plan: planOut } : {}) },
       trace,
       meta: {
         outcome: step.outcome,
@@ -187,7 +210,9 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const entries = menuEntries(src);
   if (input.action?.type === "menu") {
     const p = prefsOut ?? noPrefs();
-    const m = menuStep(entries, input.action.course === null ? { ...noPrefs(), unlisted: p.unlisted } : { ...noPrefs(), diet: p.diet, avoid: p.avoid, allergy: p.allergy, unlisted: p.unlisted }, input.action.course, { branch: draft0.branch });
+    // A menu chip says nothing new about allergies: the note shows if it hasn't been shown for them yet (D-28); the
+    // stored ones still filter.
+    const m = menuStep(entries, input.action.course === null ? { ...noPrefs(), unlisted: p.unlisted } : { ...noPrefs(), diet: p.diet, avoid: p.avoid, allergy: p.allergy, unlisted: p.unlisted }, input.action.course, { branch: draft0.branch, allergyNote: !input.context?.allergyNoted });
     trace.push({ action: "menu", course: input.action.course, items: m.shown });
     return finish({ text: m.text, blocks: m.blocks, draft: draft0, outcome: "menu", citedFactIds: m.cited }, null);
   }
@@ -212,13 +237,27 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     const factsById = new Map<string, Fact>([...staticFacts, ...kbFacts].map((f) => [f.id, f]));
     const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;
     const sentIds = new Set(staticFacts.map((f) => f.id));
-    const facts = { factsById, sentIds, zoneOf, staticFacts, foodPrefs: prefsOut, menu: entries, branchNamed: draft0.branch };
+    const hoursCtx = { src, focus: input.context?.hours ?? null, draftBranch: draft0.branch, onHours: (f: HoursFocus) => (hoursOut = f) };
+    const facts = { factsById, sentIds, zoneOf, staticFacts, foodPrefs: prefsOut, menu: entries, branchNamed: draft0.branch, hours: hoursCtx };
     const fixed = (intent: Intent, cited: string[] = []): Turn => ({ intent, booking: nullBooking(), prefs: null, answer: null, citedFactIds: cited, answerable: true });
     if (chip.type === "hours") {
+      // D-27: the chip's branch ("all" for both) and date, else the booking's branch; with neither, the regular week,
+      // after one question about the branch when their hours differ.
+      const active = src.branches.filter((b) => b.isActive).map((b) => b.slug);
+      const branch = chip.branch === "all" ? active : chip.branch && active.includes(chip.branch) ? [chip.branch] : draft0.branch ? [draft0.branch] : null;
+      const question = { branches: branch, dates: chip.date ? [chip.date] : [], weekday: null, meal: null, now: false };
       const weekly = staticFacts.filter((f) => f.id.startsWith("hours:")).map((f) => f.id);
-      return finish(routeTurn(fixed("faq", weekly), draft0, ctx, { ...facts, guest: "What are your opening hours?" }), "faq");
+      return finish(routeTurn(fixed("faq", weekly), draft0, ctx, { ...facts, guest: "What are your opening hours?", hours: { ...hoursCtx, question } }), "faq");
     }
-    if (chip.text === HELP_CHIP_TEXT) return finish(routeTurn(fixed("recommend"), draft0, ctx, { ...facts, guest: chip.text }, { text: HELP_QUESTION, blocks: [ANSWER_CHIPS()], cited: [] }), "recommend");
+    if (chip.text === HELP_CHIP_TEXT) {
+      // D-26: with the diet unknown, the first question is about diet (asked once); otherwise what they're in the mood for.
+      const dietKnown = (input.context?.prefs?.diet.length ?? 0) > 0 || askedOut.includes("diet");
+      if (!dietKnown) {
+        trace.push({ action: "ask_pref", args: { field: "diet" } });
+        ask("diet");
+      }
+      return finish(routeTurn(fixed("recommend"), draft0, ctx, { ...facts, guest: chip.text }, dietKnown ? { text: HELP_QUESTION, blocks: [ANSWER_CHIPS()], cited: [] } : { text: DIET_QUESTION, blocks: [DIET_CHIPS()], cited: [] }), "recommend");
+    }
     // A fresh request ("Something filling", "Surprise me") keeps the preferences but not a stored menu section, as the
     // model would; "cheaper", "another" and the relax chips refine the last search, section included (review of D-24).
     const refines = /^(?:Anything cheaper\?|Show me another option|Any price is fine|Forget the vegan|Forget the vegetarian|Spicy is fine)$/.test(chip.text);
@@ -241,8 +280,59 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     metrics.promptVersion = `chip+${CHOOSER_VERSION}`;
     prefsOut = rec.prefs;
     recommendedOut = rec.recommended;
+    ask(rec.asked);
     return finish(routeTurn(fixed("recommend"), draft0, ctx, { ...facts, foodPrefs: prefsOut, guest: chip.text }, { text: rec.text, blocks: rec.blocks, cited: rec.cited, largeParty: false }), "recommend");
   }
+
+  // 3b. A meal for a group within a budget ("can two of us eat here under ₹1,000?"), or a follow-up to the last plan
+  // ("make it cheaper", "vegetarian"): the party, budget and diet are read in code, so there is no intent call; the
+  // planner model call proposes the meal and code checks it (D-28).
+  const planReq = readPlanRequest(latest, input.context?.plan ?? null);
+  if (planReq) {
+    const staticFacts = renderStaticFacts(src, input.now);
+    const factsById = new Map<string, Fact>([...staticFacts, ...renderKbFacts(src)].map((f) => [f.id, f]));
+    const zoneOf = (slug: string) => src.branches.find((b) => b.slug === slug)?.timezone ?? zone;
+    const facts = { factsById, sentIds: new Set(staticFacts.map((f) => f.id)), zoneOf, staticFacts, foodPrefs: prefsOut, menu: entries, branchNamed: draft0.branch, guest: latest };
+    const planner: PlanCall = async (attempt, messages) => {
+      const limit = await timeoutMs();
+      const m0 = elapsed();
+      t.calls++;
+      try {
+        const env = await deps.model.chat({ messages, format: PLANNER_JSON_SCHEMA, attempt, signal: AbortSignal.timeout(limit) });
+        countCall(env);
+        const r = interpretJson(env, PlannerSchema);
+        return r.ok ? { plan: r.value, code: "ok", content: env.content } : { plan: null, code: r.code, content: env.content };
+      } catch (e) {
+        if ((e as { name?: string })?.name === "ScriptExhaustedError") throw e;
+        const code = e instanceof ModelError ? e.code : (e as { name?: string })?.name === "TimeoutError" || (e as { name?: string })?.name === "AbortError" ? "MODEL_TIMEOUT" : "MODEL_UNAVAILABLE";
+        return { plan: null, code, content: "" };
+      } finally {
+        metrics.modelMs = (metrics.modelMs ?? 0) + (elapsed() - m0);
+        add("chooserMs", elapsed() - m0); // the second-stage food call: the dish chooser or, here, the meal planner
+      }
+    };
+    let res: PlanResult;
+    const q0 = elapsed();
+    try {
+      res = await (deps.gate ?? openGate).run(async () => {
+        t.queueMs = elapsed() - q0;
+        return planTurn({ request: planReq, text: latest, history, entries, src, prefs: prefsOut ?? noPrefs(), branch: draft0.branch, asked: askedOut.includes("plan_diet"), trace, canRetry: () => elapsed() - started < 18_000 }, planner);
+      });
+    } catch (e) {
+      if (e instanceof GateFullError) {
+        trace.push({ action: "rate_limited" });
+        return finish({ text: BUSY_TEXT, blocks: [], draft: draft0, outcome: "rate_limited" }, null, "rate_limited", 1000);
+      }
+      throw e;
+    }
+    planOut = res.focus;
+    if (res.asked) ask("plan_diet");
+    const fixedTurn: Turn = { intent: "recommend", booking: nullBooking(), prefs: null, answer: null, citedFactIds: [], answerable: true };
+    return finish(routeTurn(fixedTurn, draft0, ctx, facts, { text: res.text, blocks: res.blocks, cited: res.cited, largeParty: false }), "recommend");
+  }
+
+  // D-26: "best seller?", "most popular dessert?", "best reviews?", "any data for that?": factual, not a choice.
+  const evidenceKind = evidenceQuestion(latest);
 
   // 4. Retrieve (D-02, D-13).
   const staticFacts = renderStaticFacts(src, input.now);
@@ -363,7 +453,8 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
       }
       const t1 = first.result;
       // A food question keeps its answer even with a large party in it (D-21 audit); the large-party line is added.
-      if (t1.ok && t1.turn.intent === "recommend") {
+      // A popularity or evidence question is answered from the data in code (D-26): no dish chooser for it.
+      if (t1.ok && t1.turn.intent === "recommend" && !evidenceKind) {
         recommended.result = await recommendTurn(
           { turn: t1.turn, text: latest, history: usedHistory, context: input.context, entries, restaurant: src.restaurant?.name ?? "the restaurant", grounding: { factsById, sentIds, zoneOf }, trace, canRetry: () => elapsed() - started < 18_000, relevant: retrieval.hits.map((h) => h.factId), branch: draft0.branch ?? t1.turn.booking.branch ?? branchIn(latest) },
           chooser,
@@ -392,6 +483,20 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
   const largeParty = largePartyStated(latest) !== null;
   // The branch named in the message, when exactly one is (the model fills booking.branch only for bookings).
   const branchNamed = branchIn(latest);
+  if (evidenceKind && turn.intent !== "booking" && turn.intent !== "manage_booking" && !(turn.intent === "faq" && turn.answerable && turn.citedFactIds.some((id) => /^(?:faq|doc):/.test(id)))) {
+    // A popularity or evidence question (D-26), whichever intent the model read ("most popular dessert?" can read as a
+    // menu request). A staff FAQ or document that answers it (a grounded FAQ answer citing one) takes the FAQ path.
+    const { prefs, added, inferred } = resolvePrefs(turn.prefs, prefsOut, latest, entries);
+    trace.push({ action: "prefs", prefs, added, ...(inferred.length ? { inferred } : {}) });
+    prefsOut = prefs;
+    const ev = evidenceStep({ kind: evidenceKind, text: latest, prefs, entries, context: { ...input.context, asked: askedOut }, branch: draft0.branch ?? branchNamed, trace });
+    ask(ev.asked);
+    if (ev.recommended) recommendedOut = [...new Set([...ev.recommended, ...recommendedOut])].slice(0, 6);
+    if (ev.asked) trace.push({ action: "ask_pref", args: { field: ev.asked } });
+    prepared = { text: ev.text, blocks: ev.blocks, cited: ev.cited, largeParty };
+    const step = routeTurn({ ...turn, intent: "recommend" }, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries, branchNamed }, prepared);
+    return finish(step, "recommend");
+  }
   if (turn.intent === "menu") {
     const previous = prefsOut;
     const { prefs, added } = resolvePrefs(turn.prefs, prefsOut, latest);
@@ -405,13 +510,14 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     const words = foodWords(latest, entries);
     const generic = prefs.course === null && !newDiet && !ex.avoid?.length && ex.maxPrice === undefined && !ex.mild && !words.length;
     const listPrefs: Prefs = generic ? { ...noPrefs(), unlisted: prefs.unlisted } : { ...prefs, maxPrice: ex.maxPrice ?? (/\d/.test(latest) ? prefs.maxPrice : null), mild: !!ex.mild || (prefs.mild && !previous?.mild) };
-    const m = menuStep(entries, listPrefs, listPrefs.course, { branch: draft0.branch ?? turn.booking.branch ?? branchNamed, words });
+    const m = menuStep(entries, listPrefs, listPrefs.course, { branch: draft0.branch ?? turn.booking.branch ?? branchNamed, words, allergyNote: !!(ex.allergy || ex.avoid?.length || prefs.avoid.some((a) => !(previous?.avoid ?? []).includes(a)) || !input.context?.allergyNoted) });
     trace.push({ action: "menu", course: listPrefs.course, items: m.shown });
     prepared = { text: m.text, blocks: m.blocks, cited: m.cited, largeParty };
   } else if (turn.intent === "recommend" && recommended.result) {
     const rec = recommended.result;
     prefsOut = rec.prefs;
     recommendedOut = rec.recommended;
+    ask(rec.asked);
     prepared = { text: rec.text, blocks: rec.blocks, cited: rec.cited, largeParty };
   } else {
     // An allergy or diet stated in any other message ("table for 2 tomorrow, I'm allergic to nuts") is remembered for
@@ -419,13 +525,19 @@ export async function runTurn(input: TurnInput, deps: TurnDeps): Promise<TurnRep
     // Only allergies and allergens: a diet word here is usually a question about a dish ("is that vegan?"; D-21
     // after-run LV-CONV-001 stored it as a preference).
     const ex = explicitPrefs(latest);
-    if (ex.allergy || ex.avoid?.length || ex.unlisted?.length) {
+    // D-28: a diet stated about the guest themselves ("I'm vegan", "we don't eat meat") or corrected ("I eat chicken
+    // now") is kept too, so it isn't asked again; a diet word in a question about a dish is not a statement.
+    const selfDiet = /\b(?:i'm|i am|im|we're|we are|i'm a|i am a|we're all|we are all|i'm strictly|we're strictly)\s+(?:a\s+|strictly\s+|pure\s+)?(?:vegetarians?|vegans?|veg|jain)\b|\b(?:don't|do not|never) eat (?:any )?(?:meat|chicken|fish)\b/i.test(latest);
+    const lifted = liftedPrefs(latest).diet;
+    if (ex.allergy || ex.avoid?.length || ex.unlisted?.length || (selfDiet && ex.diet?.length) || lifted.length) {
       const prev = prefsOut ?? noPrefs();
-      prefsOut = { ...prev, allergy: prev.allergy || !!ex.allergy, avoid: [...new Set([...prev.avoid, ...(ex.avoid ?? [])])], unlisted: [...new Set([...prev.unlisted, ...(ex.unlisted ?? [])])], course: null };
-      trace.push({ action: "prefs", prefs: prefsOut, added: [...(ex.allergy ? ["allergy"] : []), ...(ex.avoid ?? []).map((a) => `no ${a}`), ...(ex.unlisted ?? []).map((u) => `unlisted allergen: ${u}`)] });
+      const diet = [...new Set([...prev.diet.filter((d) => !lifted.includes(d)), ...(selfDiet ? (ex.diet ?? []) : [])])];
+      prefsOut = { ...prev, diet, allergy: prev.allergy || !!ex.allergy, avoid: [...new Set([...prev.avoid, ...(ex.avoid ?? [])])], unlisted: [...new Set([...prev.unlisted, ...(ex.unlisted ?? [])])], course: null };
+      trace.push({ action: "prefs", prefs: prefsOut, added: [...(selfDiet ? (ex.diet ?? []) : []), ...lifted.map((d) => `not ${d}`), ...(ex.allergy ? ["allergy"] : []), ...(ex.avoid ?? []).map((a) => `no ${a}`), ...(ex.unlisted ?? []).map((u) => `unlisted allergen: ${u}`)] });
     }
   }
-  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries, branchNamed }, prepared);
+  const hours = { src, focus: input.context?.hours ?? null, draftBranch: draft0.branch, onHours: (f: HoursFocus) => (hoursOut = f) };
+  const step = routeTurn(turn, draft0, ctx, { factsById, sentIds, zoneOf, staticFacts, guest: latest, foodPrefs: prefsOut, menu: entries, branchNamed, hours }, prepared);
   return finish(step, turn.intent);
 }
 
