@@ -104,6 +104,31 @@ const Expect = z.strictObject({
     .optional(),
   /** D-20: a menu list (section or dietary list) is shown. */
   menuShown: z.boolean().optional(),
+  /**
+   * D-26: a meal plan for a party with a budget. Each item's price is checked against the fixture menu, the subtotal
+   * against the item prices, and the subtotal against `maxTotal`; `satisfies` checks every item's labels.
+   */
+  mealPlan: z
+    .strictObject({
+      shown: z.boolean().optional(),
+      maxTotal: z.number().int().optional(),
+      minItems: z.number().int().min(1).optional(),
+      /** The subtotal is lower than the plan shown at this (1-based) turn. */
+      cheaperThanTurn: z.number().int().min(1).optional(),
+      satisfies: z.strictObject({ diet: z.array(z.enum(DIETS)).optional(), avoid: z.array(z.enum(AVOIDS)).optional() }).optional(),
+    })
+    .optional(),
+  /** D-27: an opening-hours card is shown, for exactly these branches (short names), when given. */
+  hours: z.strictObject({ shown: z.boolean().optional(), branches: z.array(z.string()).optional() }).optional(),
+  /** D-26: whether a notice (the allergy note, a warning) is shown under the reply. */
+  notice: z.strictObject({ shown: z.boolean() }).optional(),
+  /** D-26: the food preferences in force after this turn (the last "prefs" trace entry), matched key by key. */
+  prefsInForce: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * D-26: every ₹ amount in the reply text is the price of a dish on screen or in the plan, the plan's subtotal, or a
+   * budget the guest stated, so a reply never quotes a price that contradicts the menu or the budget.
+   */
+  pricesConsistent: z.boolean().optional(),
 });
 export type Expectation = z.infer<typeof Expect>;
 

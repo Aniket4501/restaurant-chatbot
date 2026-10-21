@@ -136,6 +136,18 @@ function hasValue(text: string, v: string): boolean {
   return text.includes(v);
 }
 
+// D-26/D-27 blocks, read loosely so the same checks run on code that predates them (a baseline worktree).
+type LooseBlock = { type: string; [k: string]: unknown };
+type HoursSection = { branch: string; title?: string; subtitle?: string | null; rows: { label: string; value: string; closed?: boolean; note?: string | null }[]; note?: string | null };
+type PlanItem = { id: string; name: string; price: number; qty: number; labels?: string[]; contains?: string[] };
+const hoursOf = (blocks: unknown[]): HoursSection[] => (blocks as LooseBlock[]).flatMap((b) => (b.type === "hours" ? ((b.sections as HoursSection[]) ?? []) : []));
+const planOf = (blocks: unknown[]): { items: PlanItem[]; subtotal: number; budget: number | null } | null => {
+  const b = (blocks as LooseBlock[]).find((x) => x.type === "meal_plan");
+  return b ? { items: (b.items as PlanItem[]) ?? [], subtotal: Number(b.subtotal), budget: (b.budget as number | null) ?? null } : null;
+};
+/** The fixture menu's prices: the authority a plan's prices are checked against. */
+const FIXTURE_PRICES = new Map((JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "base.json"), "utf8")).menu as { slug: string; priceInr: number }[]).map((m) => [`menu:${m.slug}`, m.priceInr]));
+
 /** One result per expectation key (the §6.5 metrics are computed from these). */
 type MenuView = Extract<Block, { type: "recommendation" }>["items"][number];
 const leadOf = (blocks: Block[] | undefined): MenuView | null => {
@@ -180,14 +192,22 @@ export function checkUx(t: Pick<TurnView, "index" | "shown" | "kind">): Check[] 
   return out;
 }
 
-function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs: () => string[]; refOfTurn: (i: number) => string | null; leadOfTurn?: (i: number) => MenuView | null }): Check[] {
+function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs: () => string[]; refOfTurn: (i: number) => string | null; leadOfTurn?: (i: number) => MenuView | null; guestTexts?: string[]; planOfTurn?: (i: number) => { subtotal: number } | null }): Check[] {
   if (!e) return [];
   const out: Check[] = [];
   const blocks = t.shown?.blocks ?? [];
   // What the guest reads: the reply plus the dishes shown in cards and lists (D-20 answers list questions with a list
-  // from the menu table), so "must show Mango Sorbet" and "must not show Kulfi" judge what is on screen.
+  // from the menu table), so "must show Mango Sorbet" and "must not show Kulfi" judge what is on screen. D-26/D-27:
+  // also the rows of an hours card and the items of a meal plan.
   const dishes = blocks.flatMap((b) => (b.type === "recommendation" ? b.items : b.type === "menu_list" ? b.groups.flatMap((g) => g.items) : []));
-  const text = [t.shown?.text ?? "", ...dishes.map((d) => `${d.name} ₹${d.price}`)].join("\n");
+  const sections = hoursOf(blocks);
+  const plan = planOf(blocks);
+  const text = [
+    t.shown?.text ?? "",
+    ...dishes.map((d) => `${d.name} ₹${d.price}`),
+    ...sections.flatMap((h) => [`${h.branch}${h.subtitle ? ` ${h.subtitle}` : ""}`, ...h.rows.map((r) => `${r.label}: ${r.value}${r.note ? ` (${r.note})` : ""}`), ...(h.note ? [h.note] : [])]),
+    ...(plan ? plan.items.map((i) => `${i.qty} × ${i.name} ₹${i.price}`) : []),
+  ].join("\n");
   const slots = blocks.find((b) => b.type === "slots") as Extract<Block, { type: "slots" }> | undefined;
   const check = (key: string, ok: boolean, detail: string) => out.push({ key, ok, detail: `turn ${t.index + 1}: ${detail}` });
   if (e.intent !== undefined) {
@@ -265,6 +285,48 @@ function checkExpect(e: Expectation | undefined, t: TurnView, ctx: { createdRefs
       check("recommend.relation", !!lead && !!prev && lead.id !== prev.id, `lead ${lead?.id ?? "none"} repeats turn ${r.differentFromTurn}'s ${prev?.id ?? "none"}`);
     }
   }
+  if (e.mealPlan) {
+    const m = e.mealPlan;
+    if (m.shown !== undefined) check("mealPlan.shown", !!plan === m.shown, m.shown ? "no meal plan shown" : "a meal plan was shown");
+    if (plan && (m.maxTotal !== undefined || m.minItems !== undefined || m.satisfies)) {
+      const wrong = plan.items.filter((i) => FIXTURE_PRICES.get(i.id) !== i.price).map((i) => `${i.id} ₹${i.price} (menu ₹${FIXTURE_PRICES.get(i.id) ?? "none"})`);
+      const sum = plan.items.reduce((n, i) => n + i.price * i.qty, 0);
+      check("mealPlan.prices", !wrong.length && sum === plan.subtotal, wrong.length ? `wrong prices: ${wrong.join(", ")}` : `subtotal ₹${plan.subtotal} ≠ items ₹${sum}`);
+      if (m.maxTotal !== undefined) check("mealPlan.budget", plan.subtotal <= m.maxTotal, `subtotal ₹${plan.subtotal} > ₹${m.maxTotal}`);
+      if (m.cheaperThanTurn !== undefined) {
+        const prev = ctx.planOfTurn?.(m.cheaperThanTurn - 1) ?? null;
+        check("mealPlan.relation", !!prev && plan.subtotal < prev.subtotal, `subtotal ₹${plan.subtotal} is not below turn ${m.cheaperThanTurn}'s ₹${prev?.subtotal ?? "none"}`);
+      }
+      if (m.minItems !== undefined) check("mealPlan.items", plan.items.reduce((n, i) => n + i.qty, 0) >= m.minItems, `${plan.items.length} items < ${m.minItems}`);
+      if (m.satisfies) {
+        const label = { vegetarian: ["Vegetarian", "Vegan"], vegan: ["Vegan"], "gluten-free": ["Gluten-free"], jain: ["Jain option"] } as const;
+        const bad = plan.items.flatMap((i) => [...(m.satisfies!.diet ?? []).filter((d) => !label[d].some((l) => (i.labels ?? []).includes(l))).map((d) => `${i.id} is not ${d}`), ...(m.satisfies!.avoid ?? []).filter((a) => (i.contains ?? []).includes(a)).map((a) => `${i.id} contains ${a}`)]);
+        check("mealPlan.constraints", !bad.length, bad.join("; "));
+      }
+    } else if (m.maxTotal !== undefined || m.satisfies) check("mealPlan.budget", false, "no meal plan to check");
+  }
+  if (e.hours) {
+    if (e.hours.shown !== undefined) check("hours.shown", sections.length > 0 === e.hours.shown, e.hours.shown ? "no hours card shown" : "an hours card was shown");
+    if (e.hours.branches) {
+      const got = [...new Set(sections.map((h) => h.branch))].sort();
+      check("hours.branches", JSON.stringify(got) === JSON.stringify([...e.hours.branches].sort()), `hours for ${got.join(", ") || "no branch"}, expected ${e.hours.branches.join(", ")}`);
+    }
+  }
+  if (e.notice) {
+    const shownNotice = blocks.some((b) => b.type === "notice");
+    check("notice", shownNotice === e.notice.shown, e.notice.shown ? "no notice shown" : `a notice was shown: "${(blocks.find((b) => b.type === "notice") as { text?: string } | undefined)?.text?.slice(0, 60)}"`);
+  }
+  if (e.prefsInForce) {
+    const last = [...t.trace].reverse().find((x) => x.action === "prefs") as { prefs?: unknown } | undefined;
+    check("prefsInForce", !!last && deepMatch(last.prefs, e.prefsInForce), `preferences ${JSON.stringify(last?.prefs ?? null)} don't match ${JSON.stringify(e.prefsInForce)}`);
+  }
+  if (e.pricesConsistent) {
+    const allowed = new Set<number>([...dishes.map((d) => d.price), ...(plan ? [plan.subtotal, ...plan.items.map((i) => i.price), ...plan.items.map((i) => i.price * i.qty)] : []), ...(plan?.budget ? [plan.budget] : []), ...(ctx.guestTexts ?? []).flatMap((g) => [...pricesIn(g), ...(g.match(/\b\d{2,5}\b/g) ?? []).map(Number)])]);
+    const named = new Map([...FIXTURE_PRICES].map(([id, p]) => [id, p]));
+    for (const id of t.citedFactIds ?? []) if (named.has(id)) allowed.add(named.get(id)!);
+    const bad = [...pricesIn(t.shown?.text ?? "")].filter((p) => !allowed.has(p));
+    check("pricesConsistent", !bad.length, `the reply quotes ${bad.map((p) => `₹${p}`).join(", ")}, which is no price on screen, the plan total or a budget the guest gave`);
+  }
   if (e.menuShown !== undefined) check("menuShown", (t.shown?.blocks.some((x) => x.type === "menu_list") ?? false) === e.menuShown, e.menuShown ? "no menu list shown" : "a menu list was shown");
   if (e.sameRefAsTurn !== undefined) check("sameRefAsTurn", !!t.submit?.ref && t.submit.ref === ctx.refOfTurn(e.sameRefAsTurn - 1), `ref ${t.submit?.ref} ≠ turn ${e.sameRefAsTurn}'s ${ctx.refOfTurn(e.sameRefAsTurn - 1)}`);
   return out;
@@ -292,6 +354,14 @@ function blockLine(b: Block): string {
     case "quick_replies":
       return `chips: ${b.chips.map((c) => c.label).join(" / ")}`;
   }
+  // D-26/D-27 blocks, read loosely (see hoursOf / planOf).
+  const loose = b as unknown as LooseBlock;
+  if (loose.type === "hours") return `hours ${hoursOf([loose]).map((h) => `${h.branch}${h.subtitle ? ` (${h.subtitle})` : ""}: ${h.rows.map((r) => `${r.label} ${r.value}`).join(", ")}`).join(" | ")}`;
+  if (loose.type === "meal_plan") {
+    const p = planOf([loose])!;
+    return `plan ${p.items.map((i) => `${i.qty}x ${i.id} ₹${i.price}`).join(", ")} = ₹${p.subtotal}${p.budget ? ` (budget ₹${p.budget})` : ""}`;
+  }
+  return loose.type;
 }
 
 /**
@@ -557,13 +627,13 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
         draft,
         retrievalMode,
         submit,
-        modelCalls: trace.filter((x) => x.action === "model_call" || x.action === "recommend").length, // the chooser is a model call too (D-20)
+        modelCalls: trace.filter((x) => x.action === "model_call" || x.action === "recommend" || (x.action as string) === "plan").length, // the chooser and the meal planner are model calls too (D-20, D-26)
       };
       records.push(rec);
       result.modelCalls += rec.modelCalls;
       result.offered.total += rec.offered.length;
       result.offered.open += rec.offered.filter((o) => o.open).length;
-      const turnChecks = [...checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks) }), ...checkUx(rec)];
+      const turnChecks = [...checkExpect(turn.expect, rec, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks), guestTexts: [...guestTexts], planOfTurn: (i) => planOf(records[i]?.shown?.blocks ?? []) }), ...checkUx(rec)];
       result.checks.push(...turnChecks);
       failures.push(...turnChecks.filter((x) => !x.ok).map((x) => x.detail));
       const entry = result.turns.findLast((x) => x.index === index);
@@ -577,7 +647,7 @@ export async function runCase(c: EvalCase, opts: { mode: "scripted" | "live"; ru
     }
 
     const last = records.at(-1)!;
-    const caseChecks = checkExpect(c.expect, last, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks) }).map((x) => ({ ...x, detail: x.detail.replace(/^turn \d+:/, "case:") }));
+    const caseChecks = checkExpect(c.expect, last, { createdRefs, refOfTurn: (i) => records[i]?.submit?.ref ?? null, leadOfTurn: (i) => leadOf(records[i]?.shown?.blocks), guestTexts: [...guestTexts], planOfTurn: (i) => planOf(records[i]?.shown?.blocks ?? []) }).map((x) => ({ ...x, detail: x.detail.replace(/^turn \d+:/, "case:") }));
     result.checks.push(...caseChecks);
     failures.push(...caseChecks.filter((x) => !x.ok).map((x) => x.detail));
     for (const fb of c.forbidden ?? []) {
